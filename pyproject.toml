@@ -19,9 +19,10 @@ classifiers = [
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
     'Topic :: Software Development',
 ]
-version = '1.14.0'
+version = '1.14.0.post1+datacosmos'
 dependencies = ['pytoolconfig[global] >= 1.2.2']
 
 [[project.authors]]
