@@ -1,4 +1,5 @@
 # **Upcoming release**
+- #862 Recognize type alias statements as assignments in rename and inline refactoring (@TanbirRamim)
 
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
 - #896 patchedast cleanup and refactoring (@lieryan)
