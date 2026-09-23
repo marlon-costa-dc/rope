@@ -372,10 +372,9 @@ class _AssignVisitor(ast.RopeNodeVisitor):
         _ExpressionVisitor(self.scope_visitor).visit(node.value)
 
     def _TypeAlias(self, node):
-        # the value of a generic alias refers to its own type parameters,
-        # so it cannot be used as a value outside of the alias
-        if not node.type_params:
-            self.assigned_ast = node.value
+        # the alias value is not recorded as an assigned value: a type
+        # alias is a distinct TypeAliasType object whose value is evaluated
+        # lazily, so substituting the value for the alias name is unsafe
         self.visit(node.name)
 
     def _assigned(self, name, assignment=None):

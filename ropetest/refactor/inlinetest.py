@@ -43,20 +43,25 @@ class InlineTest(unittest.TestCase):
         self.assertEqual("", refactored)
 
     @testutils.only_for_versions_higher("3.12")
-    def test_inlining_type_alias(self):
+    def test_inlining_type_alias_is_refused(self):
         code = dedent("""\
             type an_alias = int
-            def a_func(param: an_alias) -> an_alias:
+            value = an_alias.__value__
+        """)
+        with self.assertRaises(rope.base.exceptions.RefactoringError):
+            self._inline(code, code.index("an_alias") + 1)
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_inlining_lazily_evaluated_type_alias_is_refused(self):
+        code = dedent("""\
+            type an_alias = Later
+            def a_func(param: an_alias):
+                pass
+            class Later:
                 pass
         """)
-        refactored = self._inline(code, code.index("an_alias") + 1)
-        self.assertEqual(
-            dedent("""\
-                def a_func(param: int) -> int:
-                    pass
-            """),
-            refactored,
-        )
+        with self.assertRaises(rope.base.exceptions.RefactoringError):
+            self._inline(code, code.index("an_alias") + 1)
 
     @testutils.only_for_versions_higher("3.12")
     def test_inlining_generic_type_alias(self):
