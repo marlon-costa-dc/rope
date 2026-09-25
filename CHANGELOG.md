@@ -11,6 +11,7 @@
 - Support PEP 695 type parameters on class definitions and type aliases in patchedast
 - Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
 - Walk positional-only, keyword-only and annotated parameters in patchedast
+- Discover the compiled extension module used by autoimport tests from the import system
 
 # Release 1.14.0
 
