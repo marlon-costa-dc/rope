@@ -411,6 +411,14 @@ class _PatchingASTWalker:
         self._handle(node, children)
 
     def _FormattedValue(self, node):
+        # Since Python 3.12 the parser locates each replacement field at its
+        # own "{".  Starting there keeps a "{" inside a plain string of the
+        # same implicit concatenation -- ``"({})," f"{a}"`` -- from being
+        # taken as the field's opening brace.  Older parsers give the
+        # enclosing literal's position, which does not point at a "{".
+        field_start, _ = self.ast_adapter[node]
+        if field_start >= self.source.offset and self.source[field_start] == "{":
+            self.source.offset = field_start
         children = []
         children.append("{")
         children.append(node.value)
