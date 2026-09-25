@@ -17,6 +17,7 @@
 - #879 Fix patchedast region for implicitly-concatenated f-strings whose trailing parts hold no interpolation (@stevemadere)
 - #868 Fix patchedast matching tokens inside string literals
 - #862 Recognize type alias statements as assignments in rename refactoring (@TanbirRamim)
+- Locate multi-line f-strings, replacement fields and match-sequence delimiters in patchedast by parser coordinates
 
 # Release 1.14.0
 
