@@ -13,6 +13,7 @@
 - Walk positional-only, keyword-only and annotated parameters in patchedast
 - Discover the compiled extension module used by autoimport tests from the import system
 - #879 Fix patchedast region for implicitly-concatenated f-strings whose trailing parts hold no interpolation (@stevemadere)
+- #868 Fix patchedast matching tokens inside string literals
 
 # Release 1.14.0
 
