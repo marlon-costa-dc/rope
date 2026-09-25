@@ -510,9 +510,7 @@ class _PatchingASTWalker:
     def _arguments(self, node):
         children = []
         positional = list(node.posonlyargs) + list(node.args)
-        defaults = [None] * (len(positional) - len(node.defaults)) + list(
-            node.defaults
-        )
+        defaults = [None] * (len(positional) - len(node.defaults)) + list(node.defaults)
         for index, (arg, default) in enumerate(zip(positional, defaults)):
             if index > 0:
                 children.append(",")
