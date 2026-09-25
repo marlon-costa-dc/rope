@@ -407,25 +407,43 @@ class PatchedASTTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.12")
     def test_handling_pep695_generic_function(self):
-        source = "def f[T](x: T) -> T:\n    return x\n"
+        # TP occurs only in the type parameter list, so its region can only
+        # come from the "[TP]" clause rendered between the name and "(".
+        source = "def f[TP](x):\n    return x\n"
         ast_frag = patchedast.get_patched_ast(source, True)
-        # The type parameter list must be rendered between name and '('.
-        assert "[T]" in source
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("TypeVar", ["T"])
+        checker.check_children(
+            "FunctionDef",
+            ["def", " ", "f", "", "[", "", "TypeVar", "", "]", "", "(", "",
+             "arguments", "", ")", "", ":", "\n    ", "Return"],
+        )
+        start = source.index("TP")
+        checker.check_region("TypeVar", start, start + len("TP"))
 
     @testutils.only_for_versions_higher("3.12")
     def test_handling_pep695_generic_class(self):
-        source = "class C[T]:\n    pass\n"
+        source = "class C[TP]:\n    pass\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("TypeVar", ["T"])
+        checker.check_children(
+            "ClassDef",
+            ["class", " ", "C", "", "[", "", "TypeVar", "", "]", "", ":",
+             "\n    ", "Pass"],
+        )
+        start = source.index("TP")
+        checker.check_region("TypeVar", start, start + len("TP"))
 
     @testutils.only_for_versions_higher("3.10")
     def test_handling_match_sequence_and_star(self):
         source = "match x:\n    case [1, *rest]:\n        pass\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
+        checker.check_children(
+            "MatchSequence",
+            ["[", "", "MatchValue", "", ",", " ", "MatchStar", "", "]"],
+        )
+        start = source.index("[1, *rest]")
+        checker.check_region("MatchSequence", start, start + len("[1, *rest]"))
         checker.check_children("MatchStar", ["*", "", "rest"])
 
     @testutils.only_for_versions_higher("3.10")
@@ -436,19 +454,6 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_children(
             "MatchOr", ["MatchValue", " ", "|", " ", "MatchSingleton"]
         )
-
-    @testutils.only_for_versions_higher("3.6")
-    def test_handling_format_strings_with_triple_quote_in_body(self):
-        # A double-quoted f-string whose body contains a ''' sequence must not
-        # confuse the end-quote detection (end_quote_char picked the longest
-        # quote in the body instead of the matching delimiter).
-        source = 'f"abc = \'\'\'{a}"\n'
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "JoinedStr", ['f"', "abc = '''", "FormattedValue", "", '"']
-        )
-        checker.check_children("FormattedValue", ["{", "", "Name", "", "}"])
 
     @testutils.only_for_versions_higher("3.6")
     def test_handling_format_strings_with_triple_quote_in_body(self):
@@ -2178,12 +2183,6 @@ class _ResultChecker:
     def __init__(self, test_case, ast):
         self.test_case = test_case
         self.ast = ast
-
-    def check_region(self, text, start, end):
-        node = self._find_node(text)
-        if node is None:
-            self.test_case.fail("Node <%s> cannot be found" % text)
-        self.test_case.assertEqual((start, end), node.region)
 
     def _find_node(self, text):
         """
