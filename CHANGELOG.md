@@ -9,6 +9,7 @@
 - #870 Add default implementation for is_dir() (@lieryan)
 - #872 Fix unicode handling in patchedast (@lieryan)
 - Support PEP 695 type parameters on class definitions and type aliases in patchedast
+- Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
 
 # Release 1.14.0
 
