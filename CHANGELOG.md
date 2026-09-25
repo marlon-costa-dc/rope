@@ -8,6 +8,7 @@
 - #623, #819, #863 Support MatchOr, MatchSequence, MatchStar (@jheld, @lieryan)
 - #870 Add default implementation for is_dir() (@lieryan)
 - #872 Fix unicode handling in patchedast (@lieryan)
+- Walk positional-only, keyword-only and annotated parameters in patchedast
 
 # Release 1.14.0
 
