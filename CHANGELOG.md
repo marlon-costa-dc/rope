@@ -2,6 +2,7 @@
 
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
 - #896 patchedast cleanup and refactoring (@lieryan)
+- Discover the compiled extension module used by autoimport tests from the import system
 
 # Release 1.15.0
 
