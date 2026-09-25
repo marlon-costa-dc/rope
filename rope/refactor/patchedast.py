@@ -398,7 +398,10 @@ class _PatchingASTWalker:
             for quote_char in QUOTE_CHARS:
                 if self.source.source[end - len(quote_char) : end] == quote_char:
                     return self.source[end - len(quote_char) : end]
-            return self.source[end - 1 : end]
+            raise MismatchedTokenError(
+                f"f-string at line {self.lines.get_line_number(start)} does not"
+                " end with a quote delimiter"
+            )
 
         QUOTE_CHARS = ['"""', "'''", '"', "'"]
         offset = self.source.offset
