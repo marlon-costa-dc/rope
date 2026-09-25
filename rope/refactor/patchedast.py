@@ -327,6 +327,7 @@ class _PatchingASTWalker:
         for decorator in node.decorator_list:
             children.extend(("@", decorator))
         children.extend(["class", node.name])
+        self._add_type_params(node, children)
         if node.bases:
             children.append("(")
             children.extend(self._child_nodes(node.bases, ","))
@@ -493,9 +494,7 @@ class _PatchingASTWalker:
             children.extend(("@", decorator))
         children.extend(["async", "def"] if is_async else ["def"])
         children.append(node.name)
-        type_params = getattr(node, "type_params", [])
-        if type_params:
-            children.extend(["[", *self._child_nodes(type_params, ","), "]"])
+        self._add_type_params(node, children)
         children.extend(["(", node.args, ")"])
         children.append(":")
         children.extend(node.body)
@@ -872,8 +871,16 @@ class _PatchingASTWalker:
         self._handle(node, children)
 
     def _TypeAlias(self, node):
-        children = ["type", node.name, node.value]
+        children = ["type", node.name]
+        self._add_type_params(node, children)
+        children.append(node.value)
         self._handle(node, children)
+
+    def _add_type_params(self, node, children):
+        """Append the PEP 695 ``[T, ...]`` clause of a def, class or type alias."""
+        type_params = getattr(node, "type_params", [])
+        if type_params:
+            children.extend(["[", *self._child_nodes(type_params, ","), "]"])
 
     def _TypeVar(self, node):
         children = [node.name]
