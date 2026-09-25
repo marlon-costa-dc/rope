@@ -37,6 +37,60 @@ class PatchedASTTest(unittest.TestCase):
             "Expr",
         ])
 
+    def assert_function_def_has_one_type_var(self, checker):
+        checker.check_children(
+            "FunctionDef",
+            [
+                "def",
+                " ",
+                "foo",
+                "",
+                "[", "", "TypeVar", "", "]",
+                "",
+                "(", "", "arguments", "", ")",
+                "",
+                ":",
+                "\n    ",
+                "Pass",
+            ],
+        )
+
+    def assert_function_def_has_one_type_var_tuple(self, checker):
+        checker.check_children(
+            "FunctionDef",
+            [
+                "def",
+                " ",
+                "foo",
+                "",
+                "[", "", "TypeVarTuple", "", "]",
+                "",
+                "(", "", "arguments", "", ")",
+                "",
+                ":",
+                "\n    ",
+                "Pass",
+            ],
+        )
+
+    def assert_function_def_has_one_param_spec(self, checker):
+        checker.check_children(
+            "FunctionDef",
+            [
+                "def",
+                " ",
+                "foo",
+                "",
+                "[", "", "ParamSpec", "", "]",
+                "",
+                "(", "", "arguments", "", ")",
+                "",
+                ":",
+                "\n    ",
+                "Pass",
+            ],
+        )
+
     def test_operator_support_completeness(self):
         ast_ops = {
             n.__name__
@@ -1384,6 +1438,197 @@ class PatchedASTTest(unittest.TestCase):
         ])
 
     @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_or(self):
+        source = dedent("""\
+            match x:
+                case 'v'|'z':
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchOr")
+        checker.check_children("MatchOr", ["MatchValue", "", "|", "", "MatchValue"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_singleton_true(self):
+        source = dedent("""\
+            match x:
+                case True:
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSingleton")
+        checker.check_children("MatchSingleton", ["True"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_singleton_none(self):
+        source = dedent("""\
+            match x:
+                case None:
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSingleton")
+        checker.check_children("MatchSingleton", ["None"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_star_wildcard(self):
+        source = dedent("""\
+            match x:
+                case [*_]:
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", ["[", "", "MatchStar", "", "]"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_tail_capture(self):
+        source = dedent("""\
+            match x:
+                case [1, 2, *rest]:
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchValue", "", ",", " ", "MatchStar", "", "]",
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_no_parens(self):
+        source = dedent("""\
+            match x:
+                case 1, 2:
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "MatchValue", "", ",", " ", "MatchValue",
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_square_parens(self):
+        source = dedent("""\
+            match x:
+                case [1, 2]:
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchValue", "", "]",
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_round_parens(self):
+        source = dedent("""\
+            match x:
+                case (1, 2):
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "(", "", "MatchValue", "", ",", " ", "MatchValue", "", ")",
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_spaces_around_parens(self):
+        source = dedent("""\
+            match x:
+                case (  1, 2
+            ):
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "(", "  ", "MatchValue", "", ",", " ", "MatchValue", "\n", ")",
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_internal_parens(self):
+        source = dedent("""\
+            match x:
+                case [1], [2]:
+                    print(rest)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", [
+            "MatchSequence", "", ",", " ", "MatchSequence"
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_empty_round_parens(self):
+        source = dedent("""\
+            match x:
+                case ( ):
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", ["( )"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_empty_square_parens(self):
+        source = dedent("""\
+            match x:
+                case []:
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children("MatchSequence", ["[]"])
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_star_and_value(self):
+        source = dedent("""\
+            match x:
+                case [*_, "something"]:
+                    print(x)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchSequence")
+        checker.check_children(
+            "MatchSequence", ["[", "", "MatchStar", "", ",", " ", "MatchValue", "", "]"]
+        )
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_match_node_with_match_sequence_with_multibyte_unicode(self):
+        source = dedent("""\
+            match x:
+                case ["😃", *rest] as myval:
+                    print(myval)
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        self.assert_single_case_match_block(checker, "MatchAs")
+        checker.check_children("MatchAs", [
+            "MatchSequence", " ", "as", " ", "myval",
+        ])
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchStar", "", "]",
+        ])
+        checker.check_children("MatchStar", [
+            "*", "", "rest"
+        ])
+
+    @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_as_capture_pattern(self):
         source = dedent("""\
             match x:
@@ -1521,6 +1766,192 @@ class PatchedASTTest(unittest.TestCase):
             "MatchAs",
             "",
             "}",
+        ])
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_type_alias(self):
+        source = dedent("""\
+            type Point = tuple[float, float]
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        checker.check_children("TypeAlias", [
+            "type",
+            " ",
+            "Name",
+            " = ",
+            "Subscript",
+        ])
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_type_var_simple(self):
+        source = dedent("""\
+            def foo[S, T](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        checker.check_children(
+            "FunctionDef",
+            [
+                "def",
+                " ",
+                "foo",
+                "",
+                "[",
+                "",
+                "TypeVar",
+                "",
+                ",",
+                " ",
+                "TypeVar",
+                "",
+                "]",
+                "",
+                "(", "", "arguments", "", ")",
+                "",
+                ":",
+                "\n    ",
+                "Pass",
+            ],
+        )
+
+    @testutils.only_for_versions_higher("3.13")
+    def test_type_var_with_default_value(self):
+        source = dedent("""\
+            def foo[T = D](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_type_var(checker)
+
+        checker.check_children("TypeVar", [
+            "T",
+            " ",
+            "=",
+            " ",
+            "Name",
+        ])
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_type_var_with_constraint(self):
+        source = dedent("""\
+            def foo[T: (A, B)](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_type_var(checker)
+
+        checker.check_children("TypeVar", [
+            "T",
+            "",
+            ":",
+            " ",
+            "Tuple",
+        ])
+
+    @testutils.only_for_versions_higher("3.13")
+    def test_type_var_with_constraint_and_default_value(self):
+        source = dedent("""\
+            def foo[T: (A, B) = D](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_type_var(checker)
+
+        checker.check_children("TypeVar", [
+            "T",
+            "",
+            ":",
+            " ",
+            "Tuple",
+            " ",
+            "=",
+            " ",
+            "Name",
+        ])
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_type_var_tuple_simple(self):
+        source = dedent("""\
+            def foo[*T](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_type_var_tuple(checker)
+
+        checker.check_children("TypeVarTuple", [
+            "*",
+            "",
+            "T",
+        ])
+
+    @testutils.only_for_versions_higher("3.13")
+    def test_type_var_tuple_with_default_value(self):
+        source = dedent("""\
+            def foo[*T = (A, B)](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_type_var_tuple(checker)
+
+        checker.check_children("TypeVarTuple", [
+            "*",
+            "",
+            "T",
+            " ",
+            "=",
+            " ",
+            "Tuple",
+        ])
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_param_spec_simple(self):
+        source = dedent("""\
+            def foo[**T](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_param_spec(checker)
+
+        checker.check_children("ParamSpec", [
+            "**",
+            "",
+            "T",
+        ])
+
+    @testutils.only_for_versions_higher("3.13")
+    def test_param_spec_with_default_value(self):
+        source = dedent("""\
+            def foo[**T = (A, B)](x):
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+
+        self.assert_function_def_has_one_param_spec(checker)
+
+        checker.check_children("ParamSpec", [
+            "**",
+            "",
+            "T",
+            " ",
+            "=",
+            " ",
+            "Tuple",
         ])
 
 

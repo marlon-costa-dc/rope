@@ -1,10 +1,14 @@
 # **Upcoming release**
 
-- Fix `patchedast` aborting on a `'''` sequence inside a double-quoted
-  f-string (`end_quote_char` picked the longest quote in the body instead of
-  the matching delimiter), which raised `MismatchedTokenError` and broke
-  rename/inline for the whole module (@marlon-costa-dc)
-- ...
+- #850 Update and pin black version in pre-commit and Github Actions
+- #851 Bump supported python version to up to Python 3.14
+- #852 Implement patchedast handlers for TypeAlias
+- #853 Implement patchedast handlers TypeVar
+- #847 Avoid printing autoimport syntax errors (@yangfan-yf-yf)
+- #623, #819, #863 Support MatchOr, MatchSequence, MatchStar (@jheld, @lieryan)
+- #870 Add default implementation for is_dir() (@lieryan)
+- #872 Fix unicode handling in patchedast (@lieryan)
+- Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
 
 # Release 1.14.0
 

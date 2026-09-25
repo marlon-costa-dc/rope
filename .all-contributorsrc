@@ -591,6 +591,24 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "yangfan-yf-yf",
+      "name": "Yang Fan",
+      "avatar_url": "https://avatars.githubusercontent.com/u/266078689?v=4",
+      "profile": "https://www.hit.edu.cn/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "jheld",
+      "name": "Jason Held",
+      "avatar_url": "https://avatars.githubusercontent.com/u/828813?v=4",
+      "profile": "https://github.com/jheld",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "projectName": "rope",

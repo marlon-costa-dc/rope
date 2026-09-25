@@ -67,6 +67,7 @@ class _PatchingASTWalker:
         self.source = _Source(source)
         self.children = children
         self.lines = codeanalyze.SourceLinesAdapter(source)
+        self.ast_adapter = codeanalyze.ASTLinesAdapter(source)
         self.children_stack = []
 
     Number = object()
@@ -217,7 +218,8 @@ class _PatchingASTWalker:
         for children in reversed(self.children_stack):
             for child in children:
                 if isinstance(child, ast.stmt):
-                    return child.col_offset + self.lines.get_line_start(child.lineno)
+                    start, _ = self.ast_adapter[child]
+                    return start
         return len(self.source.source)
 
     def _join(self, iterable, separator):
@@ -493,6 +495,9 @@ class _PatchingASTWalker:
             children.extend(("@", decorator))
         children.extend(["async", "def"] if is_async else ["def"])
         children.append(node.name)
+        type_params = getattr(node, "type_params", [])
+        if type_params:
+            children.extend(["[", *self._child_nodes(type_params, ","), "]"])
         children.extend(["(", node.args, ")"])
         children.append(":")
         children.extend(node.body)
@@ -575,11 +580,8 @@ class _PatchingASTWalker:
     def _is_elif(self, node):
         if not isinstance(node, ast.If):
             return False
-        offset = self.lines.get_line_start(node.lineno) + node.col_offset
-        word = self.source[offset : offset + 4]
-        # XXX: This is a bug; the offset does not point to the first
-        alt_word = self.source[offset - 5 : offset - 1]
-        return "elif" in (word, alt_word)
+        start, end = self.ast_adapter[node]
+        return "elif" in self.source[start : start + 4]
 
     def _IfExp(self, node):
         return self._handle(node, [node.body, "if", node.test, "else", node.orelse])
@@ -787,6 +789,13 @@ class _PatchingASTWalker:
         children.extend(node.cases)
         self._handle(node, children)
 
+    def _MatchOr(self, node):
+        children = [*self._child_nodes(node.patterns, "|")]
+        self._handle(node, children)
+
+    def _MatchSingleton(self, node):
+        self._handle(node, [str(node.value)])
+
     def _match_case(self, node):
         children = ["case", node.pattern]
         if node.guard:
@@ -794,6 +803,43 @@ class _PatchingASTWalker:
         children.append(":")
         children.extend(node.body)
         self._handle(node, children)
+
+    def _MatchSequence(self, node):
+        if node.patterns:
+            opening_paren, closing_paren = self._get_surrounding_parens(node)
+
+            children = [
+                *opening_paren,
+                *self._child_nodes(node.patterns, ","),
+                *closing_paren,
+            ]
+        else:
+            empty_tuple = self.ast_adapter.get_source_segment(node)
+            children = [empty_tuple]
+        self._handle(node, children)
+
+    def _get_surrounding_parens(self, node: ast.MatchSequence):
+        node_start, node_end = self.ast_adapter[node]
+        first_pattern_start, _ = self.ast_adapter[node.patterns[0]]
+        _, last_pattern_end = self.ast_adapter[node.patterns[-1]]
+        opening_paren = self.source[node_start:first_pattern_start].strip()
+        closing_paren = self.source[last_pattern_end:node_end].strip()
+
+        if opening_paren not in ["[", "(", ""]:
+            warnings.warn(
+                f"Unexpected character in MatchSequence's opening_paren <{opening_paren}>; please report!",
+                RuntimeWarning,
+            )
+
+        if closing_paren not in ["]", ")", ""]:
+            warnings.warn(
+                f"Unexpected character in MatchSequence's closing_paren <{closing_paren}>; please report!",
+                RuntimeWarning,
+            )
+        return opening_paren, closing_paren
+
+    def _MatchStar(self, node):
+        self._handle(node, ["*", node.name or "_"])
 
     def _MatchAs(self, node):
         if node.pattern:
@@ -826,6 +872,32 @@ class _PatchingASTWalker:
                 children.append(",")
         children.append("}")
         self._handle(node, children)
+
+    def _TypeAlias(self, node):
+        children = ["type", node.name, node.value]
+        self._handle(node, children)
+
+    def _TypeVar(self, node):
+        children = [node.name]
+        if node.bound:
+            children.extend([":", node.bound])
+        self._handle_default_value(node, children)
+        self._handle(node, children)
+
+    def _TypeVarTuple(self, node):
+        children = ["*", node.name]
+        self._handle_default_value(node, children)
+        self._handle(node, children)
+
+    def _ParamSpec(self, node):
+        children = ["**", node.name]
+        self._handle_default_value(node, children)
+        self._handle(node, children)
+
+    def _handle_default_value(self, node, children):
+        default_value = getattr(node, "default_value", None)
+        if default_value:
+            children.extend(["=", default_value])
 
 
 class _Source:
@@ -939,9 +1011,6 @@ class _Source:
 
     def __getitem__(self, index):
         return self.source[index]
-
-    def __getslice__(self, i, j):
-        return self.source[i:j]
 
     def _get_number_pattern(self):
         # HACK: It is merely an approaximation and does the job
