@@ -67,12 +67,6 @@ def main():
         consumer_environment = os.environ.copy()
         consumer_environment["PIP_CACHE_DIR"] = str(runtime / "pip-cache")
         subprocess.run(
-            [str(python), "-I", "-m", "pip", "install", "--upgrade", "pip"],
-            cwd=runtime,
-            env=consumer_environment,
-            check=True,
-        )
-        subprocess.run(
             [str(python), "-I", "-m", "pip", "install", f"{wheel.resolve()}[dev]"],
             cwd=runtime,
             env=consumer_environment,

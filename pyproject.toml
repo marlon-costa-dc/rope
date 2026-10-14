@@ -57,20 +57,9 @@ release = [
     'twine>=4.0.2',
     'pip-tools>=6.12.1',
 ]
-[tool.setuptools]
-packages = [
-    'rope',
-    'rope.base',
-    'rope.base.oi',
-    'rope.base.oi.type_hinting',
-    'rope.base.oi.type_hinting.providers',
-    'rope.base.oi.type_hinting.resolvers',
-    'rope.base.utils',
-    'rope.contrib',
-    'rope.contrib.autoimport',
-    'rope.refactor',
-    'rope.refactor.importutils',
-]
+[tool.setuptools.packages.find]
+namespaces = false
+exclude = ['ropetest*']
 
 [tool.setuptools.package-data]
 rope = ["py.typed"]
