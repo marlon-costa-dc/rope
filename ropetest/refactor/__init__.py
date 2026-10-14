@@ -1122,10 +1122,13 @@ class TaskHandleTest(unittest.TestCase):
         self.assertEqual("test job set", jobs.name)
         self.assertEqual(None, jobs.job_name)
         # deprecated getters
-        self.assertEqual("test job set", jobs.get_name())
-        self.assertEqual(None, jobs.get_active_job_name())
+        with self.assertWarnsRegex(DeprecationWarning, "JobSet.name"):
+            self.assertEqual("test job set", jobs.get_name())
+        with self.assertWarnsRegex(DeprecationWarning, "JobSet.job_name"):
+            self.assertEqual(None, jobs.get_active_job_name())
         jobs.started_job("job1")
         # recommended name/job_name attribute
-        self.assertEqual("test job set", jobs.get_name())
+        self.assertEqual("test job set", jobs.name)
         # deprecated getters
-        self.assertEqual("job1", jobs.get_active_job_name())
+        with self.assertWarnsRegex(DeprecationWarning, "JobSet.job_name"):
+            self.assertEqual("job1", jobs.get_active_job_name())

@@ -143,6 +143,15 @@ All required packages for development could be installed with::
 
     pip install -e ".[dev]"
 
+The fork's root Makefile provides the same development operations using an
+exclusive ``.venv``. Run ``make setup``, ``make check``, ``make test``, and
+``make build`` from the repository root. ``make check`` runs the configured
+pre-commit hooks; if a hook reformats files, inspect the changes and rerun it.
+``make fmt`` runs the configured Black and isort hooks. ``make build`` verifies
+that both release archives contain the public ``py.typed`` marker. The
+``BOOTSTRAP_PYTHON`` environment variable can select an installed interpreter
+when ``python3.13`` is unavailable on the command path.
+
 .. _GitHub: http://github.com/
 .. _`python-rope/rope`: https://github.com/python-rope/rope
 .. _`pull request`: https://help.github.com/articles/using-pull-requests

@@ -2,7 +2,6 @@ import os.path
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
 from textwrap import dedent
 from unittest.mock import patch
 
@@ -963,7 +962,7 @@ class OutOfProjectTest(unittest.TestCase):
         )
 
 
-class _MockFSCommands:
+class _MockFSCommands(FileSystemCommands):
     def __init__(self):
         self.log = ""
         self.fscommands = FileSystemCommands()
@@ -989,7 +988,7 @@ class _MockFSCommands:
         return self.fscommands.read(path)
 
 
-class _DeprecatedFSCommands:
+class _WriteTracingFSCommands(FileSystemCommands):
     def __init__(self):
         self.log = ""
         self.fscommands = FileSystemCommands()
@@ -1078,25 +1077,37 @@ class RopeFolderTest(unittest.TestCase):
     def test_normal_fscommands(self):
         fscommands = _MockFSCommands()
         self.project = testutils.sample_project(fscommands=fscommands)
+        setup_log = fscommands.log
+        self.assertIn("create_folder ", setup_log)
+        self.assertTrue(self.project.root.exists())
         myfile = self.project.get_file("myfile.txt")
         myfile.create()
-        self.assertEqual("create_file ", fscommands.log)
+        self.assertEqual(setup_log + "create_file ", fscommands.log)
+        self.assertTrue(myfile.exists())
 
     def test_fscommands_and_ignored_resources(self):
         fscommands = _MockFSCommands()
         self.project = testutils.sample_project(
             fscommands=fscommands, ignored_resources=["myfile.txt"], ropefolder=None
         )
+        setup_log = fscommands.log
+        self.assertIn("create_folder ", setup_log)
+        self.assertTrue(self.project.root.exists())
         myfile = self.project.get_file("myfile.txt")
         myfile.create()
-        self.assertEqual("", fscommands.log)
+        self.assertEqual(setup_log, fscommands.log)
+        self.assertTrue(myfile.exists())
 
-    def test_deprecated_fscommands(self):
-        fscommands = _DeprecatedFSCommands()
+    def test_write_tracing_fscommands(self):
+        fscommands = _WriteTracingFSCommands()
         self.project = testutils.sample_project(fscommands=fscommands)
+        setup_log = fscommands.log
+        self.assertIn("create_folder ", setup_log)
+        self.assertTrue(self.project.root.exists())
         myfile = self.project.get_file("myfile.txt")
         myfile.create()
-        self.assertEqual("create_file ", fscommands.log)
+        self.assertEqual(setup_log + "create_file ", fscommands.log)
+        self.assertTrue(myfile.exists())
 
     def test_ignored_resources_and_prefixes(self):
         self.project = testutils.sample_project(ignored_resources=[".hg"])

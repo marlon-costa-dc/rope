@@ -40,14 +40,7 @@ import io
 import tokenize
 from typing import Iterator
 
-from rope.base import (
-    evaluate,
-    exceptions,
-    pynames,
-    pyobjects,
-    utils,
-    worder,
-)
+from rope.base import evaluate, exceptions, pynames, pyobjects, utils, worder
 
 
 class Finder:

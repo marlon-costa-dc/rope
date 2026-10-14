@@ -335,7 +335,7 @@ Retrieve the path relative to the project's root directory.
 .. code-block:: python
 
   # Get the path relative to the project's root directory.
-  relpath = libutils.relative(myproject.address, path)
+  relpath = libutils.path_relative_to_project_root(myproject, path)
 
 
 ``libutils.path_to_resource()``
@@ -426,6 +426,22 @@ module.  If you need other version control systems you can write a new
 class that provides this interface.  ``rope.base.project.Project``
 accepts an ``fscommands`` argument.  You can use this argument to force
 rope to use your new class.
+
+The same interface owns resource queries: ``exists``, ``isfile``,
+``isdir``, ``listdir``, ``stat``, and ``realpath``.  A captured filesystem can
+therefore keep both reads and directory elections independent of later
+disk changes.  Resource observers obtain the original modification and size
+indicator from this same ``stat`` port.  Directory enumeration and metadata
+errors propagate to the caller.
+
+Resources outside the project root are owned by ``NoProject``.
+For a closed analysis, construct ``NoProject(fscommands=captured)`` and
+pass it as ``external_project`` to ``Project`` together with the same
+``fscommands``.  This keeps the project's ordinary module lookup order
+and lexical scopes while binding external reads to the captured
+filesystem.  It does not modify the process-wide ``get_no_project()``
+instance.  Such read-only projects should use ``ropefolder=None``,
+``save_objectdb=False``, and ``save_history=False``.
 
 
 ``.ropeproject`` Folder

@@ -1,6 +1,6 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from textwrap import dedent
 from unittest.mock import ANY, patch
 
@@ -14,7 +14,7 @@ from rope.contrib.autoimport.sqlite import AutoImport
 
 @pytest.fixture
 def autoimport(project: Project):
-    with closing(AutoImport(project)) as ai:
+    with closing(AutoImport(project, memory=True)) as ai:
         yield ai
 
 
@@ -29,33 +29,32 @@ def database_list(connection):
 
 
 def test_in_memory_database_share_cache(project, project2):
-    ai_1 = AutoImport(project, memory=True)
-    ai_2 = AutoImport(project, memory=True)
-
-    ai_3 = AutoImport(project2, memory=True)
-
-    with ai_1.connection:
-        ai_1.connection.execute("CREATE TABLE shared(data)")
-        ai_1.connection.execute("INSERT INTO shared VALUES(28)")
-    assert ai_2.connection.execute("SELECT data FROM shared").fetchone() == (28,)
-    with pytest.raises(sqlite3.OperationalError, match="no such table: shared"):
-        ai_3.connection.execute("SELECT data FROM shared").fetchone()
+    with ExitStack() as resources:
+        ai_1 = resources.enter_context(closing(AutoImport(project, memory=True)))
+        ai_2 = resources.enter_context(closing(AutoImport(project, memory=True)))
+        ai_3 = resources.enter_context(closing(AutoImport(project2, memory=True)))
+        with ai_1.connection:
+            ai_1.connection.execute("CREATE TABLE shared(data)")
+            ai_1.connection.execute("INSERT INTO shared VALUES(28)")
+        assert ai_2.connection.execute("SELECT data FROM shared").fetchone() == (28,)
+        with pytest.raises(sqlite3.OperationalError, match="no such table: shared"):
+            ai_3.connection.execute("SELECT data FROM shared").fetchone()
 
 
 def test_autoimport_connection_parameter_with_in_memory(
     project: Project,
     autoimport: AutoImport,
 ):
-    connection = AutoImport.create_database_connection(memory=True)
-    assert is_in_memory_database(connection)
+    with closing(AutoImport.create_database_connection(memory=True)) as connection:
+        assert is_in_memory_database(connection)
 
 
 def test_autoimport_connection_parameter_with_project(
     project: Project,
     autoimport: AutoImport,
 ):
-    connection = AutoImport.create_database_connection(project=project)
-    assert not is_in_memory_database(connection)
+    with closing(AutoImport.create_database_connection(project=project)) as connection:
+        assert not is_in_memory_database(connection)
 
 
 def test_autoimport_create_database_connection_conflicting_parameter(
@@ -70,16 +69,16 @@ def test_autoimport_memory_parameter_is_true(
     project: Project,
     autoimport: AutoImport,
 ):
-    ai = AutoImport(project, memory=True)
-    assert is_in_memory_database(ai.connection)
+    with closing(AutoImport(project, memory=True)) as ai:
+        assert is_in_memory_database(ai.connection)
 
 
 def test_autoimport_memory_parameter_is_false(
     project: Project,
     autoimport: AutoImport,
 ):
-    ai = AutoImport(project, memory=False)
-    assert not is_in_memory_database(ai.connection)
+    with closing(AutoImport(project, memory=False)) as ai:
+        assert not is_in_memory_database(ai.connection)
 
 
 def test_init_py(
@@ -115,21 +114,27 @@ def test_multithreading(
     mod1.write(dedent("""\
         foo
     """))
-    autoimport = AutoImport(project, memory=False)
-    autoimport.generate_cache([mod1_init])
+    with closing(AutoImport(project, memory=False)) as importer:
+        importer.generate_cache([mod1_init])
 
-    tp = ThreadPoolExecutor(1)
-    results = tp.submit(autoimport.search, "foo", True).result()
-    assert [("from pkg1 import foo", "foo")] == results
+        def search_and_close():
+            try:
+                return importer.search("foo", True)
+            finally:
+                importer.close()
+
+        with ThreadPoolExecutor(1) as tp:
+            results = tp.submit(search_and_close).result()
+        assert [("from pkg1 import foo", "foo")] == results
 
 
 def test_connection(project: Project, project2: Project):
-    ai1 = AutoImport(project)
-    ai2 = AutoImport(project)
-    ai3 = AutoImport(project2)
-
-    assert ai1.connection is not ai2.connection
-    assert ai1.connection is not ai3.connection
+    with ExitStack() as resources:
+        ai1 = resources.enter_context(closing(AutoImport(project, memory=True)))
+        ai2 = resources.enter_context(closing(AutoImport(project, memory=True)))
+        ai3 = resources.enter_context(closing(AutoImport(project2, memory=True)))
+        assert ai1.connection is not ai2.connection
+        assert ai1.connection is not ai3.connection
 
 
 @contextmanager

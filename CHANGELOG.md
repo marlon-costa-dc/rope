@@ -1,5 +1,11 @@
 # **Upcoming release**
 
+- Route resource existence, directory elections, and observer metadata through the
+  filesystem commands owner. Allow an explicit external `NoProject` with the same
+  captured filesystem, preserving native module resolution after source trees change.
+- Validate the built wheel's captured local, relative, namespace, and stub-resource
+  contracts in a fresh isolated runtime outside the source checkout.
+
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #850 Update and pin black version in pre-commit and Github Actions
 - #851 Bump supported python version to up to Python 3.14
