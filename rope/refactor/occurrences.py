@@ -40,7 +40,16 @@ import io
 import tokenize
 from typing import Iterator
 
-from rope.base import evaluate, exceptions, pynames, pyobjects, utils, worder
+from rope.base import (
+    ast,
+    codeanalyze,
+    evaluate,
+    exceptions,
+    pynames,
+    pyobjects,
+    utils,
+    worder,
+)
 
 
 class Finder:
@@ -72,7 +81,9 @@ class Finder:
         tools = _OccurrenceToolsCreator(
             self.project, resource=resource, pymodule=pymodule, docs=self.docs
         )
-        for offset in self._textual_finder.find_offsets(tools.source_code):
+        for offset in self._textual_finder.find_offsets(
+            tools.source_code, tools.pymodule.get_ast()
+        ):
             occurrence = Occurrence(tools, offset)
             for filter in self.filters:
                 result = filter(occurrence)
@@ -304,27 +315,46 @@ class _TextualFinder:
         self.name = name
         self.docs = docs
 
-    def find_offsets(self, source: str) -> Iterator[int]:
+    def find_offsets(self, source: str, module: ast.AST) -> Iterator[int]:
         if not self._fast_file_query(source):
             return
         if self.docs:
-            searcher = self._normal_search
+            yield from self._normal_search(source)
         else:
-            searcher = self._token_search
-        yield from searcher(source)
+            yield from self._token_search(source, module)
 
-    def _token_search(self, source: str) -> Iterator[int]:
-        """Yield the offsets of every NAME token equal to the searched name.
+    def _token_search(self, source: str, module: ast.AST) -> Iterator[int]:
+        """Select native names, including expressions stored in string tokens.
 
-        Python 3.12+ tokenizes f-string replacement fields as ordinary
-        tokens, so names are found even inside PEP 701 f-strings whose
-        replacement fields reuse the outer quote, where regex matching and
-        ``ast.parse`` of a truncated capture fail.
+        The module AST locates real formatted expressions without interpreting
+        ordinary literal braces. Native NAME tokens preserve attributes and
+        keyword names. Deduplication retains textual order when both the full
+        tokenizer and a formatted expression expose the same occurrence.
         """
-        line_starts = [0]
-        for line in source.splitlines(keepends=True):
-            line_starts.append(line_starts[-1] + len(line))
-        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        offsets = set(self._token_offsets(source))
+        lines = codeanalyze.ASTLinesAdapter(source)
+        for node in ast.walk(module):
+            if isinstance(node, ast.FormattedValue):
+                start, end = lines[node.value]
+                if start is None or end is None:
+                    raise exceptions.RopeError(
+                        "F-string expression AST has no complete source positions"
+                    )
+                # AST positions omit enclosing parentheses and their continuation.
+                expression = "(" + source[start:end] + "\n)"
+                offsets.update(
+                    start + offset - 1 for offset in self._token_offsets(expression)
+                )
+        yield from sorted(offsets)
+
+    def _token_offsets(self, source: str) -> Iterator[int]:
+        line_starts = [
+            match.start()
+            for match in codeanalyze.ASTLinesAdapter.LINE_PATTERN_STR.finditer(source)
+        ]
+        for token in tokenize.generate_tokens(
+            io.StringIO(source, newline=None).readline
+        ):
             if token.type == tokenize.NAME and token.string == self.name:
                 row, column = token.start
                 yield line_starts[row - 1] + column

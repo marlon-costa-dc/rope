@@ -7,7 +7,8 @@
   contracts in a fresh isolated runtime outside the source checkout.
 - Compute scope regions from AST positions without patching the whole module,
   preserving normalized Unicode identifiers, decorators, and LF, CRLF, and CR
-  newlines.
+  newlines. Find f-string occurrences across native tokenizer formats and validate
+  literal-node expectations against the native AST.
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #850 Update and pin black version in pre-commit and Github Actions

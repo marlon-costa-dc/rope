@@ -447,11 +447,11 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_renaming_occurrence_in_nested_f_string(self):
         code = dedent("""\
             a_var = 20
-            a_string=f'{f"{a_var}"}'
+            marker = 'π'; a_string=f'{f"{a_var}"}' " a_var {a_var}"
         """)
         expected = dedent("""\
             new_var = 20
-            a_string=f'{f"{new_var}"}'
+            marker = 'π'; a_string=f'{f"{new_var}"}' " a_var {a_var}"
         """)
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
@@ -469,14 +469,24 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         self.assertEqual(expected, refactored)
 
     def test_renaming_occurrence_in_f_string_format_spec(self):
-        code = dedent("""\
+        code = dedent('''\
             a_var = 4
-            a_string=f"{a_var:>{a_var}}"
-        """)
-        expected = dedent("""\
+            marker = 'π'; a_string=f"""value {(
+                a_var +
+                    a_var +
+                  a_var
+            ):>{a_var}}
+            literal {{a_var}}"""
+        ''')
+        expected = dedent('''\
             new_var = 4
-            a_string=f"{new_var:>{new_var}}"
-        """)
+            marker = 'π'; a_string=f"""value {(
+                new_var +
+                    new_var +
+                  new_var
+            ):>{new_var}}
+            literal {{a_var}}"""
+        ''')
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 
