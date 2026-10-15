@@ -26,18 +26,24 @@ getting the path relative to the project's root (via `path`), reading
 from and writing to the resource, moving the resource, etc.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union
 
 from rope.base import change, exceptions, fscommands
+
+if TYPE_CHECKING:
+    from rope.base.project import _Project
 
 
 class Resource(os.PathLike):
     """Represents files and folders in a project"""
 
-    def __init__(self, project, path):
+    def __init__(self, project: _Project, path: str) -> None:
         self.project = project
         self._path = path
 
@@ -68,17 +74,17 @@ class Resource(os.PathLike):
         """Alias for `is_folder()`"""
         return self.is_folder()
 
-    def is_folder(self):
+    def is_folder(self) -> Optional[bool]:
         """Return True if the resource is a Folder"""
 
     def create(self):
         """Create this resource"""
 
     def exists(self):
-        return os.path.exists(self)
+        return self.project.fscommands.exists(self.real_path)
 
     @property
-    def parent(self):
+    def parent(self) -> Folder:
         parent = "/".join(self.path.split("/")[0:-1])
         return self.project.get_folder(parent)
 
@@ -156,7 +162,7 @@ class File(Resource):
             change.ChangeContents(self, contents), "Writing file <%s>" % self.path
         )
 
-    def is_folder(self):
+    def is_folder(self) -> bool:
         return False
 
     def create(self):
@@ -166,23 +172,17 @@ class File(Resource):
 class Folder(Resource):
     """Represents a folder"""
 
-    def is_folder(self):
+    def is_folder(self) -> bool:
         return True
 
     def get_children(self):
         """Return the children of this folder"""
-        try:
-            children = os.listdir(self)
-        except OSError:
-            return []
+        children = self.project.fscommands.listdir(self.real_path)
         result = []
         for name in children:
-            try:
-                child = self.get_child(name)
-            except exceptions.ResourceNotFoundError:
-                continue
+            child = self.get_child(name)
             if not self.project.is_ignored(child):
-                result.append(self.get_child(name))
+                result.append(child)
         return result
 
     def create_file(self, file_name):
@@ -205,10 +205,10 @@ class Folder(Resource):
         else:
             return name
 
-    def get_child(self, name):
+    def get_child(self, name: str) -> Union[File, Folder]:
         return self.project.get_resource(self._get_child_path(name))
 
-    def has_child(self, name):
+    def has_child(self, name: str) -> bool:
         try:
             self.get_child(name)
             return True

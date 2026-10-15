@@ -4,7 +4,7 @@ import os.path
 
 import rope.base.project
 import rope.base.pycore
-from rope.base import pyobjectsdef, taskhandle, utils
+from rope.base import pyobjectsdef, taskhandle
 
 
 def path_to_resource(project, path, type=None):
@@ -32,12 +32,7 @@ def path_to_resource(project, path, type=None):
 
 
 def path_relative_to_project_root(project, path):
-    return relative(project.address, path)
-
-
-@utils.deprecated()
-def relative(root, path):
-    root = rope.base.project._realpath(root).replace(os.path.sep, "/")
+    root = rope.base.project._realpath(project.address).replace(os.path.sep, "/")
     path = rope.base.project._realpath(path).replace(os.path.sep, "/")
     if path == root:
         return ""

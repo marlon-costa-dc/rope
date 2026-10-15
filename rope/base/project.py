@@ -6,7 +6,7 @@ import os
 import sys
 import warnings
 from contextlib import ExitStack
-from typing import Optional
+from typing import Any, List, Optional, Union
 
 import rope.base.fscommands  # Use full qualification for clarity.
 import rope.base.resourceobserver as resourceobserver
@@ -26,15 +26,17 @@ except ImportError:
 
 class _Project:
     prefs: Prefs
+    _custom_source_folders: List[Union[File, Folder]]
 
-    def __init__(self, fscommands):
+    def __init__(self, fscommands, external_project=None):
         self.observers = []
         self.fscommands = fscommands
+        self.external_project = external_project
         self.prefs = Prefs()
         self.data_files = _DataFiles(self)
         self._custom_source_folders = []
 
-    def get_resource(self, resource_name):
+    def get_resource(self, resource_name: str) -> Union[File, Folder]:
         """Get a resource in a project.
 
         `resource_name` is the path of a resource in a project.  It is
@@ -46,13 +48,13 @@ class _Project:
 
         """
         path = self._get_resource_path(resource_name)
-        if not os.path.exists(path):
+        if not self.fscommands.exists(path):
             raise exceptions.ResourceNotFoundError(
                 "Resource <%s> does not exist" % resource_name
             )
-        elif os.path.isfile(path):
+        elif self.fscommands.isfile(path):
             return File(self, resource_name)
-        elif os.path.isdir(path):
+        elif self.fscommands.isdir(path):
             return Folder(self, resource_name)
         else:
             raise exceptions.ResourceNotFoundError("Unknown resource " + resource_name)
@@ -68,11 +70,14 @@ class _Project:
             raise ModuleNotFoundError("Module %s not found" % name)
         return self.pycore.resource_to_pyobject(module)
 
-    def get_python_path_folders(self):
+    def get_python_path_folders(self) -> List[Union[File, Folder]]:
         result = []
+        external = (
+            get_no_project() if self.external_project is None else self.external_project
+        )
         for src in self.prefs.get("python_path", []) + sys.path:
             with contextlib.suppress(exceptions.ResourceNotFoundError):
-                src_folder = get_no_project().get_resource(src)
+                src_folder = external.get_resource(src)
                 result.append(src_folder)
         return result
 
@@ -81,7 +86,7 @@ class _Project:
     #    packages, that is most of the time
     #  - We need a separate resource observer; `self.observer`
     #    does not get notified about module and folder creations
-    def get_source_folders(self):
+    def get_source_folders(self) -> List[Union[File, Folder]]:
         """Returns project source folders"""
         if self.root is None:
             return []
@@ -125,11 +130,11 @@ class _Project:
     def get_pycore(self):
         return self.pycore
 
-    def get_file(self, path):
+    def get_file(self, path: str) -> File:
         """Get the file with `path` (it may not exist)"""
         return File(self, path)
 
-    def get_folder(self, path):
+    def get_folder(self, path: str) -> Folder:
         """Get the folder with `path` (it may not exist)"""
         return Folder(self, path)
 
@@ -142,7 +147,9 @@ class _Project:
             raise ModuleNotFoundError("Module %s not found" % name)
         return self.pycore.resource_to_pyobject(module)
 
-    def find_module(self, modname, folder=None) -> Optional[File]:
+    def find_module(
+        self, modname: str, folder: Optional[Folder] = None
+    ) -> Optional[Union[File, Folder]]:
         """Returns a resource corresponding to the given module
 
         returns None if it can not be found
@@ -195,8 +202,13 @@ class Project(_Project):
     """A Project containing files and folders"""
 
     def __init__(
-        self, projectroot, fscommands=None, ropefolder=".ropeproject", **prefs
-    ):
+        self,
+        projectroot: Union[str, os.PathLike[str]],
+        fscommands: Any = None,
+        ropefolder: Optional[str] = ".ropeproject",
+        external_project=None,
+        **prefs: Any,
+    ) -> None:
         """A rope project
 
         :parameters:
@@ -206,22 +218,34 @@ class Project(_Project):
             - `ropefolder`: The name of the folder in which rope stores
               project configurations and data.  Pass `None` for not using
               such a folder at all.
+            - `external_project`: Resource owner for Python-path modules.
+              Pass a separate ``NoProject`` with the same filesystem commands
+              to keep external and local reads in one captured filesystem.
             - `prefs`: Specify project preferences.  These values
               overwrite config file preferences.
 
         """
         if projectroot != "/":
-            projectroot = _realpath(projectroot).rstrip("/\\")
+            projectroot = (
+                _realpath(projectroot)
+                if fscommands is None
+                else fscommands.realpath(projectroot)
+            ).rstrip("/\\")
         assert isinstance(projectroot, str)
         self._address = projectroot
         self._ropefolder_name = ropefolder
-        if not os.path.exists(self._address):
-            os.mkdir(self._address)
-        elif not os.path.isdir(self._address):
+        filesystem = (
+            rope.base.fscommands.FileSystemCommands()
+            if fscommands is None
+            else fscommands
+        )
+        if not filesystem.exists(self._address):
+            filesystem.create_folder(self._address)
+        elif not filesystem.isdir(self._address):
             raise exceptions.RopeError("Project root exists and" " is not a directory")
         if fscommands is None:
             fscommands = rope.base.fscommands.create_fscommands(self._address)
-        super().__init__(fscommands)
+        super().__init__(fscommands, external_project=external_project)
         self.ignored = _ResourceMatcher()
         self.file_list = _FileListCacher(self)
         self._init_prefs(prefs)
@@ -236,8 +260,7 @@ class Project(_Project):
             self.address,
         )
 
-    @utils.deprecated("Delete once deprecated functions are gone")
-    def _init_source_folders(self):
+    def _init_source_folders(self) -> None:
         for path in self.prefs.get("source_folders", []):
             folder = self.get_resource(path)
             self._custom_source_folders.append(folder)
@@ -254,7 +277,7 @@ class Project(_Project):
         ]
 
     def _get_resource_path(self, name):
-        return os.path.join(self._address, *name.split("/"))
+        return os.path.normpath(os.path.join(self._address, *name.split("/")))
 
     def _init_ropefolder(self):
         if self.ropefolder is not None and not self.ropefolder.exists():
@@ -316,16 +339,17 @@ class NoProject(_Project):
     This class is singleton use `get_no_project` global function
     """
 
-    def __init__(self):
-        fscommands = rope.base.fscommands.FileSystemCommands()
+    def __init__(self, fscommands=None):
+        if fscommands is None:
+            fscommands = rope.base.fscommands.FileSystemCommands()
         super().__init__(fscommands)
 
     def _get_resource_path(self, name):
         real_name = name.replace("/", os.path.sep)
-        return _realpath(real_name)
+        return self.fscommands.realpath(real_name)
 
     def get_resource(self, name):
-        universal_name = _realpath(name).replace(os.path.sep, "/")
+        universal_name = self.fscommands.realpath(name).replace(os.path.sep, "/")
         return super().get_resource(universal_name)
 
     def get_files(self):

@@ -439,14 +439,17 @@ class _PatchingASTWalker:
         node.region = (node.region[0], string_end)
 
     def _FormattedValue(self, node):
-        # Since Python 3.12 the parser locates each replacement field at its
-        # own "{".  Starting there keeps a "{" inside a plain string of the
-        # same implicit concatenation -- ``"({})," f"{a}"`` -- from being
-        # taken as the field's opening brace.  Older parsers give the
-        # enclosing literal's position, which does not point at a "{".
-        field_start, _ = self.ast_adapter[node]
-        if field_start >= self.source.offset and self.source[field_start] == "{":
-            self.source.offset = field_start
+        # Expression positions distinguish real fields from braces in plain
+        # concatenated strings even when field coordinates cover the whole literal.
+        value_start, _ = self.ast_adapter[node.value]
+        if value_start is None:
+            raise MismatchedTokenError("F-string expression AST has no source position")
+        field_start = self.source.rfind_token("{", self.source.offset, value_start)
+        if field_start is None:
+            raise MismatchedTokenError(
+                "F-string expression has no matching opening brace"
+            )
+        self.source.offset = field_start
         children = []
         children.append("{")
         children.append(node.value)
@@ -1066,9 +1069,12 @@ class _Source:
         return self._ranges
 
     def _tokenize_ranges(self):
-        line_starts = [0]
-        for line in self.source.splitlines(keepends=True):
-            line_starts.append(line_starts[-1] + len(line))
+        line_starts = [
+            match.start()
+            for match in codeanalyze.ASTLinesAdapter.LINE_PATTERN_STR.finditer(
+                self.source
+            )
+        ]
 
         def offset_of(position):
             row, column = position
@@ -1088,7 +1094,9 @@ class _Source:
                 wanted.add(getattr(tokenize, name))
         ranges = []
         try:
-            tokens = tokenize.generate_tokens(io.StringIO(self.source).readline)
+            tokens = tokenize.generate_tokens(
+                io.StringIO(self.source, newline=None).readline
+            )
             for token in tokens:
                 if token.type in wanted:
                     ranges.append(

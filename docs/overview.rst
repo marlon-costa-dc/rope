@@ -1407,15 +1407,18 @@ Nested expressions also allowed:
 
 - collections.Iterable[list[Foo]]
 
+Union alternatives:
+
+- Foo | Bar
+
+Attribute completion includes the attributes exposed by each resolved
+alternative.
+
 TODO:
 
 Callable objects:
 
 - (Foo, Bar) -> Baz
-
-Multiple interfaces implementation:
-
-- Foo | Bar
 
 
 Custom Source Folders

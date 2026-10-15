@@ -80,14 +80,6 @@ def only_for(version):
     )
 
 
-def only_for_versions_lower(version):
-    """Should be used as a decorator for a unittest.TestCase test method"""
-    return unittest.skipIf(
-        sys.version_info > parse_version(version),
-        f"This test requires version of Python lower than {version}",
-    )
-
-
 def only_for_versions_higher(version):
     """Should be used as a decorator for a unittest.TestCase test method"""
     return unittest.skipIf(
