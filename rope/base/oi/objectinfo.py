@@ -103,12 +103,18 @@ class ObjectInfoManager:
         path, key = self._get_scope(pyobject)
         if path is None:
             return None
-        arg_count = len(pyobject.get_param_names(special_args=False))
+        ordinary_names = pyobject.get_param_names(special_args=False)
+        all_names = pyobject.get_param_names()
+        ordinary_indexes = [all_names.index(name) for name in ordinary_names]
+        arg_count = len(ordinary_indexes)
         unknowns = arg_count
         parameters = [None] * arg_count
         for call_info in self.objectdb.get_callinfos(path, key):
             args = call_info.get_parameters()
-            for index, arg in enumerate(args[:arg_count]):
+            for index, argument_index in enumerate(ordinary_indexes):
+                if argument_index >= len(args):
+                    continue
+                arg = args[argument_index]
                 old = parameters[index]
                 if self.validation.is_more_valid(arg, old):
                     parameters[index] = arg

@@ -216,6 +216,20 @@ class PyCoreTest(unittest.TestCase):
             set(function.get_parameters()),
         )
 
+    def test_keyword_only_method_without_positional_receiver(self):
+        mod = libutils.get_string_module(
+            self.project,
+            "class Sample:\n"
+            "    def method(*, named: str):\n"
+            "        return named\n",
+        )
+        method = mod["Sample"].get_object()["method"].get_object()
+        self.assertEqual(["named"], method.get_param_names())
+        self.assertNotEqual(
+            mod["Sample"].get_object(),
+            method.get_parameters()["named"].get_object().get_type(),
+        )
+
     # FIXME: Not found modules
     def xxx_test_not_found_module_is_module(self):
         code = "import doesnotexist\n"
