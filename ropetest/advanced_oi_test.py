@@ -507,6 +507,21 @@ class NewStaticOITest(unittest.TestCase):
         p_type = f_scope["p"].get_object().get_type()
         self.assertEqual(c_class, p_type)
 
+    def test_keyword_only_call_information_skips_varargs_slot(self):
+        code = dedent("""\
+            class C:
+                pass
+            def func(first, /, *items, named=None):
+                return named
+            func(1, 2, named=C())
+        """)
+        self.mod.write(code)
+        self.pycore.analyze_module(self.mod)
+        pymod = self.project.get_pymodule(self.mod)
+        c_class = pymod["C"].get_object()
+        scope = pymod["func"].get_object().get_scope()
+        self.assertEqual(c_class, scope["named"].get_object().get_type())
+
     def test_static_oi_not_failing_when_callin_callables(self):
         code = dedent("""\
             class C(object):

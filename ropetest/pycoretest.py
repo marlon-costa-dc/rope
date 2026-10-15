@@ -184,6 +184,52 @@ class PyCoreTest(unittest.TestCase):
             sample_function.get_object().get_param_names(),
         )
 
+    def test_parameter_info_for_positional_and_keyword_only_functions(self):
+        code = dedent("""\
+            def func(first, /, second=None, *items, named=None, **options):
+                return first, second, items, named, options
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        function = mod["func"].get_object()
+        self.assertEqual(
+            ["first", "second", "items", "named", "options"],
+            function.get_param_names(),
+        )
+        self.assertEqual(
+            ["first", "second", "named"],
+            function.get_param_names(special_args=False),
+        )
+        self.assertEqual(
+            {"first", "second", "items", "named", "options"},
+            set(function.get_parameters()),
+        )
+
+    def test_parameter_info_for_keyword_only_without_varargs(self):
+        mod = libutils.get_string_module(
+            self.project,
+            "def func(first, /, *, named):\n    return first, named\n",
+        )
+        function = mod["func"].get_object()
+        self.assertEqual(["first", "named"], function.get_param_names())
+        self.assertEqual(
+            {"first", "named"},
+            set(function.get_parameters()),
+        )
+
+    def test_keyword_only_method_without_positional_receiver(self):
+        mod = libutils.get_string_module(
+            self.project,
+            "class Sample:\n"
+            "    def method(*, named: str):\n"
+            "        return named\n",
+        )
+        method = mod["Sample"].get_object()["method"].get_object()
+        self.assertEqual(["named"], method.get_param_names())
+        self.assertNotEqual(
+            mod["Sample"].get_object(),
+            method.get_parameters()["named"].get_object().get_type(),
+        )
+
     # FIXME: Not found modules
     def xxx_test_not_found_module_is_module(self):
         code = "import doesnotexist\n"

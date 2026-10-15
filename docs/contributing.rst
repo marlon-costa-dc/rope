@@ -143,14 +143,16 @@ All required packages for development could be installed with::
 
     pip install -e ".[dev]"
 
-The fork's root Makefile provides the same development operations using an
-exclusive ``.venv``. Run ``make setup``, ``make check``, ``make test``, and
-``make build`` from the repository root. ``make check`` runs the configured
-pre-commit hooks; if a hook reformats files, inspect the changes and rerun it.
-``make fmt`` runs the configured Black and isort hooks. ``make build`` verifies
-that both release archives contain the public ``py.typed`` marker. The
-``BOOTSTRAP_PYTHON`` environment variable can select an installed interpreter
-when ``python3.13`` is unavailable on the command path.
+The fork's root Makefile requires ``uv`` on the command path and keeps each
+checkout's environment in ``../.rope-venvs/<checkout-name>``. Run ``make setup``,
+``make check``, ``make test``, and ``make build`` from the repository root.
+``make check`` runs the configured pre-commit hooks; if a hook reformats files,
+inspect the changes and rerun it. ``make fmt`` runs the configured Black and
+isort hooks. ``make build`` verifies that both release archives contain the
+public ``py.typed`` marker and tests the installed wheel in a separate
+environment. Remove the corresponding ``.rope-venvs`` directory when retiring
+its checkout. ``BOOTSTRAP_PYTHON`` selects the interpreter version or path for
+``uv venv``; it defaults to Python 3.13.
 
 .. _GitHub: http://github.com/
 .. _`python-rope/rope`: https://github.com/python-rope/rope
