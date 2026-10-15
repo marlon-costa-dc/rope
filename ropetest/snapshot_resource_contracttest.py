@@ -56,8 +56,13 @@ def test_local_and_external_snapshot_resources_ignore_changed_disk(tmp_path):
     package = external / "provider"
     local.mkdir(parents=True)
     package.mkdir(parents=True)
+    alias = "u\u0301"
     (local / "consumer.py").write_text(
-        "from provider import Original\nborrowed = Original\n",
+        f"from provider import Original as {alias}\n"
+        f"borrowed = {alias}\n"
+        "def collect(values):\n"
+        f"    marker = 'π'; result = [({alias}, item) for item in values]\n"
+        "    return result\n",
         encoding="utf-8",
     )
     (package / "__init__.py").write_text(
@@ -89,6 +94,12 @@ def test_local_and_external_snapshot_resources_ignore_changed_disk(tmp_path):
         module = project.get_module("consumer")
         name = module.get_attribute("borrowed")
         assert name.get_object().get_name() == "Original"
+        scope = module.get_scope()
+        comprehension = scope.get_scopes()[0].get_scopes()[0]
+        offset = module.source_code.rindex(alias)
+        assert scope.get_inner_scope_for_offset(offset) is comprehension
+        assert comprehension.lookup("ú") is scope.lookup("ú")
+        assert comprehension.lookup("ú").get_object() is name.get_object()
         holder = name.get_object().get_module()
         assert holder.get_resource().project is outside
         assert project.find_module("late") is None

@@ -1066,9 +1066,12 @@ class _Source:
         return self._ranges
 
     def _tokenize_ranges(self):
-        line_starts = [0]
-        for line in self.source.splitlines(keepends=True):
-            line_starts.append(line_starts[-1] + len(line))
+        line_starts = [
+            match.start()
+            for match in codeanalyze.ASTLinesAdapter.LINE_PATTERN_STR.finditer(
+                self.source
+            )
+        ]
 
         def offset_of(position):
             row, column = position
@@ -1088,7 +1091,9 @@ class _Source:
                 wanted.add(getattr(tokenize, name))
         ranges = []
         try:
-            tokens = tokenize.generate_tokens(io.StringIO(self.source).readline)
+            tokens = tokenize.generate_tokens(
+                io.StringIO(self.source, newline=None).readline
+            )
             for token in tokens:
                 if token.type in wanted:
                     ranges.append(
