@@ -1,12 +1,12 @@
-VENV ?= .venv
+VENV := $(abspath $(CURDIR)/../.rope-venvs/$(notdir $(CURDIR)))
 PYTHON := $(VENV)/bin/python
-BOOTSTRAP_PYTHON ?= python3.13
+UV ?= uv
 
 .PHONY: setup test test-file check fmt build
 
 setup:
-	$(BOOTSTRAP_PYTHON) -m venv "$(VENV)"
-	$(PYTHON) -m pip install -e '.[dev]'
+	$(UV) venv --python 3.13 "$(VENV)"
+	$(UV) pip install --python "$(PYTHON)" -e '.[dev]'
 
 test:
 	$(PYTHON) -m pytest --cov -v -ra
