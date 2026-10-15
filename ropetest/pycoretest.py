@@ -204,6 +204,18 @@ class PyCoreTest(unittest.TestCase):
             set(function.get_parameters()),
         )
 
+    def test_parameter_info_for_keyword_only_without_varargs(self):
+        mod = libutils.get_string_module(
+            self.project,
+            "def func(first, /, *, named):\n    return first, named\n",
+        )
+        function = mod["func"].get_object()
+        self.assertEqual(["first", "named"], function.get_param_names())
+        self.assertEqual(
+            {"first", "named"},
+            set(function.get_parameters()),
+        )
+
     # FIXME: Not found modules
     def xxx_test_not_found_module_is_module(self):
         code = "import doesnotexist\n"
