@@ -6,7 +6,7 @@ import os
 import sys
 import warnings
 from contextlib import ExitStack
-from typing import Any, List, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 import rope.base.fscommands  # Use full qualification for clarity.
 import rope.base.resourceobserver as resourceobserver
@@ -16,7 +16,11 @@ from rope.base.exceptions import ModuleNotFoundError
 # At present rope.base.prefs starts with `# type:ignore`.
 # As a result, mypy knows nothing about Prefs and get_config.
 from rope.base.prefs import Prefs, get_config  # type: ignore
-from rope.base.resources import File, Folder, _ResourceMatcher
+from rope.base.resources import File, Folder, Resource, _ResourceMatcher
+
+if TYPE_CHECKING:
+    from rope.base.pyobjects import AbstractModule
+    from rope.base.pyobjectsdef import PyModule, PyPackage
 
 try:
     import cPickle as pickle  # type: ignore
@@ -59,7 +63,7 @@ class _Project:
         else:
             raise exceptions.ResourceNotFoundError("Unknown resource " + resource_name)
 
-    def get_module(self, name, folder=None):
+    def get_module(self, name: str, folder: Optional[Folder] = None) -> AbstractModule:
         """Returns a `PyObject` if the module was found."""
         # check if this is a builtin module
         pymod = self.pycore.builtin_module(name)
@@ -124,10 +128,12 @@ class _Project:
         """
         self.history.do(changes, task_handle=task_handle)
 
-    def get_pymodule(self, resource, force_errors=False):
+    def get_pymodule(
+        self, resource: Resource, force_errors: bool = False
+    ) -> Union[PyModule, PyPackage]:
         return self.pycore.resource_to_pyobject(resource, force_errors)
 
-    def get_pycore(self):
+    def get_pycore(self) -> pycore.PyCore:
         return self.pycore
 
     def get_file(self, path: str) -> File:
