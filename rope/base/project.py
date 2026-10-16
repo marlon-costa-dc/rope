@@ -133,7 +133,7 @@ class _Project:
     ) -> Union[PyModule, PyPackage]:
         return self.pycore.resource_to_pyobject(resource, force_errors)
 
-    def get_pycore(self):
+    def get_pycore(self) -> pycore.PyCore:
         return self.pycore
 
     def get_file(self, path: str) -> File:
