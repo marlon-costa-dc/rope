@@ -739,6 +739,8 @@ shares that tree internally.
 Custom wildcard argument payloads pass unchanged to their matching
 implementations; the constructor does not coerce them into the default
 wildcard's argument format.
+The supplied argument mapping stays mutable and shared with its caller.
+Package initializers are restructured as source files.
 
 See code documentation and test suites for more information.
 

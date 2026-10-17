@@ -3,6 +3,7 @@
 import os
 import shutil
 import sys
+from collections import UserDict
 from collections.abc import Mapping
 
 import pytest
@@ -94,6 +95,50 @@ def test_restructure_preserves_custom_wildcard_payloads(tmp_path):
         assert resource.read() == source.replace(
             "first()\nsecond()\nthird()\n", "renamed()\nrenamed()\nthird()\n"
         )
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("mapping_factory", [dict, UserDict])
+def test_restructure_updates_the_callers_mutable_arguments(tmp_path, mapping_factory):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        resource = project.root.create_file("consumer.py")
+        resource.write("def selected():\n    pass\nselected()\n")
+        arguments = mapping_factory()
+        refactoring = restructure.Restructure(
+            project, "${call}()", "changed()", args=arguments
+        )
+        selected = project.get_module("consumer")["selected"].get_object()
+        with pytest.warns(DeprecationWarning, match="use the args parameter"):
+            changes = refactoring.get_changes(
+                checks={"call": selected}, resources=[resource]
+            )
+        project.do(changes)
+        assert arguments["call"] == "consumer.selected"
+        assert resource.read() == "def selected():\n    pass\nchanged()\n"
+    finally:
+        project.close()
+
+
+def test_restructure_transforms_a_package_initializer_as_a_source_file(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        initializer = project.root.create_folder("package").create_file("__init__.py")
+        initializer.write("value = 1 + 1\n")
+        refactoring = restructure.Restructure(project, "1 + 1", "2")
+        project.do(refactoring.get_changes(resources=[initializer]))
+        assert initializer.read() == "value = 2\n"
     finally:
         project.close()
 

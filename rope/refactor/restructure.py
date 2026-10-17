@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from typing import TYPE_CHECKING
 
 from rope.base import ast, builtins, change, codeanalyze, libutils, taskhandle
@@ -10,7 +10,7 @@ from rope.refactor.importutils import module_imports
 
 if TYPE_CHECKING:
     from rope.base.project import Project
-    from rope.base.pyobjectsdef import PyModule, PyPackage
+    from rope.base.pyobjectsdef import PyModule
     from rope.base.resources import Resource
 
 
@@ -22,7 +22,8 @@ class Restructure:
     some piece of code based on their kind and arguments that are
     passed to them through `args`.
 
-    `args` is a dictionary of wildcard names to wildcard arguments.
+    `args` is a mutable mapping of wildcard names to wildcard arguments.
+    It remains shared with the caller; deprecated `checks` update it in place.
     If the argument is a tuple, the first item of the tuple is
     considered to be the name of the wildcard to use; otherwise the
     "default" wildcard is used.  For getting the list arguments a
@@ -86,7 +87,7 @@ class Restructure:
         project: Project,
         pattern: str,
         goal: str,
-        args: Mapping[str, object] | None = None,
+        args: MutableMapping[str, object] | None = None,
         imports: Sequence[str] | None = None,
         wildcards: Mapping[str, object] | None = None,
     ) -> None:
@@ -179,7 +180,7 @@ class Restructure:
     def _compute_changes(
         self,
         matches: Sequence[similarfinder.ExpressionMatch | similarfinder.StatementMatch],
-        pymodule: PyModule | PyPackage,
+        pymodule: PyModule,
     ) -> ChangeComputer:
         return ChangeComputer(
             pymodule.source_code,
