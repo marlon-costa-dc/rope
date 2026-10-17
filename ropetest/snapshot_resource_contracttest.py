@@ -3,13 +3,144 @@
 import os
 import shutil
 import sys
+from collections import UserDict
 from collections.abc import Mapping
 
 import pytest
 
-from rope.base import exceptions, libutils, pyobjects
+from rope.base import codeanalyze, exceptions, libutils, pyobjects
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+from rope.refactor import patchedast, restructure, similarfinder, wildcards
+
+
+@pytest.mark.parametrize(
+    "source, pattern, goal, expected",
+    [
+        ("value = 1 + 1\n", "1 + 1", "2", "value = 2\n"),
+        ("value = 1\n", "value = 1", "value = 2", "value = 2\n"),
+        ("value = 1\n", "other = 1", "other = 2", None),
+    ],
+)
+def test_public_change_computer_preserves_native_source_changes(
+    source, pattern, goal, expected
+):
+    tree = patchedast.get_patched_ast(source)
+    finder = similarfinder.RawSimilarFinder(source, tree)
+    computer = restructure.ChangeComputer(
+        source,
+        tree,
+        codeanalyze.SourceLinesAdapter(source),
+        similarfinder.CodeTemplate(goal),
+        list(finder.get_matches(pattern)),
+    )
+    assert computer.get_changed() == expected
+    assert restructure.replace(source, pattern, goal) == (
+        source if expected is None else expected
+    )
+
+
+def test_public_change_computer_preserves_native_missing_name_error():
+    source = "value = 1\n"
+    tree = patchedast.get_patched_ast(source)
+    finder = similarfinder.RawSimilarFinder(source, tree)
+    computer = restructure.ChangeComputer(
+        source,
+        tree,
+        codeanalyze.SourceLinesAdapter(source),
+        similarfinder.CodeTemplate("value = ${missing}"),
+        list(finder.get_matches("value = ${number}")),
+    )
+    with pytest.raises(similarfinder.BadNameInCheckError, match="Unknown name <missing>"):
+        computer.get_changed()
+    with pytest.raises(similarfinder.BadNameInCheckError, match="Unknown name <missing>"):
+        restructure.replace(source, "value = ${number}", "value = ${missing}")
+
+
+def test_restructure_preserves_custom_wildcard_payloads(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        default = wildcards.DefaultWildcard(project)
+
+        class Alternatives:
+            def matches(self, suspect, arguments):
+                return any(default.matches(suspect, argument) for argument in arguments)
+
+        source = (
+            "def first():\n    pass\n"
+            "def second():\n    pass\n"
+            "def third():\n    pass\n"
+            "first()\nsecond()\nthird()\n"
+        )
+        resource = project.root.create_file("consumer.py")
+        resource.write(source)
+        refactoring = restructure.Restructure(
+            project,
+            "${call}()",
+            "renamed()",
+            args={
+                "call": (
+                    "alternatives",
+                    ("name=consumer.first", "name=consumer.second"),
+                )
+            },
+            wildcards={"default": default, "alternatives": Alternatives()},
+        )
+        project.do(refactoring.get_changes(resources=[resource]))
+        assert resource.read() == source.replace(
+            "first()\nsecond()\nthird()\n", "renamed()\nrenamed()\nthird()\n"
+        )
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("mapping_factory", [dict, UserDict])
+def test_restructure_updates_the_callers_mutable_arguments(tmp_path, mapping_factory):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        resource = project.root.create_file("consumer.py")
+        resource.write("def selected():\n    pass\nselected()\n")
+        arguments = mapping_factory()
+        refactoring = restructure.Restructure(
+            project, "${call}()", "changed()", args=arguments
+        )
+        selected = project.get_module("consumer")["selected"].get_object()
+        with pytest.warns(DeprecationWarning, match="use the args parameter"):
+            changes = refactoring.get_changes(
+                checks={"call": selected}, resources=[resource]
+            )
+        project.do(changes)
+        assert arguments["call"] == "consumer.selected"
+        assert resource.read() == "def selected():\n    pass\nchanged()\n"
+    finally:
+        project.close()
+
+
+def test_restructure_transforms_a_package_initializer_as_a_source_file(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        initializer = project.root.create_folder("package").create_file("__init__.py")
+        initializer.write("value = 1 + 1\n")
+        refactoring = restructure.Restructure(project, "1 + 1", "2")
+        project.do(refactoring.get_changes(resources=[initializer]))
+        assert initializer.read() == "value = 2\n"
+    finally:
+        project.close()
 
 
 def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_path):

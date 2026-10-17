@@ -1,8 +1,17 @@
+from __future__ import annotations
+
 import warnings
+from collections.abc import Mapping, MutableMapping, Sequence
+from typing import TYPE_CHECKING
 
 from rope.base import ast, builtins, change, codeanalyze, libutils, taskhandle
 from rope.refactor import patchedast, similarfinder, sourceutils
 from rope.refactor.importutils import module_imports
+
+if TYPE_CHECKING:
+    from rope.base.project import Project
+    from rope.base.pyobjectsdef import PyModule
+    from rope.base.resources import Resource
 
 
 class Restructure:
@@ -13,7 +22,8 @@ class Restructure:
     some piece of code based on their kind and arguments that are
     passed to them through `args`.
 
-    `args` is a dictionary of wildcard names to wildcard arguments.
+    `args` is a mutable mapping of wildcard names to wildcard arguments.
+    It remains shared with the caller; deprecated `checks` update it in place.
     If the argument is a tuple, the first item of the tuple is
     considered to be the name of the wildcard to use; otherwise the
     "default" wildcard is used.  For getting the list arguments a
@@ -21,11 +31,12 @@ class Restructure:
     `rope.refactor.wildcard.DefaultWildcard` for the default
     wildcard.)
 
-    `wildcards` is the list of wildcard types that can appear in
-    `pattern`.  See `rope.refactor.wildcards`.  If a wildcard does not
+    `wildcards` maps wildcard names to their matching implementations.
+    See `rope.refactor.wildcards`.  If a wildcard does not
     specify its kind (by using a tuple in args), the wildcard named
     "default" is used.  So there should be a wildcard with "default"
-    name in `wildcards`.
+    name in `wildcards`.  Arguments for custom wildcards are forwarded
+    unchanged to their matching implementation.
 
     `imports` is the list of imports that changed modules should
     import.  Note that rope handles duplicate imports and does not add
@@ -71,7 +82,15 @@ class Restructure:
 
     """
 
-    def __init__(self, project, pattern, goal, args=None, imports=None, wildcards=None):
+    def __init__(
+        self,
+        project: Project,
+        pattern: str,
+        goal: str,
+        args: MutableMapping[str, object] | None = None,
+        imports: Sequence[str] | None = None,
+        wildcards: Mapping[str, object] | None = None,
+    ) -> None:
         """Construct a restructuring
 
         See class pydoc for more info about the arguments.
@@ -158,8 +177,12 @@ class Restructure:
             job_set.finished_job()
         return changes
 
-    def _compute_changes(self, matches, pymodule):
-        return _ChangeComputer(
+    def _compute_changes(
+        self,
+        matches: Sequence[similarfinder.ExpressionMatch | similarfinder.StatementMatch],
+        pymodule: PyModule,
+    ) -> ChangeComputer:
+        return ChangeComputer(
             pymodule.source_code,
             pymodule.get_ast(),
             pymodule.lines,
@@ -167,15 +190,17 @@ class Restructure:
             matches,
         )
 
-    def _add_imports(self, resource, source, imports):
+    def _add_imports(
+        self, resource: Resource, source: str, imports: Sequence[str]
+    ) -> str:
         if not imports:
             return source
         import_infos = self._get_import_infos(resource, imports)
         pymodule = libutils.get_string_module(self.project, source, resource)
-        imports = module_imports.ModuleImports(self.project, pymodule)
+        module = module_imports.ModuleImports(self.project, pymodule)
         for import_info in import_infos:
-            imports.add_import(import_info)
-        return imports.get_changed_source()
+            module.add_import(import_info)
+        return module.get_changed_source()
 
     def _get_import_infos(self, resource, imports):
         pymodule = libutils.get_string_module(
@@ -220,19 +245,21 @@ class Restructure:
 
 def replace(code, pattern, goal):
     """used by other refactorings"""
-    finder = similarfinder.RawSimilarFinder(code)
-    matches = list(finder.get_matches(pattern))
     ast = patchedast.get_patched_ast(code)
+    finder = similarfinder.RawSimilarFinder(code, ast)
+    matches = list(finder.get_matches(pattern))
     lines = codeanalyze.SourceLinesAdapter(code)
     template = similarfinder.CodeTemplate(goal)
-    computer = _ChangeComputer(code, ast, lines, template, matches)
+    computer = ChangeComputer(code, ast, lines, template, matches)
     result = computer.get_changed()
     if result is None:
         return code
     return result
 
 
-class _ChangeComputer:
+class ChangeComputer:
+    """Compute source changes from the native matches of one code template."""
+
     def __init__(self, code, ast, lines, goal, matches):
         self.source = code
         self.goal = goal
@@ -245,7 +272,7 @@ class _ChangeComputer:
             for match in self.matches:
                 self.matched_asts[match.ast] = match
 
-    def get_changed(self):
+    def get_changed(self) -> str | None:
         if self._is_expression():
             result = self._get_node_text(self.ast)
             if result == self.source:

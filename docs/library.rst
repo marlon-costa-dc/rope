@@ -727,6 +727,21 @@ operator (see ref:`overview:Restructurings`):
   >>> project.close()
 
 
+``Restructure`` uses the public ``rope.refactor.restructure.ChangeComputer``
+to render the native matches returned by ``SimilarFinder`` or
+``RawSimilarFinder``.  The computer receives the original source, patched
+AST, line adapter, code template and matches.  ``get_changed()`` returns
+the changed source, or ``None`` when no change is needed, and retains the
+native errors for invalid template names.
+The matches and computer must share the same patched AST; ``replace()``
+shares that tree internally.
+
+Custom wildcard argument payloads pass unchanged to their matching
+implementations; the constructor does not coerce them into the default
+wildcard's argument format.
+The supplied argument mapping stays mutable and shared with its caller.
+Package initializers are restructured as source files.
+
 See code documentation and test suites for more information.
 
 
