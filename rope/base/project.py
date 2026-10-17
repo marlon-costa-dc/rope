@@ -147,7 +147,9 @@ class _Project:
     def get_prefs(self):
         return self.prefs
 
-    def get_relative_module(self, name, folder, level):
+    def get_relative_module(
+        self, name: str, folder: Folder, level: int
+    ) -> Union[PyModule, PyPackage]:
         module = self.find_relative_module(name, folder, level)
         if module is None:
             raise ModuleNotFoundError("Module %s not found" % name)

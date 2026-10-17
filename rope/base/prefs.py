@@ -158,7 +158,10 @@ Builtin and c-extension modules that are allowed to be imported and inspected by
 
     import_dynload_stdmods: bool = field(
         default=True,
-        description="Add all standard c-extensions to ``extension_modules`` list.",
+        description=(
+            "Allow standard C extensions and loaded frozen standard-library "
+            "modules without source resources to be imported and inspected."
+        ),
     )
     ignore_syntax_errors: bool = field(
         default=False,

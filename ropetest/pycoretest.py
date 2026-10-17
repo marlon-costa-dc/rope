@@ -1,3 +1,4 @@
+import collections.abc
 import sys
 import unittest
 from textwrap import dedent
@@ -41,6 +42,28 @@ class PyCoreTest(unittest.TestCase):
         mod = testutils.create_module(self.project, "mod", pkg)  # noqa
         result = self.project.get_module("pkg")
         self.assertEqual(get_base_type("Module"), result.type)
+
+    def test_stdlib_mapping_alias_resolves_without_declared_extension(self):
+        testutils.remove_project(self.project)
+        self.project = testutils.sample_project(
+            extension_modules=["builtins"], import_dynload_stdmods=True
+        )
+        self.pycore = self.project.pycore
+        declared = tuple(self.project.prefs.get("extension_modules"))
+        module = self.project.get_module("collections.abc")
+        mapping = module.get_attribute("Mapping").get_object()
+        consumer = testutils.create_module(self.project, "consumer")
+        consumer.write(
+            "from collections.abc import Mapping\n"
+            "class Consumer(Mapping):\n"
+            "    pass\n"
+        )
+        owner = self.project.get_pymodule(consumer)["Consumer"].get_object()
+        self.assertIn(mapping, owner.get_superclasses())
+        self.assertEqual(collections.abc.Mapping.__name__, mapping.get_name())
+        self.assertEqual(declared, tuple(self.project.prefs.get("extension_modules")))
+        self.assertIs(module, self.project.get_module("collections.abc"))
+        self.assertIsNone(self.pycore.builtin_module("rope.base.pycore"))
 
     def test_simple_class(self):
         mod = testutils.create_module(self.project, "mod")

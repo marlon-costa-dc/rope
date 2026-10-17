@@ -2,11 +2,38 @@
 
 import os
 import shutil
+from collections.abc import Mapping
 
 import pytest
 
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+
+
+def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_path):
+    (tmp_path / "consumer.py").write_text(
+        "from collections.abc import Mapping\nclass Consumer(Mapping):\n    pass\n",
+        encoding="utf-8",
+    )
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        declared = tuple(project.prefs.get("extension_modules"))
+        mapping = project.get_module("collections.abc")["Mapping"].get_object()
+        owner = project.get_module("consumer")["Consumer"].get_object()
+        assert mapping in owner.get_superclasses()
+        assert mapping.get_name() == Mapping.__name__
+        assert tuple(project.prefs.get("extension_modules")) == declared
+        assert project.pycore.builtin_module("rope.base.pycore") is None
+    finally:
+        project.close()
 
 
 class CapturedFileSystem(FileSystemCommands):

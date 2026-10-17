@@ -37,6 +37,12 @@ It's good to know that:
   has been passed to them.
 * Out of project modules that are imported from a module inside a
   project are handled but never changed by refactorings.
+* With ``import_dynload_stdmods`` enabled, loaded frozen standard-library
+  modules without a source resource are resolved through the native
+  builtin-module cache. This includes aliases such as ``collections.abc``
+  when the interpreter supplies no source file. Their admission does not
+  change the project's ``extension_modules`` preference; modules with
+  source resources keep their source-based resolution.
 * Rope makes a rope folder inside projects.  By default the name of this
   folder is ``.ropeproject``, but that can be changed using the
   constructor's ``ropefolder`` parameter. Passing ``None`` prevents rope
