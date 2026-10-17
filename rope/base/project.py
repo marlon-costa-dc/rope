@@ -67,12 +67,16 @@ class _Project:
         """Returns a `PyObject` if the module was found."""
         # check if this is a builtin module
         pymod = self.pycore.builtin_module(name)
-        if pymod is not None:
+        if pymod is not None and (
+            name == "__builtin__" or name in self.pycore.extension_modules
+        ):
             return pymod
         module = self.find_module(name, folder)
-        if module is None:
-            raise ModuleNotFoundError("Module %s not found" % name)
-        return self.pycore.resource_to_pyobject(module)
+        if module is not None:
+            return self.pycore.resource_to_pyobject(module)
+        if pymod is not None:
+            return pymod
+        raise ModuleNotFoundError("Module %s not found" % name)
 
     def get_python_path_folders(self) -> List[Union[File, Folder]]:
         result = []

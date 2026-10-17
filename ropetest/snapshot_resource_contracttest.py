@@ -36,6 +36,61 @@ def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_
         project.close()
 
 
+def test_source_module_created_after_stdlib_lookup_takes_precedence(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        project.get_module("collections.abc")["Mapping"].get_object()
+        package = project.root.create_folder("collections")
+        package.create_file("__init__.py")
+        source = package.create_file("abc.py")
+        source.write("class OwnedSource:\n    pass\n")
+        resolved = project.get_module("collections.abc")
+        assert resolved.get_resource() == source
+        assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+    finally:
+        project.close()
+
+
+def test_explicit_folder_source_precedes_loaded_stdlib_alias(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    external = tmp_path / "external"
+    package = external / "collections"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    source = package / "abc.py"
+    source.write_text("class OwnedSource:\n    pass\n", encoding="utf-8")
+    captured = CapturedFileSystem((str(root), str(external)))
+    outside = NoProject(fscommands=captured)
+    project = Project(
+        str(root),
+        fscommands=captured,
+        external_project=outside,
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        folder = outside.get_resource(str(external))
+        assert project.find_module("collections.abc", folder).real_path == str(source)
+        resolved = project.get_module("collections.abc", folder)
+        assert resolved.get_resource().real_path == str(source)
+        assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+    finally:
+        project.close()
+
+
 class CapturedFileSystem(FileSystemCommands):
     """A read-only filesystem captured from real test inputs."""
 
