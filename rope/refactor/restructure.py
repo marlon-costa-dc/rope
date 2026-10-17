@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-from ast import AST
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -197,10 +196,10 @@ class Restructure:
             return source
         import_infos = self._get_import_infos(resource, imports)
         pymodule = libutils.get_string_module(self.project, source, resource)
-        imports = module_imports.ModuleImports(self.project, pymodule)
+        module = module_imports.ModuleImports(self.project, pymodule)
         for import_info in import_infos:
-            imports.add_import(import_info)
-        return imports.get_changed_source()
+            module.add_import(import_info)
+        return module.get_changed_source()
 
     def _get_import_infos(self, resource, imports):
         pymodule = libutils.get_string_module(
@@ -260,14 +259,7 @@ def replace(code, pattern, goal):
 class ChangeComputer:
     """Compute source changes from the native matches of one code template."""
 
-    def __init__(
-        self,
-        code: str,
-        ast: AST,
-        lines: codeanalyze.SourceLinesAdapter,
-        goal: similarfinder.CodeTemplate,
-        matches: Sequence[similarfinder.ExpressionMatch | similarfinder.StatementMatch],
-    ) -> None:
+    def __init__(self, code, ast, lines, goal, matches):
         self.source = code
         self.goal = goal
         self.matches = matches
