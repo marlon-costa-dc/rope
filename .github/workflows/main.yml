@@ -11,7 +11,6 @@ jobs:
     name: Test - ${{ matrix.python-version }} - ${{matrix.os}}
     runs-on: ${{matrix.os}}
     env:
-      GNUPGHOME: ${{ runner.temp }}/codecov-gnupg
       CODECOV_GPG_FINGERPRINT: 27034E7FDB850E0BBC2C62FF806BB28AED779869
 
     strategy:
@@ -37,6 +36,8 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
+        export GNUPGHOME="$RUNNER_TEMP/codecov-gnupg"
+        printf 'GNUPGHOME=%s\n' "$GNUPGHOME" >> "$GITHUB_ENV"
         mkdir -m 700 "$GNUPGHOME"
         gpg --dump-options | grep -Fx -- '--assert-signer'
         key="$GNUPGHOME/codecov.asc"
