@@ -284,14 +284,13 @@ class _ExtensionCache:
             return builtins.builtins
         if name not in self.extensions:
             module = sys.modules.get(name)
-            frozen_stdlib = (
+            if name in self.pycore.extension_modules or (
                 self.pycore.project.prefs.get("import_dynload_stdmods", False)
                 and name.partition(".")[0] in sys.stdlib_module_names
                 and module is not None
                 and module.__spec__ is not None
                 and module.__spec__.origin == "frozen"
-            )
-            if name in self.pycore.extension_modules or frozen_stdlib:
+            ):
                 self.extensions[name] = builtins.BuiltinModule(name, self.pycore)
         return self.extensions.get(name)
 

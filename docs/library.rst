@@ -43,6 +43,9 @@ It's good to know that:
   when the interpreter supplies no source file. Their admission does not
   change the project's ``extension_modules`` preference; modules with
   source resources keep their source-based resolution.
+* String-backed modules have no relative folder. Relative module lookup
+  without that context raises the usual ``ModuleNotFoundError``; import
+  inference retains Rope's unknown-object result for the missing module.
 * Rope makes a rope folder inside projects.  By default the name of this
   folder is ``.ropeproject``, but that can be changed using the
   constructor's ``ropefolder`` parameter. Passing ``None`` prevents rope

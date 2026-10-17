@@ -2,10 +2,12 @@
 
 import os
 import shutil
+import sys
 from collections.abc import Mapping
 
 import pytest
 
+from rope.base import exceptions, libutils, pyobjects
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
 
@@ -88,6 +90,65 @@ def test_explicit_folder_source_precedes_loaded_stdlib_alias(tmp_path):
         assert resolved.get_resource().real_path == str(source)
         assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
     finally:
+        project.close()
+
+
+@pytest.mark.parametrize("level", [1, 2])
+@pytest.mark.parametrize("name", ["", "owner"])
+def test_relative_module_without_folder_has_native_missing_error(tmp_path, name, level):
+    (tmp_path / "owner.py").write_text("class Owner:\n    pass\n", encoding="utf-8")
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        with pytest.raises(exceptions.ModuleNotFoundError):
+            project.get_relative_module(name, None, level)
+        module = libutils.get_string_module(project, "from .owner import Owner\n")
+        assert module["Owner"].get_object() is pyobjects.get_unknown()
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("source_exists", [False, True])
+@pytest.mark.parametrize("declared", [False, True])
+def test_loaded_module_missing_spec_preserves_source_and_native_errors(
+    tmp_path, source_exists, declared
+):
+    if source_exists:
+        package = tmp_path / "collections"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "abc.py").write_text("class OwnedSource:\n    pass\n", encoding="utf-8")
+    captured = CapturedFileSystem((str(tmp_path),))
+    project = Project(
+        str(tmp_path),
+        fscommands=captured,
+        external_project=NoProject(fscommands=captured),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins", "collections.abc"] if declared else ["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    module = sys.modules["collections.abc"]
+    spec = module.__spec__
+    del module.__spec__
+    try:
+        if declared:
+            resolved = project.get_module("collections.abc")
+            assert resolved["Mapping"].get_object().get_name() == Mapping.__name__
+        elif source_exists:
+            resolved = project.get_module("collections.abc")
+            assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+        else:
+            with pytest.raises(AttributeError, match="__spec__"):
+                project.get_module("collections.abc")
+    finally:
+        module.__spec__ = spec
         project.close()
 
 
