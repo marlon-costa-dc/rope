@@ -36,10 +36,9 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        export GNUPGHOME="$RUNNER_TEMP/codecov-gnupg"
+        GNUPGHOME="$(python -c 'import os, tempfile; from pathlib import Path; print(Path(tempfile.mkdtemp(prefix="codecov-gnupg-", dir=os.environ["RUNNER_TEMP"])).as_posix())')"
+        export GNUPGHOME
         printf 'GNUPGHOME=%s\n' "$GNUPGHOME" >> "$GITHUB_ENV"
-        mkdir -m 700 "$GNUPGHOME"
-        gpg --dump-options | grep -Fx -- '--assert-signer'
         key="$GNUPGHOME/codecov.asc"
         curl --fail --location --output "$key" https://keybase.io/codecovsecops/pgp_keys.asc
         fingerprint="$(
@@ -47,9 +46,9 @@ jobs:
           awk -F: '$1=="pub"{primary=1;next} primary && $1=="fpr"{print $10;primary=0}'
         )"
         test "$fingerprint" = "$CODECOV_GPG_FINGERPRINT"
-        printf 'assert-signer %s\n' "$fingerprint" > "$GNUPGHOME/gpg.conf"
+        gpg --batch --no-default-keyring --keyring codecov.gpg --import "$key"
         printf '%s:6:\n' "$fingerprint" | gpg --batch --import-ownertrust
-        gpg --batch --import "$key"
+        printf 'no-default-keyring\nkeyring codecov.gpg\nimport-options merge-only\n' > "$GNUPGHOME/gpg.conf"
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
