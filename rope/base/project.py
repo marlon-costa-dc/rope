@@ -66,13 +66,17 @@ class _Project:
     def get_module(self, name: str, folder: Optional[Folder] = None) -> AbstractModule:
         """Returns a `PyObject` if the module was found."""
         # check if this is a builtin module
+        if name == "__builtin__" or name in self.pycore.extension_modules:
+            pymod = self.pycore.builtin_module(name)
+            if pymod is not None:
+                return pymod
+        module = self.find_module(name, folder)
+        if module is not None:
+            return self.pycore.resource_to_pyobject(module)
         pymod = self.pycore.builtin_module(name)
         if pymod is not None:
             return pymod
-        module = self.find_module(name, folder)
-        if module is None:
-            raise ModuleNotFoundError("Module %s not found" % name)
-        return self.pycore.resource_to_pyobject(module)
+        raise ModuleNotFoundError("Module %s not found" % name)
 
     def get_python_path_folders(self) -> List[Union[File, Folder]]:
         result = []
@@ -147,7 +151,9 @@ class _Project:
     def get_prefs(self):
         return self.prefs
 
-    def get_relative_module(self, name, folder, level):
+    def get_relative_module(
+        self, name: str, folder: Optional[Folder], level: int
+    ) -> Union[PyModule, PyPackage]:
         module = self.find_relative_module(name, folder, level)
         if module is None:
             raise ModuleNotFoundError("Module %s not found" % name)
@@ -169,7 +175,11 @@ class _Project:
 
         return _find_module_in_folders(folders(), modname)
 
-    def find_relative_module(self, modname, folder, level):
+    def find_relative_module(
+        self, modname: str, folder: Optional[Folder], level: int
+    ) -> Optional[Union[File, Folder]]:
+        if folder is None:
+            return None
         for i in range(level - 1):
             folder = folder.parent
         if modname == "":

@@ -1,7 +1,9 @@
 import bisect
 import contextlib
 import difflib
+import sys
 import warnings
+from typing import Set
 
 import rope.base.libutils
 import rope.base.oi.doa
@@ -223,9 +225,14 @@ class PyCore:
 
     @property
     @utils.cacheit
-    def extension_modules(self):
+    def _import_dynload_stdmods(self) -> bool:
+        return self.project.prefs.get("import_dynload_stdmods", False)
+
+    @property
+    @utils.cacheit
+    def extension_modules(self) -> Set[str]:
         result = set(self.project.prefs.get("extension_modules", []))
-        if self.project.prefs.get("import_dynload_stdmods", False):
+        if self._import_dynload_stdmods:
             result.update(stdmods.dynload_modules())
         return result
 
@@ -280,9 +287,16 @@ class _ExtensionCache:
     def get_pymodule(self, name):
         if name == "__builtin__":
             return builtins.builtins
-        allowed = self.pycore.extension_modules
-        if name not in self.extensions and name in allowed:
-            self.extensions[name] = builtins.BuiltinModule(name, self.pycore)
+        if name not in self.extensions:
+            module = sys.modules.get(name)
+            if name in self.pycore.extension_modules or (
+                self.pycore._import_dynload_stdmods
+                and name.partition(".")[0] in sys.stdlib_module_names
+                and module is not None
+                and module.__spec__ is not None
+                and module.__spec__.origin == "frozen"
+            ):
+                self.extensions[name] = builtins.BuiltinModule(name, self.pycore)
         return self.extensions.get(name)
 
 

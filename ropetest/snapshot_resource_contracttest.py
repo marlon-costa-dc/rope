@@ -2,11 +2,182 @@
 
 import os
 import shutil
+import sys
+from collections.abc import Mapping
 
 import pytest
 
+from rope.base import exceptions, libutils, pyobjects
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+
+
+def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_path):
+    (tmp_path / "consumer.py").write_text(
+        "from collections.abc import Mapping\nclass Consumer(Mapping):\n    pass\n",
+        encoding="utf-8",
+    )
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        declared = tuple(project.prefs.get("extension_modules"))
+        module = project.get_module("collections.abc")
+        mapping = module["Mapping"].get_object()
+        owner = project.get_module("consumer")["Consumer"].get_object()
+        assert mapping in owner.get_superclasses()
+        assert mapping.get_name() == Mapping.__name__
+        assert module is project.get_module("collections.abc")
+        assert tuple(project.prefs.get("extension_modules")) == declared
+        assert project.pycore.builtin_module("rope.base.pycore") is None
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_frozen_admission_uses_the_existing_extension_policy_snapshot(tmp_path, enabled):
+    captured = CapturedFileSystem((str(tmp_path),))
+    project = Project(
+        str(tmp_path),
+        fscommands=captured,
+        external_project=NoProject(fscommands=captured),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=enabled,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        project.get_pycore().extension_modules
+        project.set("import_dynload_stdmods", not enabled)
+        if enabled:
+            assert project.get_module("_frozen_importlib").get_resource() is None
+        else:
+            with pytest.raises(exceptions.ModuleNotFoundError):
+                project.get_module("_frozen_importlib")
+    finally:
+        project.close()
+
+
+def test_source_module_created_after_stdlib_lookup_takes_precedence(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        project.get_module("collections.abc")["Mapping"].get_object()
+        package = project.root.create_folder("collections")
+        package.create_file("__init__.py")
+        source = package.create_file("abc.py")
+        source.write("class OwnedSource:\n    pass\n")
+        resolved = project.get_module("collections.abc")
+        assert resolved.get_resource() == source
+        assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+    finally:
+        project.close()
+
+
+def test_explicit_folder_source_precedes_loaded_stdlib_alias(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    external = tmp_path / "external"
+    package = external / "collections"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    source = package / "abc.py"
+    source.write_text("class OwnedSource:\n    pass\n", encoding="utf-8")
+    captured = CapturedFileSystem((str(root), str(external)))
+    outside = NoProject(fscommands=captured)
+    project = Project(
+        str(root),
+        fscommands=captured,
+        external_project=outside,
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        folder = outside.get_resource(str(external))
+        assert project.find_module("collections.abc", folder).real_path == str(source)
+        resolved = project.get_module("collections.abc", folder)
+        assert resolved.get_resource().real_path == str(source)
+        assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("level", [1, 2])
+@pytest.mark.parametrize("name", ["", "owner"])
+def test_relative_module_without_folder_has_native_missing_error(tmp_path, name, level):
+    (tmp_path / "owner.py").write_text("class Owner:\n    pass\n", encoding="utf-8")
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        with pytest.raises(exceptions.ModuleNotFoundError):
+            project.get_relative_module(name, None, level)
+        module = libutils.get_string_module(project, "from .owner import Owner\n")
+        assert module["Owner"].get_object() is pyobjects.get_unknown()
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("source_exists", [False, True])
+@pytest.mark.parametrize("declared", [False, True])
+def test_loaded_module_missing_spec_preserves_source_and_native_errors(
+    tmp_path, source_exists, declared
+):
+    if source_exists:
+        package = tmp_path / "collections"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "abc.py").write_text("class OwnedSource:\n    pass\n", encoding="utf-8")
+    captured = CapturedFileSystem((str(tmp_path),))
+    project = Project(
+        str(tmp_path),
+        fscommands=captured,
+        external_project=NoProject(fscommands=captured),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins", "collections.abc"] if declared else ["builtins"],
+        import_dynload_stdmods=True,
+        save_objectdb=False,
+        save_history=False,
+    )
+    module = sys.modules["collections.abc"]
+    spec = module.__spec__
+    del module.__spec__
+    try:
+        if declared:
+            resolved = project.get_module("collections.abc")
+            assert resolved["Mapping"].get_object().get_name() == Mapping.__name__
+        elif source_exists:
+            resolved = project.get_module("collections.abc")
+            assert resolved["OwnedSource"].get_object().get_name() == "OwnedSource"
+        else:
+            with pytest.raises(AttributeError, match="__spec__"):
+                project.get_module("collections.abc")
+    finally:
+        module.__spec__ = spec
+        project.close()
 
 
 class CapturedFileSystem(FileSystemCommands):
