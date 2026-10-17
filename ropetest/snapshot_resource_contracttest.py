@@ -38,6 +38,32 @@ def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_
         project.close()
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_frozen_admission_uses_the_existing_extension_policy_snapshot(tmp_path, enabled):
+    captured = CapturedFileSystem((str(tmp_path),))
+    project = Project(
+        str(tmp_path),
+        fscommands=captured,
+        external_project=NoProject(fscommands=captured),
+        ropefolder=None,
+        source_folders=[""],
+        extension_modules=["builtins"],
+        import_dynload_stdmods=enabled,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        project.get_pycore().extension_modules
+        project.set("import_dynload_stdmods", not enabled)
+        if enabled:
+            assert project.get_module("_frozen_importlib").get_resource() is None
+        else:
+            with pytest.raises(exceptions.ModuleNotFoundError):
+                project.get_module("_frozen_importlib")
+    finally:
+        project.close()
+
+
 def test_source_module_created_after_stdlib_lookup_takes_precedence(tmp_path):
     project = Project(
         str(tmp_path),

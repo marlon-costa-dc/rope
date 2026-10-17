@@ -41,11 +41,14 @@ It's good to know that:
   modules without a source resource are resolved through the native
   builtin-module cache. This includes aliases such as ``collections.abc``
   when the interpreter supplies no source file. Their admission does not
-  change the project's ``extension_modules`` preference; modules with
-  source resources keep their source-based resolution.
-* String-backed modules have no relative folder. Relative module lookup
-  without that context raises the usual ``ModuleNotFoundError``; import
-  inference retains Rope's unknown-object result for the missing module.
+  change the project's ``extension_modules`` preference. Admitted extension
+  modules retain their existing precedence; other source resources take
+  precedence over frozen aliases. The standard-library inspection policy
+  is captured with the core's extension-module cache.
+* String-backed modules without an associated resource have no relative
+  folder. Lookup without that context raises
+  ``rope.base.exceptions.ModuleNotFoundError``; import inference retains
+  Rope's unknown-object result for the missing module.
 * Rope makes a rope folder inside projects.  By default the name of this
   folder is ``.ropeproject``, but that can be changed using the
   constructor's ``ropefolder`` parameter. Passing ``None`` prevents rope

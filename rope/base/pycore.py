@@ -225,9 +225,14 @@ class PyCore:
 
     @property
     @utils.cacheit
+    def _import_dynload_stdmods(self) -> bool:
+        return self.project.prefs.get("import_dynload_stdmods", False)
+
+    @property
+    @utils.cacheit
     def extension_modules(self) -> Set[str]:
         result = set(self.project.prefs.get("extension_modules", []))
-        if self.project.prefs.get("import_dynload_stdmods", False):
+        if self._import_dynload_stdmods:
             result.update(stdmods.dynload_modules())
         return result
 
@@ -285,7 +290,7 @@ class _ExtensionCache:
         if name not in self.extensions:
             module = sys.modules.get(name)
             if name in self.pycore.extension_modules or (
-                self.pycore.project.prefs.get("import_dynload_stdmods", False)
+                self.pycore._import_dynload_stdmods
                 and name.partition(".")[0] in sys.stdlib_module_names
                 and module is not None
                 and module.__spec__ is not None
