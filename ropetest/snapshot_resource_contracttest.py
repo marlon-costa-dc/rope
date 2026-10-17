@@ -28,10 +28,12 @@ def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_
     )
     try:
         declared = tuple(project.prefs.get("extension_modules"))
-        mapping = project.get_module("collections.abc")["Mapping"].get_object()
+        module = project.get_module("collections.abc")
+        mapping = module["Mapping"].get_object()
         owner = project.get_module("consumer")["Consumer"].get_object()
         assert mapping in owner.get_superclasses()
         assert mapping.get_name() == Mapping.__name__
+        assert module is project.get_module("collections.abc")
         assert tuple(project.prefs.get("extension_modules")) == declared
         assert project.pycore.builtin_module("rope.base.pycore") is None
     finally:
