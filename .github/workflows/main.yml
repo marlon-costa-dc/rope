@@ -37,6 +37,7 @@ jobs:
       run: |
         set -euo pipefail
         GNUPGHOME="$(python -c 'import os, tempfile; from pathlib import Path; print(Path(tempfile.mkdtemp(prefix="codecov-gnupg-", dir=os.environ["RUNNER_TEMP"])).as_posix())')"
+        GNUPGHOME="$(cd "$GNUPGHOME" && pwd -P)"
         export GNUPGHOME
         printf 'GNUPGHOME=%s\n' "$GNUPGHOME" >> "$GITHUB_ENV"
         key="$GNUPGHOME/codecov.asc"
