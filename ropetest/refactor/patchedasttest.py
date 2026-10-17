@@ -199,6 +199,27 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("Call", start, start + len("g(1)"))
         self.assertEqual(source, patchedast.write_ast(ast_frag))
 
+    def test_return_annotation_roundtrip(self):
+        source = "def f() -> Result[Value]:\n    pass\n"
+        patched = patchedast.get_patched_ast(source, True)
+        self.assertEqual(source, patchedast.write_ast(patched))
+        annotation = patched.body[0].returns
+        self.assertEqual(
+            "Result[Value]",
+            source[slice(*patchedast.node_region(annotation))],
+        )
+
+    def test_interleaved_class_header_roundtrip(self):
+        source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
+        patched = patchedast.get_patched_ast(source, True)
+        self.assertEqual(source, patchedast.write_ast(patched))
+        for keyword in patched.body[0].keywords:
+            with self.subTest(keyword=keyword.arg):
+                self.assertEqual(
+                    keyword.value.id,
+                    source[slice(*patchedast.node_region(keyword.value))],
+                )
+
     def test_annotated_star_parameters(self):
         source = "def f(*args: int, **kwargs: str):\n    pass\n"
         ast_frag = patchedast.get_patched_ast(source, True)

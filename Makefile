@@ -2,6 +2,9 @@ VENV := $(shell dirname "$(CURDIR)")/.rope-venvs/$(shell basename "$(CURDIR)")
 PYTHON := $(VENV)/bin/python
 UV ?= uv
 BOOTSTRAP_PYTHON ?= 3.13
+export PYTHONDONTWRITEBYTECODE :=
+export PYTHONPYCACHEPREFIX := $(VENV)/pycache
+export COVERAGE_FILE := $(VENV)/.coverage
 
 .PHONY: setup test test-file check fmt build
 
@@ -23,11 +26,11 @@ setup:
 	$(UV) pip install --python "$(PYTHON)" -e '.[dev]'
 
 test:
-	"$(PYTHON)" -m pytest --cov -v -ra
+	"$(PYTHON)" -m pytest --cov -v -ra -o cache_dir="$(VENV)/pytest-cache"
 
 test-file:
 	test -n "$(FILE)"
-	"$(PYTHON)" -m pytest -v -ra "$(FILE)"
+	"$(PYTHON)" -m pytest -v -ra -o cache_dir="$(VENV)/pytest-cache" "$(FILE)"
 
 check:
 	"$(PYTHON)" -m pre_commit run --all-files

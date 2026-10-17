@@ -331,9 +331,13 @@ class _PatchingASTWalker:
             children.extend(("@", decorator))
         children.extend(["class", node.name])
         self._add_type_params(node, children)
-        if node.bases:
+        if node.bases or node.keywords:
             children.append("(")
-            children.extend(self._child_nodes(node.bases, ","))
+            arguments = sorted(
+                [*node.bases, *node.keywords],
+                key=lambda argument: (argument.lineno, argument.col_offset),
+            )
+            children.extend(self._child_nodes(arguments, ","))
             children.append(")")
         children.append(":")
         children.extend(node.body)
@@ -535,6 +539,8 @@ class _PatchingASTWalker:
         children.append(node.name)
         self._add_type_params(node, children)
         children.extend(["(", node.args, ")"])
+        if node.returns is not None:
+            children.extend(["->", node.returns])
         children.append(":")
         children.extend(node.body)
         self._handle(node, children)
