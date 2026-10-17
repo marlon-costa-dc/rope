@@ -34,6 +34,9 @@ def test_public_change_computer_preserves_native_source_changes(
         list(finder.get_matches(pattern)),
     )
     assert computer.get_changed() == expected
+    assert restructure.replace(source, pattern, goal) == (
+        source if expected is None else expected
+    )
 
 
 def test_public_change_computer_preserves_native_missing_name_error():
@@ -49,6 +52,8 @@ def test_public_change_computer_preserves_native_missing_name_error():
     )
     with pytest.raises(similarfinder.BadNameInCheckError, match="Unknown name <missing>"):
         computer.get_changed()
+    with pytest.raises(similarfinder.BadNameInCheckError, match="Unknown name <missing>"):
+        restructure.replace(source, "value = ${number}", "value = ${missing}")
 
 
 def test_restructure_preserves_custom_wildcard_payloads(tmp_path):

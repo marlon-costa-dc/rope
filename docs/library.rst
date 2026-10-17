@@ -733,7 +733,8 @@ to render the native matches returned by ``SimilarFinder`` or
 AST, line adapter, code template and matches.  ``get_changed()`` returns
 the changed source, or ``None`` when no change is needed, and retains the
 native errors for invalid template names.
-The matches and computer must share the same patched AST.
+The matches and computer must share the same patched AST; ``replace()``
+shares that tree internally.
 
 Custom wildcard argument payloads pass unchanged to their matching
 implementations; the constructor does not coerce them into the default

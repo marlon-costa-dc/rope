@@ -244,9 +244,9 @@ class Restructure:
 
 def replace(code, pattern, goal):
     """used by other refactorings"""
-    finder = similarfinder.RawSimilarFinder(code)
-    matches = list(finder.get_matches(pattern))
     ast = patchedast.get_patched_ast(code)
+    finder = similarfinder.RawSimilarFinder(code, ast)
+    matches = list(finder.get_matches(pattern))
     lines = codeanalyze.SourceLinesAdapter(code)
     template = similarfinder.CodeTemplate(goal)
     computer = ChangeComputer(code, ast, lines, template, matches)
