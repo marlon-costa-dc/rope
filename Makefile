@@ -6,7 +6,7 @@ export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
 
-.PHONY: setup test test-file check fmt build
+.PHONY: setup test test-file check check-codecov fmt build
 
 setup:
 	@set -eu; \
@@ -34,6 +34,9 @@ test-file:
 
 check:
 	"$(PYTHON)" -m pre_commit run --all-files
+
+check-codecov:
+	curl --fail-with-body --data-binary @.github/codecov.yml https://api.codecov.io/validate
 
 fmt:
 	"$(PYTHON)" -m pre_commit run black --all-files
