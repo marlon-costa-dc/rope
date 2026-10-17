@@ -245,7 +245,7 @@ class Match:
     def get_region(self):
         """Returns match region"""
 
-    def get_ast(self, name):
+    def get_ast(self, name: str) -> ast.AST | None:
         """Return the ast node that has matched rope variables"""
         return self.mapping.get(name, None)
 
@@ -255,7 +255,7 @@ class ExpressionMatch(Match):
         super().__init__(mapping)
         self.ast = ast
 
-    def get_region(self):
+    def get_region(self) -> tuple[int, int]:
         return self.ast.region
 
 
@@ -264,7 +264,7 @@ class StatementMatch(Match):
         super().__init__(mapping)
         self.ast_list = ast_list
 
-    def get_region(self):
+    def get_region(self) -> tuple[int, int]:
         return self.ast_list[0].region[0], self.ast_list[-1].region[1]
 
 

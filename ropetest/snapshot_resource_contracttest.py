@@ -7,9 +7,90 @@ from collections.abc import Mapping
 
 import pytest
 
-from rope.base import exceptions, libutils, pyobjects
+from rope.base import codeanalyze, exceptions, libutils, pyobjects
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+from rope.refactor import patchedast, restructure, similarfinder, wildcards
+
+
+@pytest.mark.parametrize(
+    "source, pattern, goal, expected",
+    [
+        ("value = 1 + 1\n", "1 + 1", "2", "value = 2\n"),
+        ("value = 1\n", "value = 1", "value = 2", "value = 2\n"),
+        ("value = 1\n", "other = 1", "other = 2", None),
+    ],
+)
+def test_public_change_computer_preserves_native_source_changes(
+    source, pattern, goal, expected
+):
+    tree = patchedast.get_patched_ast(source)
+    finder = similarfinder.RawSimilarFinder(source, tree)
+    computer = restructure.ChangeComputer(
+        source,
+        tree,
+        codeanalyze.SourceLinesAdapter(source),
+        similarfinder.CodeTemplate(goal),
+        list(finder.get_matches(pattern)),
+    )
+    assert computer.get_changed() == expected
+
+
+def test_public_change_computer_preserves_native_missing_name_error():
+    source = "value = 1\n"
+    tree = patchedast.get_patched_ast(source)
+    finder = similarfinder.RawSimilarFinder(source, tree)
+    computer = restructure.ChangeComputer(
+        source,
+        tree,
+        codeanalyze.SourceLinesAdapter(source),
+        similarfinder.CodeTemplate("value = ${missing}"),
+        list(finder.get_matches("value = ${number}")),
+    )
+    with pytest.raises(similarfinder.BadNameInCheckError, match="Unknown name <missing>"):
+        computer.get_changed()
+
+
+def test_restructure_preserves_custom_wildcard_payloads(tmp_path):
+    project = Project(
+        str(tmp_path),
+        ropefolder=None,
+        save_objectdb=False,
+        save_history=False,
+    )
+    try:
+        default = wildcards.DefaultWildcard(project)
+
+        class Alternatives:
+            def matches(self, suspect, arguments):
+                return any(default.matches(suspect, argument) for argument in arguments)
+
+        source = (
+            "def first():\n    pass\n"
+            "def second():\n    pass\n"
+            "def third():\n    pass\n"
+            "first()\nsecond()\nthird()\n"
+        )
+        resource = project.root.create_file("consumer.py")
+        resource.write(source)
+        refactoring = restructure.Restructure(
+            project,
+            "${call}()",
+            "renamed()",
+            args={
+                "call": (
+                    "alternatives",
+                    ("name=consumer.first", "name=consumer.second"),
+                )
+            },
+            wildcards={"default": default, "alternatives": Alternatives()},
+        )
+        project.do(refactoring.get_changes(resources=[resource]))
+        assert resource.read() == source.replace(
+            "first()\nsecond()\nthird()\n", "renamed()\nrenamed()\nthird()\n"
+        )
+    finally:
+        project.close()
 
 
 def test_loaded_stdlib_alias_preserves_native_base_and_declared_preferences(tmp_path):
