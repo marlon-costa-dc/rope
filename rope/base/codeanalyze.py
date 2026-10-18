@@ -104,20 +104,37 @@ class ASTLinesAdapter:
 
     def __init__(self, source: str):
         self._code_str: str = source
-        self._code_bytes: bytes = source.encode("utf-8")
+        self._ascii: bool = source.isascii()
+        self._code_bytes: bytes | None
         self._starts_str: list[int] = self._initialize_line_starts(
             self.LINE_PATTERN_STR, self._code_str
         )
-        self._starts_bytes: list[int] = self._initialize_line_starts(
-            self.LINE_PATTERN_BYTES, self._code_bytes
-        )
+        if self._ascii:
+            # Byte offsets equal str offsets for ASCII sources, so both tables
+            # can share one list and the encoded source stays unneeded until a
+            # non-ASCII line is inspected (which cannot happen).
+            self._code_bytes = None
+            self._starts_bytes = self._starts_str
+        else:
+            self._code_bytes = source.encode("utf-8")
+            self._starts_bytes = self._initialize_line_starts(
+                self.LINE_PATTERN_BYTES, self._code_bytes
+            )
 
     @classmethod
     def _initialize_line_starts(cls, pattern, source) -> list[int]:
-        matches = list(pattern.finditer(source))
-        if len(matches) > 1 and matches[-1].start() == matches[-1].end():
-            matches.pop()
-        starts = [m.start() for m in matches]
+        starts: list[int] = []
+        append = starts.append
+        count = 0
+        last_start = last_end = 0
+        for match in pattern.finditer(source):
+            start = match.start()
+            append(start)
+            last_start = start
+            last_end = match.end()
+            count += 1
+        if count > 1 and last_start == last_end:
+            starts.pop()
         if source[-1:] in [b"\n", b"\r", "\n", "\r"]:
             starts.append(len(source))
         else:
@@ -142,7 +159,10 @@ class ASTLinesAdapter:
         end = self._starts_bytes[line_idx + 1]
         if col_offset is not None:
             end = min(end, start + col_offset)
-        return self._code_bytes[start:end].rstrip(b"\r\n")
+        code_bytes = self._code_bytes
+        if code_bytes is None:
+            code_bytes = self._code_bytes = self._code_str.encode("utf-8")
+        return code_bytes[start:end].rstrip(b"\r\n")
 
     def _is_line_ascii_only(self, line_idx: int):
         start_str = self._starts_str[line_idx]
@@ -162,7 +182,11 @@ class ASTLinesAdapter:
 
     def _absolute_region_offset(self, line_idx: int, col_offset: int) -> int:
         """str offset relative to the start of file"""
-        line_offset = self._line_region_offset(line_idx, col_offset)
+        if col_offset == 0 or self._ascii:
+            # ASCII sources (and column 0) need no per-line byte comparison.
+            line_offset = col_offset
+        else:
+            line_offset = self._line_region_offset(line_idx, col_offset)
         return self._starts_str[line_idx] + line_offset
 
     @classmethod
@@ -208,9 +232,18 @@ class ASTLinesAdapter:
         except AttributeError:
             return (None, None)
 
-        region_start = self._absolute_region_offset(line_idx, col_offset)
-        region_end = self._absolute_region_offset(end_line_idx, end_col_offset)
-        return (region_start, region_end)
+        starts_str = self._starts_str
+        if self._ascii:
+            # Every line is ASCII-only, so `_line_region_offset` is the
+            # column itself for both boundaries.
+            return (
+                starts_str[line_idx] + col_offset,
+                starts_str[end_line_idx] + end_col_offset,
+            )
+        return (
+            self._absolute_region_offset(line_idx, col_offset),
+            self._absolute_region_offset(end_line_idx, end_col_offset),
+        )
 
 
 class ArrayLinesAdapter:
