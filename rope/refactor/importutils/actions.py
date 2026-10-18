@@ -346,6 +346,7 @@ class RemovePyNameVisitor(ImportInfoVisitor):
         self.pymodule = pymodule
         self.pyname = pyname
         self.context = importinfo.ImportContext(project, folder)
+        self.removed_names = []
 
     def visitFromImport(self, import_stmt, import_info):
         new_pairs = []
@@ -354,6 +355,7 @@ class RemovePyNameVisitor(ImportInfoVisitor):
                 try:
                     pyname = self.pymodule[alias or name]
                     if occurrences.same_pyname(self.pyname, pyname):
+                        self.removed_names.append(alias or name)
                         continue
                 except exceptions.AttributeNotFoundError:
                     pass

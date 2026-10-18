@@ -465,14 +465,42 @@ class InlineVariable(_Inliner):
             raise exceptions.RefactoringError(
                 "Cannot inline a variable referenced in a deferred annotation."
             )
+        module_names = pymodule.get_scope().get_names()
+
+        def runtime_annotation_eval(node):
+            """Resolve a deferred annotation expression the way Python does.
+
+            ``typing.get_type_hints`` evaluates class annotations with the
+            module globals ahead of class and function locals (it swaps the
+            two namespaces for classes), while the source binding index
+            resolves the annotation in its own annotation environment.  A
+            module-level binding therefore wins over shadowing names in the
+            class or function header, and only names without a module-level
+            binding fall back to the annotation environment.
+            """
+            if isinstance(node, ast.Attribute):
+                base = runtime_annotation_eval(node.value)
+                if base is None:
+                    return None
+                pyobject = base.get_object()
+                if pyobject == pyobjects.get_unknown():
+                    return None
+                try:
+                    return pyobject[node.attr]
+                except exceptions.AttributeNotFoundError:
+                    return None
+            if isinstance(node, ast.Name):
+                if node.id in module_names:
+                    return module_names[node.id]
+                return evaluate.eval_node(pymodule.get_scope(), node)
+            return None
+
         if (
             future_annotations
             and remove
             and any(
                 isinstance(node, (ast.Name, ast.Attribute))
-                and occurrences.same_pyname(
-                    self.pyname, evaluate.eval_node(pymodule.get_scope(), node)
-                )
+                and occurrences.same_pyname(self.pyname, runtime_annotation_eval(node))
                 for annotation in annotations
                 if annotation is not None
                 for node in ast.walk(annotation)
@@ -612,7 +640,9 @@ class InlineVariable(_Inliner):
         changed = rename.rename_in_module(
             finder, self.imported, resource=resource, replace_primary=True
         )
-        if changed and remove:
+        if remove:
+            # An importing module without value reads still needs its import
+            # cleaned up once the definition is discarded.
             changed = _remove_from(self.project, self.pyname, changed, resource)
         return changed
 
@@ -994,7 +1024,11 @@ def _is_bound_initializer_name(pymodule, statement, initializer):
         return False
     scope = pymodule.get_scope().get_inner_scope_for_line(statement.lineno)
     if scope.get_kind() == "Class":
-        return False
+        # Class-body aliasing stays conservative, but a builtin initializer
+        # name is always bound wherever it is substituted.
+        return isinstance(
+            evaluate.eval_node(scope, initializer), rope.base.builtins.BuiltinName
+        )
     pyname = evaluate.eval_node(scope, initializer)
     if any(
         isinstance(node, ast.Name)
@@ -1398,7 +1432,10 @@ def _lambda_owned_name_ranges(pymodule):
 
 
 def _remove_from(project, pyname, source, resource):
-    pymodule = libutils.get_string_module(project, source, resource)
+    pymodule = libutils.get_string_module(
+        project, source if source is not None else resource.read(), resource
+    )
     module_import = importutils.get_module_imports(project, pymodule)
-    module_import.remove_pyname(pyname)
-    return module_import.get_changed_source()
+    if module_import.remove_pyname(pyname):
+        source = module_import.get_changed_source()
+    return source
