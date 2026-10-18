@@ -3,6 +3,7 @@
 - #868 Fix patchedast matching tokens inside string literals
 - #862 Recognize type alias statements as assignments in rename and inline refactoring (@TanbirRamim)
 - #879 Fix patchedast region for implicitly-concatenated f-strings whose trailing parts hold no interpolation (@stevemadere)
+- #814 Treat `ignored_resources` as non-project files for autoimport purposes (@smheidrich)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
