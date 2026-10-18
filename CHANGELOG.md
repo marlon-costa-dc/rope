@@ -1,5 +1,12 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.3
+
+Flext-ecosystem compatibility and robustness over 1.15.0+dc.2:
+
+- Expose a module scope over builtin modules (`BuiltinModule.get_scope` + `BuiltinModuleScope`), so semantic-module consumers recognize C/builtin modules
+- Do not require callers to preseed `ignored_resources` when a python path folder inside the root contains site-packages (#756 follow-up); both behaviors carry regression tests
+
 # Release 1.15.0+dc.2
 
 Performance and inference cycle on the 1.15.0+dc.1 line:
