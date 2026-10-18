@@ -6,6 +6,11 @@
 - #814 Treat `ignored_resources` as non-project files for autoimport purposes (@smheidrich)
 - #823 Fix autoimport.sqlite deriving module names from non-package folders (@deepakganesh78)
 - ...
+- #859 Fix `find_definition`/Rename not resolving `async def` methods called via `self` (@gadievron)
+- #850 Update and pin black version in pre-commit and Github Actions
+- #851 Bump supported python version to up to Python 3.14
+- #852 Implement patchedast handlers for TypeAlias
+- #853 Implement patchedast handlers TypeVar
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
