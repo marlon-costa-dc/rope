@@ -80,7 +80,7 @@ def get_modname_from_path(
         pass
     else:
         # If path includes "site-packages", we're interested in part after this.
-        rel_path_parts = rel_path_parts[site_packages_index + 1:]
+        rel_path_parts = rel_path_parts[site_packages_index + 1 :]
     if len(rel_path_parts) > 0:
         for part in rel_path_parts[:-1]:
             modname += part

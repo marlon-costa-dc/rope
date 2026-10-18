@@ -503,6 +503,7 @@ class InlineVariable(_Inliner):
                 raise exceptions.RefactoringError(
                     "Cannot inline a variable referenced in a deferred annotation."
                 )
+
     def _check_initializer_removal(self, resources, only_current):
         initializer = self.pyname.assignments[0].ast_node
         statement = next(
