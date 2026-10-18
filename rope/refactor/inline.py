@@ -465,13 +465,43 @@ class InlineVariable(_Inliner):
             raise exceptions.RefactoringError(
                 "Cannot inline a variable referenced in a deferred annotation."
             )
+        module_names = pymodule.get_scope().get_names()
+
+        def runtime_annotation_eval(node):
+            """Resolve a deferred annotation expression the way Python does.
+
+            ``typing.get_type_hints`` evaluates class annotations with the
+            module globals ahead of class and function locals (it swaps the
+            two namespaces for classes), while the source binding index
+            resolves the annotation in its own annotation environment.  A
+            module-level binding therefore wins over shadowing names in the
+            class or function header, and only names without a module-level
+            binding fall back to the annotation environment.
+            """
+            if isinstance(node, ast.Attribute):
+                base = runtime_annotation_eval(node.value)
+                if base is None:
+                    return None
+                pyobject = base.get_object()
+                if pyobject == pyobjects.get_unknown():
+                    return None
+                try:
+                    return pyobject[node.attr]
+                except exceptions.AttributeNotFoundError:
+                    return None
+            if isinstance(node, ast.Name):
+                if node.id in module_names:
+                    return module_names[node.id]
+                return evaluate.eval_node(pymodule.get_scope(), node)
+            return None
+
         if (
             future_annotations
             and remove
             and any(
                 isinstance(node, (ast.Name, ast.Attribute))
                 and occurrences.same_pyname(
-                    self.pyname, evaluate.eval_node(pymodule.get_scope(), node)
+                    self.pyname, runtime_annotation_eval(node)
                 )
                 for annotation in annotations
                 if annotation is not None
