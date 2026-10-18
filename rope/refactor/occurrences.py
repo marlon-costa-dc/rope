@@ -41,6 +41,7 @@ import tokenize
 from typing import Iterator
 
 from rope.base import (
+    codeanalyze,
     evaluate,
     exceptions,
     pynames,
