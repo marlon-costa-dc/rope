@@ -14,6 +14,7 @@
 - #864 Preserve sibling assignments when inlining compound assignments (@onuracar-dev)
 - #871 Reject extraction of expressions with nested named expressions (@yangfan-yf-yf)
 - #811 Preserve still-used imports when moving globals with filtered import cleanup
+- #825, #878 Define functions extracted from a class body before the class (@ethanstoner)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
