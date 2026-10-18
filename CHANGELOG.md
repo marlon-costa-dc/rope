@@ -1,5 +1,6 @@
 # **Upcoming release**
 
+- #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
 - #896 patchedast cleanup and refactoring (@lieryan)
 - Discover the compiled extension module used by autoimport tests from the import system
