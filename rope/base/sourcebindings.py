@@ -7,6 +7,7 @@ partially published index.  Source identities never contain call-time values.
 
 import sys
 from dataclasses import dataclass
+from operator import attrgetter
 
 from rope.base import (
     ast,
@@ -17,6 +18,66 @@ from rope.base import (
     pyobjects,
     pyscopes,
 )
+
+_TYPE_ALIAS_TYPES = getattr(ast, "TypeAlias", ())
+
+_NO_LINENO = object()
+
+# Walk dispatch: node classes are classified once into the branch that
+# ``_visit`` would take, so the per-node ``isinstance`` chain collapses into a
+# dictionary lookup.  Subclasses fall back to the chain and are cached too.
+_KIND_OTHER = 0
+_KIND_FUNCTION = 1
+_KIND_TYPEALIAS = 2
+_KIND_CLASS = 3
+_KIND_LAMBDA = 4
+_KIND_COMPREHENSION = 5
+_KIND_WALRUS = 6
+
+_NODE_KINDS = {}
+
+# Per node class, the fields whose values the generic walk must descend into:
+# ``(field name, holds a list)``.  Computed from the first instance seen and
+# sound for every instance of the class: scalar fields enter the spec only when
+# they hold ``None`` or an AST (``_visit`` skips other values exactly like
+# ``ast.iter_child_nodes``), list fields keep the per-item AST filter.
+_CHILD_SPECS = {}
+
+
+def _classify_node(node):
+    kind = _KIND_OTHER
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        kind = _KIND_FUNCTION
+    elif _TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES):
+        kind = _KIND_TYPEALIAS
+    elif isinstance(node, ast.ClassDef):
+        kind = _KIND_CLASS
+    elif isinstance(node, ast.Lambda):
+        kind = _KIND_LAMBDA
+    elif isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        kind = _KIND_COMPREHENSION
+    elif isinstance(node, ast.NamedExpr):
+        kind = _KIND_WALRUS
+    _NODE_KINDS[node.__class__] = kind
+    return kind
+
+
+def _child_spec(node):
+    spec = _CHILD_SPECS.get(node.__class__)
+    if spec is None:
+        fields = []
+        for name in node._fields:
+            try:
+                value = getattr(node, name)
+            except AttributeError:
+                continue
+            if value.__class__ is list:
+                fields.append((name, True))
+            elif value is None or isinstance(value, ast.AST):
+                fields.append((name, False))
+        spec = tuple(fields)
+        _CHILD_SPECS[node.__class__] = spec
+    return spec
 
 
 def _resolved(environment):
@@ -160,14 +221,38 @@ class AnnotationPolicy:
     resolver_contract: str
 
 
-@dataclass(frozen=True)
 class SourceContext:
-    _environment: object
-    _structural_scope: object
-    source_node: object
-    role: str
-    annotation_owner: object = None
-    annotation_policy: object = None
+    """A recorded node environment (hand-rolled frozen dataclass equivalent).
+
+    The index records one context per visited node, so the class keeps the
+    dataclass public surface (fields, defaults, equality, hash, repr) while
+    avoiding the generated frozen ``__init__`` on the hot build path.
+    """
+
+    __slots__ = (
+        "_environment",
+        "_structural_scope",
+        "source_node",
+        "role",
+        "annotation_owner",
+        "annotation_policy",
+    )
+
+    def __init__(
+        self,
+        _environment,
+        _structural_scope,
+        source_node,
+        role,
+        annotation_owner=None,
+        annotation_policy=None,
+    ):
+        self._environment = _environment
+        self._structural_scope = _structural_scope
+        self.source_node = source_node
+        self.role = role
+        self.annotation_owner = annotation_owner
+        self.annotation_policy = annotation_policy
 
     @property
     def environment(self):
@@ -177,13 +262,76 @@ class SourceContext:
     def structural_scope(self):
         return _resolved(self._structural_scope)
 
+    def __eq__(self, other):
+        if other.__class__ is self.__class__:
+            return (
+                self._environment,
+                self._structural_scope,
+                self.source_node,
+                self.role,
+                self.annotation_owner,
+                self.annotation_policy,
+            ) == (
+                other._environment,
+                other._structural_scope,
+                other.source_node,
+                other.role,
+                other.annotation_owner,
+                other.annotation_policy,
+            )
+        return NotImplemented
 
-@dataclass(frozen=True)
+    def __hash__(self):
+        return hash(
+            (
+                self._environment,
+                self._structural_scope,
+                self.source_node,
+                self.role,
+                self.annotation_owner,
+                self.annotation_policy,
+            )
+        )
+
+    def __repr__(self):
+        return (
+            f"SourceContext(_environment={self._environment!r}, "
+            f"_structural_scope={self._structural_scope!r}, "
+            f"source_node={self.source_node!r}, role={self.role!r}, "
+            f"annotation_owner={self.annotation_owner!r}, "
+            f"annotation_policy={self.annotation_policy!r})"
+        )
+
+
 class SourceFragment:
-    start: int
-    end: int
-    depth: int
-    context: SourceContext
+    """A recorded node span (hand-rolled frozen dataclass equivalent)."""
+
+    __slots__ = ("start", "end", "depth", "context")
+
+    def __init__(self, start, end, depth, context):
+        self.start = start
+        self.end = end
+        self.depth = depth
+        self.context = context
+
+    def __eq__(self, other):
+        if other.__class__ is self.__class__:
+            return (
+                self.start,
+                self.end,
+                self.depth,
+                self.context,
+            ) == (other.start, other.end, other.depth, other.context)
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((self.start, self.end, self.depth, self.context))
+
+    def __repr__(self):
+        return (
+            f"SourceFragment(start={self.start!r}, end={self.end!r}, "
+            f"depth={self.depth!r}, context={self.context!r})"
+        )
 
 
 class SourceLocalName(pynames.AssignedName):
@@ -821,6 +969,10 @@ class SourceBindingIndex:
         self.comprehensions = {}
         self.environments = []
         self._opaque_references = []
+        # Contexts whose node can be an opaque annotation reference, keyed by
+        # node id (mirroring node_contexts).  Recorded during the walk so
+        # `opaque_references` scans only these instead of every context.
+        self._annotation_name_contexts = {}
         self.lines = codeanalyze.ASTLinesAdapter(self.source)
         tree = pymodule.get_ast()
         self.global_reference = _StructuralReference(self, tree)
@@ -851,7 +1003,7 @@ class SourceBindingIndex:
         self._owners_by_node = {
             id(owner.node): owner for owner in self.owner_references
         }
-        self.fragments.sort(key=lambda item: (item.start, item.end, item.depth))
+        self.fragments.sort(key=attrgetter("start", "end", "depth"))
         self.state = "FROZEN"
 
     def _span(self, node):
@@ -860,31 +1012,34 @@ class SourceBindingIndex:
         return self.lines[node]
 
     def _record(self, node, environment, owner, role, depth, annotation=None):
-        if not hasattr(node, "lineno") and not isinstance(node, ast.Module):
+        lineno = getattr(node, "lineno", _NO_LINENO)
+        if lineno is _NO_LINENO and not isinstance(node, ast.Module):
             return None
-        context = SourceContext(
-            environment,
-            owner,
-            node,
-            role,
-            annotation,
-            (
+        if annotation is None:
+            context = SourceContext(environment, owner, node, role)
+        else:
+            context = SourceContext(
+                environment,
+                owner,
+                node,
+                role,
+                annotation,
                 (
                     self.alias_policy
-                    if isinstance(annotation, getattr(ast, "TypeAlias", ()))
+                    if isinstance(annotation, _TYPE_ALIAS_TYPES)
                     else self.policy
-                )
-                if annotation is not None
-                else None
-            ),
-        )
-        self.node_contexts[id(node)] = context
-        if hasattr(node, "lineno"):
-            start, end = self._span(node)
+                ),
+            )
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self._annotation_name_contexts[id(node)] = context
+        key = id(node)
+        self.node_contexts[key] = context
+        if lineno is not _NO_LINENO:
+            start, end = self.lines[node]
             fragment = SourceFragment(start, end, depth, context)
-            position = self._fragment_positions.get(id(node))
+            position = self._fragment_positions.get(key)
             if position is None:
-                self._fragment_positions[id(node)] = len(self.fragments)
+                self._fragment_positions[key] = len(self.fragments)
                 self.fragments.append(fragment)
             else:
                 self.fragments[position] = fragment
@@ -939,14 +1094,9 @@ class SourceBindingIndex:
 
     def opaque_references(self):
         known = {id(reference.node) for reference in self._opaque_references}
-        for context in tuple(self.node_contexts.values()):
+        for context in self._annotation_name_contexts.values():
             node = context.source_node
-            if (
-                context.annotation_owner is not None
-                and isinstance(node, ast.Name)
-                and isinstance(node.ctx, ast.Load)
-                and id(node) not in known
-            ):
+            if id(node) not in known:
                 binding = context.environment.lookup(node.id)
                 if isinstance(binding, OpaqueSourceName):
                     self._opaque_references.append(
@@ -1302,10 +1452,14 @@ class SourceBindingIndex:
         if node is None:
             return
         context = self._record(node, environment, owner, role, depth, annotation)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        cls = node.__class__
+        kind = _NODE_KINDS.get(cls, -1)
+        if kind < 0:
+            kind = _classify_node(node)
+        if kind == _KIND_FUNCTION:
             self._function(node, environment, owner, depth)
             return
-        if isinstance(node, getattr(ast, "TypeAlias", ())):
+        if kind == _KIND_TYPEALIAS:
             generic = self._typeparams(
                 node, environment, owner, depth + 1, visit_expressions=False
             )
@@ -1334,7 +1488,7 @@ class SourceBindingIndex:
                 node,
             )
             return
-        if isinstance(node, ast.ClassDef):
+        if kind == _KIND_CLASS:
             class_owner = _StructuralReference(self, node, owner, environment)
             self.owner_references.append(class_owner)
             generic = self._typeparams(node, environment, class_owner, depth + 1)
@@ -1355,25 +1509,23 @@ class SourceBindingIndex:
             for statement in node.body:
                 self._visit(statement, body_env, class_owner, "class-body", depth + 1)
             return
-        if isinstance(node, ast.Lambda):
+        if kind == _KIND_LAMBDA:
             self._lambda(node, environment, owner, depth, annotation)
             return
-        if isinstance(
-            node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
-        ):
+        if kind == _KIND_COMPREHENSION:
             self._comprehension(node, environment, owner, depth, annotation)
             return
         if (
-            isinstance(node, ast.Name)
+            annotation is not None
+            and isinstance(node, ast.Name)
             and isinstance(node.ctx, ast.Load)
-            and annotation is not None
         ):
             candidate = self._opaque_binding(environment, node.id)
             if candidate is not None:
                 self._opaque_references.append(
                     OpaqueReference(node, context, candidate)
                 )
-        if isinstance(node, ast.NamedExpr):
+        if kind == _KIND_WALRUS:
             target_env = environment
             while isinstance(target_env, ComprehensionBindingScope):
                 target_env = target_env.parent
@@ -1412,8 +1564,19 @@ class SourceBindingIndex:
             )
             self._visit(node.value, environment, owner, role, depth + 1, annotation)
             return
-        for child in ast.iter_child_nodes(node):
-            self._visit(child, environment, owner, role, depth + 1, annotation)
+        child_depth = depth + 1
+        visit = self._visit
+        spec = _CHILD_SPECS.get(cls)
+        if spec is None:
+            spec = _child_spec(node)
+        for name, is_list in spec:
+            value = getattr(node, name)
+            if is_list:
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        visit(item, environment, owner, role, child_depth, annotation)
+            elif isinstance(value, ast.AST):
+                visit(value, environment, owner, role, child_depth, annotation)
 
     def _opaque_binding(self, environment, name):
         while isinstance(environment, BindingEnvironment):
@@ -1479,20 +1642,23 @@ class SourceBindingIndex:
             (arg.annotation, "parameter-annotation") for arg in annotated_parameters
         ]
         annotations.append((node.returns, "return-annotation"))
+        future_annotations = self.future_annotations
+        if future_annotations:
+            resolver = self.global_reference
+            own_parameters = getattr(node, "type_params", ())
+            names = set(generic.names) if own_parameters else set()
+            candidates = (
+                (generic, self.global_reference)
+                if own_parameters
+                else (self.global_reference,)
+            )
+        else:
+            resolver = generic
+            names = self._generic_names(generic)
+            candidates = None
         for expression, role in annotations:
             if expression is None:
                 continue
-            resolver = self.global_reference if self.future_annotations else generic
-            names = self._generic_names(generic)
-            candidates = None
-            if self.future_annotations:
-                own_parameters = getattr(node, "type_params", ())
-                names = set(generic.names) if own_parameters else set()
-                candidates = (
-                    (generic, self.global_reference)
-                    if own_parameters
-                    else (self.global_reference,)
-                )
             annotation_env = self._environment(
                 AnnotationEnvironment(
                     self, expression, resolver, owner, self.policy, names, candidates
