@@ -182,6 +182,12 @@ class PyClass(pyobjects.PyClass):
         self._superclasses = self.get_module()._get_concluded_data()
         self._receiver_attributes_collected = False
 
+    def _create_structural_attributes(self):
+        from rope.base import externaldata
+
+        attributes = super()._create_structural_attributes()
+        return externaldata.add_class_data(self, attributes)
+
     def get_superclasses(self):
         if self._superclasses.get() is None:
             self._superclasses.set(self._get_bases())

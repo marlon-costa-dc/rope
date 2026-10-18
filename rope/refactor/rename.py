@@ -110,6 +110,20 @@ class Rename:
         resources = list(resources)
         self.validate_changes(new_name)
         occurrences.check_opaque_references(self.project, self.old_pyname, resources)
+        from rope.base import externaldata
+
+        defining, _ = self.old_pyname.get_definition_location()
+        if defining is not None:
+            externaldata.check_rename(
+                defining, self.old_name, self.old_pyname, self.old_instance
+            )
+        for file_ in resources:
+            externaldata.check_rename(
+                self.project.get_pymodule(file_),
+                self.old_name,
+                self.old_pyname,
+                self.old_instance,
+            )
         changes = ChangeSet(f"Renaming <{self.old_name}> to <{new_name}>")
         finder = occurrences.create_finder(
             self.project,
