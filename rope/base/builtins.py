@@ -26,6 +26,14 @@ class BuiltinModule(pyobjects.AbstractModule):
     def get_name(self):
         return self.name.split(".")[-1]
 
+    @utils.saveit
+    def get_scope(self):
+        # Module scope over the native attribute mapping; builtin modules
+        # carry no source, so the usual parsed-module scope does not apply.
+        import rope.base.pyscopes
+
+        return rope.base.pyscopes.BuiltinModuleScope(self)
+
     @property
     @utils.saveit
     def attributes(self):

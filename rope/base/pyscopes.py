@@ -186,6 +186,24 @@ class GlobalScope(Scope):
         return rope.base.builtins.builtins.get_attributes()
 
 
+class BuiltinModuleScope(Scope):
+    """Module scope over a C/builtin module.
+
+    Builtin modules carry no source, concluded data, or child scopes; their
+    names are the live attribute mapping of the native module.
+    """
+
+    def __init__(self, pyobject):
+        super().__init__(getattr(pyobject, "pycore", None), pyobject, None)
+        self.names = pyobject.attributes
+
+    def get_start(self):
+        return 1
+
+    def get_kind(self):
+        return "Module"
+
+
 class ComprehensionScope(Scope):
     def __init__(self, pycore, pyobject, visitor):
         super().__init__(pycore, pyobject, pyobject.parent.get_scope())

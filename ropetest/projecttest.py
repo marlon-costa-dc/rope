@@ -1036,6 +1036,21 @@ class RopeFolderTest(unittest.TestCase):
         self.assertTrue(self.project.is_ignored(myfile))
         self.assertFalse(self.project.is_ignored(file2))
 
+    def test_python_path_under_root_without_ignored_resources_pref(self):
+        # A python path folder inside the root whose path contains
+        # site-packages must not require the caller to preseed the
+        # ignored_resources preference (#756 follow-up).
+        import tempfile
+        from pathlib import Path
+
+        directory = Path(tempfile.mkdtemp())
+        site_packages = directory / ".venv" / "lib" / "python3.13" / "site-packages"
+        site_packages.mkdir(parents=True)
+        (site_packages / "stubpkg.py").write_text("")
+        project = Project(str(directory), python_path=[str(site_packages)])
+        self.assertTrue(project.get_file(".venv/lib/python3.13/site-packages/stubpkg.py").exists() is not None)
+        project.close()
+
     def test_ignored_folders(self):
         self.project = testutils.sample_project(ignored_resources=["myfolder"])
         myfolder = self.project.root.create_folder("myfolder")

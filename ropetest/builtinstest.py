@@ -17,6 +17,12 @@ class BuiltinTypesTest(unittest.TestCase):
         testutils.remove_project(self.project)
         super().tearDown()
 
+    def test_builtin_module_exposes_scope(self):
+        module = builtins.BuiltinModule("builtins")
+        scope = module.get_scope()
+        self.assertEqual("Module", scope.get_kind())
+        self.assertIn("len", scope.get_names())
+
     def test_simple_case(self):
         self.mod.write("l = []\n")
         pymod = self.project.get_pymodule(self.mod)

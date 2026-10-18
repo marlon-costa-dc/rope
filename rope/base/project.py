@@ -247,10 +247,12 @@ class Project(_Project):
             if p.pathlib.is_relative_to(self.root.pathlib)
             and "site-packages" in p.pathlib.parts
         ]
-        for p in extra_ignores:
+        if extra_ignores:
             # I'm using this approach, because self.prefs.add after _init_prefs
             # does not work for some reason.
-            prefs["ignored_resources"].append(str(p))
+            prefs.setdefault("ignored_resources", []).extend(
+                str(p) for p in extra_ignores
+            )
 
         self._init_prefs(prefs)
         if ropefolder is not None:
