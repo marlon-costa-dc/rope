@@ -316,3 +316,7 @@ class _ChangeComputer:
                     result.extend(self._get_nearest_roots(child))
             self._nearest_roots[node] = result
         return self._nearest_roots[node]
+
+
+ChangeComputer = _ChangeComputer
+"""Public alias restoring the historical restructure change-computer contract."""
