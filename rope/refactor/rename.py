@@ -110,7 +110,9 @@ class Rename:
             resources = self.project.get_python_files()
         resources = list(resources)
         self.validate_changes(new_name)
-        occurrences.check_opaque_references(self.project, self.old_pyname, resources)
+        occurrences.check_opaque_references(
+            self.project, self.old_pyname, resources, name=self.old_name
+        )
         from rope.base import externaldata
 
         defining, _ = self.old_pyname.get_definition_location()
@@ -271,7 +273,11 @@ class ChangeOccurrences:
         changes = ChangeSet(f"Changing <{self.old_name}> occurrences to <{new_name}>")
         scope_start, scope_end = self._get_scope_offset()
         occurrences.check_opaque_references(
-            self.project, self.old_pyname, [self.resource], (scope_start, scope_end)
+            self.project,
+            self.old_pyname,
+            [self.resource],
+            (scope_start, scope_end),
+            name=self.old_name,
         )
         finder = occurrences.create_finder(
             self.project,
