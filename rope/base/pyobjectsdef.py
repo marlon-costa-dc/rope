@@ -329,15 +329,27 @@ class PyPackage(pyobjects.PyPackage):
         self.resource = resource
         init_dot_py = self._get_init_dot_py()
         if init_dot_py is not None:
+            self.source_code = pycore.project.get_pymodule(
+                init_dot_py, force_errors=force_errors
+            ).source_code
             ast_node = pycore.project.get_pymodule(
                 init_dot_py, force_errors=force_errors
             ).get_ast()
         else:
-            ast_node = ast.parse("\n")
+            # A namespace package has no source of its own; model it as
+            # an empty module so scope and line queries work on it.
+            self.source_code = "\n"
+            ast_node = ast.parse(self.source_code)
+        self.star_imports = []
+        self.visitor_class = _GlobalVisitor
+        self.coding = fscommands.read_str_coding(self.source_code)
         super().__init__(pycore, ast_node, resource)
 
     def _create_structural_attributes(self):
         result = {}
+        # A package defines no module-level objects of its own; its names
+        # come from extension/builtin submodules and its folder children.
+        self.defineds = []
         modname = rope.base.libutils.modname(self.resource)
         extension_submodules = self.pycore._builtin_submodules(modname)
         for name, module in extension_submodules.items():
@@ -372,8 +384,26 @@ class PyPackage(pyobjects.PyPackage):
         else:
             return None
 
+    @property
+    @utils.saveit
+    def lines(self):
+        """A `SourceLinesAdapter` over the package source"""
+        return rope.base.codeanalyze.SourceLinesAdapter(self.source_code)
+
+    @property
+    @utils.saveit
+    def logical_lines(self):
+        """A `LogicalLinesFinder` over the package source"""
+        return rope.base.codeanalyze.CachingLogicalLineFinder(self.lines)
+
     def _create_scope(self):
-        return self.get_module().get_scope()
+        module = self.get_module()
+        if module is self:
+            # A namespace package has no __init__.py to delegate to;
+            # fall back to its own (empty) module scope instead of
+            # recursing through get_scope() forever.
+            return rope.base.pyscopes.GlobalScope(self.pycore, self)
+        return module.get_scope()
 
     def get_module(self):
         init_dot_py = self._get_init_dot_py()
