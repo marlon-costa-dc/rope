@@ -353,14 +353,16 @@ class _PatchingASTWalker:
             return self.source[start : quote_pos + len(quote_char)]
 
         def end_quote_char():
-            possible_quotes = [
-                (self.source.source.rfind(q, start, end), q)
-                for q in reversed(QUOTE_CHARS)
-            ]
-            _, quote_pos, quote_char = max(
-                (len(q), pos, q) for pos, q in possible_quotes if pos != -1
+            # The delimiter is whatever quote sequence terminates the
+            # literal, not the longest quote found anywhere in the body
+            # (a double-quoted f-string may contain a ''' sequence).
+            for quote_char in QUOTE_CHARS:
+                if self.source.source[end - len(quote_char) : end] == quote_char:
+                    return quote_char
+            raise MismatchedTokenError(
+                f"f-string at line {self.lines.get_line_number(start)} does not"
+                " end with a quote delimiter"
             )
-            return self.source[end - len(quote_char) : end]
 
         QUOTE_CHARS = ['"""', "'''", '"', "'"]
         offset = self.source.offset
