@@ -33,6 +33,7 @@
 - Preserve receivers and source identities for ordinary functions stored on classes (@yangfan-yf-yf)
 - #905 Ignore `node_modules` directories by default when scanning project files and source folders. (@marcoeangeli)
 - Compute scope regions from AST positions without patching the whole module, preserving normalized Unicode identifiers, decorators, and LF, CRLF, and CR newlines
+- Honor native module and namespace precedence when resolving imports: regular packages and modules win over namespace-package directories, and namespace portions are combined across source folders
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
