@@ -1,5 +1,14 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.2
+
+Performance and inference cycle on the 1.15.0+dc.1 line:
+
+- Fix property inference regression from the parameter-bindings adoption: record function calls without resolving the function from its own text, restoring typed attributes on properties (rename no longer misses subclass call sites)
+- Resolve external class-data plans once per module entry: single shared plan store, per-owner lazy resolution, attribute readers grouped in one pass, class-binding scan memoized
+- Cut the source-binding index build cost (typed node dispatch, slotted contexts, ASCII fast paths in ASTLinesAdapter)
+- Skip the opaque-reference scan for modules that never spell the renamed name and modules without class-attribute writes
+
 # Release 1.15.0+dc.1
 
 Fork of upstream rope 1.15.0: adopts the upstream open pull requests
