@@ -20,6 +20,7 @@
 - #886 Track and close SQLite connections created in worker threads in AutoImport (@mcepl)
 - #827 Fix inlining parameters used as indices in subscript assignments (@SAY-5)
 - #893 Fix changing constructor signatures for classes defined inside functions (@SAY-5)
+- Refuse variable inlining that moves an initializer into a deferred annotation or a lazy function/class type parameter.
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
