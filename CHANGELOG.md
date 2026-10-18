@@ -31,6 +31,7 @@
 - Fix namespace package directory renames and preserve explicit resource limits.
 - Prevent unsafe initializer and annotation removal when inlining variables (@yangfan-yf-yf)
 - Preserve receivers and source identities for ordinary functions stored on classes (@yangfan-yf-yf)
+- #905 Ignore `node_modules` directories by default when scanning project files and source folders. (@marcoeangeli)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
