@@ -471,6 +471,15 @@ disk changes.  Resource observers obtain the original modification and size
 indicator from this same ``stat`` port.  Directory enumeration and metadata
 errors propagate to the caller.
 
+Resources outside the project root are owned by ``NoProject``.
+For a closed analysis, construct ``NoProject(fscommands=captured)`` and
+pass it as ``external_project`` to ``Project`` together with the same
+``fscommands``.  This keeps the project's ordinary module lookup order
+and lexical scopes while binding external reads to the captured
+filesystem.  It does not modify the process-wide ``get_no_project()``
+instance.  Such read-only projects should use ``ropefolder=None``,
+``save_objectdb=False``, and ``save_history=False``.
+
 
 ``.ropeproject`` Folder
 =======================
