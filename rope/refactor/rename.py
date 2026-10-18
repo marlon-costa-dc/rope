@@ -348,6 +348,8 @@ def _is_local(pyname):
             "Comprehension",
             "TypeParameters",
         )
+    if not isinstance(pyname, pynames.AssignedName):
+        return False
     module, lineno = pyname.get_definition_location()
     if lineno is None:
         return False
