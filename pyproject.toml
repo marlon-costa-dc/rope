@@ -23,6 +23,8 @@ classifiers = [
     'Topic :: Software Development',
 ]
 version = '1.15.0'
+license = 'LGPL-3.0-or-later'
+license-files = ['COPYING']
 dependencies = ['pytoolconfig[global] >= 1.2.2']
 
 [[project.authors]]
@@ -32,9 +34,6 @@ email = 'aligrudi@users.sourceforge.net'
 [[project.maintainers]]
 name = 'Lie Ryan'
 email = 'lieryan.24@proton.me'
-
-[project.license]
-text = 'LGPL-3.0-or-later'
 
 [project.urls]
 Source = 'https://github.com/python-rope/rope'
@@ -52,27 +51,19 @@ dev = [
     'pytest-cov>=4.1.0',
     'pytest-timeout>=2.1.0',
     'build>=0.7.0',
-    'pre-commit>=2.20.0',
+    'pre-commit>=3.2.0',
 ]
 release = [
     'toml>=0.10.2',
     'twine>=4.0.2',
     'pip-tools>=6.12.1',
 ]
-[tool.setuptools]
-packages = [
-    'rope',
-    'rope.base',
-    'rope.base.oi',
-    'rope.base.oi.type_hinting',
-    'rope.base.oi.type_hinting.providers',
-    'rope.base.oi.type_hinting.resolvers',
-    'rope.base.utils',
-    'rope.contrib',
-    'rope.contrib.autoimport',
-    'rope.refactor',
-    'rope.refactor.importutils',
-]
+[tool.setuptools.packages.find]
+namespaces = false
+exclude = ['ropetest*']
+
+[tool.setuptools.package-data]
+rope = ["py.typed"]
 
 [tool.black]
 target-version = [
@@ -108,6 +99,9 @@ markers = [
 
 [build-system]
 requires = [
-    'setuptools',
+    'setuptools>=77.0.0',
 ]
 build-backend = 'setuptools.build_meta'
+
+[tool.coverage.run]
+source = ['rope', 'ropetest']
