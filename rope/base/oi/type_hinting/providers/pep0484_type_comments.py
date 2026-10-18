@@ -1,7 +1,6 @@
 import re
 
 import rope.base.pynamesdef
-
 from rope.base.oi.type_hinting import utils
 from rope.base.oi.type_hinting.providers import interfaces
 
