@@ -2,7 +2,6 @@ import os.path
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
 from textwrap import dedent
 from unittest.mock import patch
 
