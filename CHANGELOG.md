@@ -1,47 +1,61 @@
 # **Upcoming release**
-- #861 Recognize pattern captures for rename and reject unsupported inline operations (@yangfan-yf-yf)
-- #868 Fix patchedast matching tokens inside string literals
-- #862 Recognize type alias statements as assignments in rename and inline refactoring (@TanbirRamim)
-- #879 Fix patchedast region for implicitly-concatenated f-strings whose trailing parts hold no interpolation (@stevemadere)
-- #814 Treat `ignored_resources` as non-project files for autoimport purposes (@smheidrich)
-- #823 Fix autoimport.sqlite deriving module names from non-package folders (@deepakganesh78)
-- ...
-- #859 Fix `find_definition`/Rename not resolving `async def` methods called via `self` (@gadievron)
-- #850 Update and pin black version in pre-commit and Github Actions
-- #851 Bump supported python version to up to Python 3.14
-- #852 Implement patchedast handlers for TypeAlias
-- #853 Implement patchedast handlers TypeVar
-- #864 Preserve sibling assignments when inlining compound assignments (@onuracar-dev)
-- #871 Reject extraction of expressions with nested named expressions (@yangfan-yf-yf)
-- #811 Preserve still-used imports when moving globals with filtered import cleanup
-- #825, #878 Define functions extracted from a class body before the class (@ethanstoner)
-- #831 Preserve external imported names when renaming their local bindings (@ryanchou1994)
-- #802 Patch annotations on regular function arguments (@Strohutt)
-- #886 Track and close SQLite connections created in worker threads in AutoImport (@mcepl)
-- #827 Fix inlining parameters used as indices in subscript assignments (@SAY-5)
-- #893 Fix changing constructor signatures for classes defined inside functions (@SAY-5)
-- Refuse variable inlining that moves an initializer into a deferred annotation or a lazy function/class type parameter.
-- Refuse inlining that mistakes lambda-local bindings for enclosing names.
-- Preserve positional-only and keyword-only parameter bindings, call inference,
-- Keep keyword labels of unresolved calls separate from same-named variables during renaming.
-- Preserve source bindings in function annotations, lambdas and comprehensions
-- Keep initialized instance lambda values separate from same-named class values
-- Refuse edits to ordinary positional-only and keyword-only parameter bindings
-- Preserve same-module class data assignments and reject unsafe dependent renames (@yangfan-yf-yf)
-- Fix namespace package directory renames and preserve explicit resource limits.
-- Prevent unsafe initializer and annotation removal when inlining variables (@yangfan-yf-yf)
-- Preserve receivers and source identities for ordinary functions stored on classes (@yangfan-yf-yf)
-- #905 Ignore `node_modules` directories by default when scanning project files and source folders. (@marcoeangeli)
-- Compute scope regions from AST positions without patching the whole module, preserving normalized Unicode identifiers, decorators, and LF, CRLF, and CR newlines
-- Honor native module and namespace precedence when resolving imports: regular packages and modules win over namespace-package directories, and namespace portions are combined across source folders
-- Route resource existence, directory enumeration, and observer metadata through the filesystem commands owner: FileSystemCommands gained exists/isfile/isdir/listdir/stat/realpath and project, resource, and observer queries no longer bypass custom fscommands
-- Allow an explicit external NoProject with the same captured filesystem via Project(external_project=...) and NoProject(fscommands=...), preserving native module resolution after source trees change (internal closed-source line)
-- Walk positional-only, keyword-only and annotated parameters in patchedast
 
-- #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
-- #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
-- #896 patchedast cleanup and refactoring (@lieryan)
+# Release 1.15.0+dc.1
+
+Fork of upstream rope 1.15.0: adopts the upstream open pull requests
+below and adds the datacosmos feature branches.
+
+Upstream pull requests adopted:
+
+- #756 Fix import paths with `site-packages` as part of package name (@last-partizan)
+- #790 Fix multiline empty tuple with comment (@apmorton)
+- #808 Handle the edge case where an f-string looks like `f"#{some_var}"` (@rlbr)
+- #814 Treat packages in `ignored_resources` as non-project files for autoimport (@smheidrich)
+- #836, #837 Correct `_const_node_type_names` fallback for Python 3.14+ (@EhteshamSid)
+- #848 Fix autoimport.sqlite deriving module names from non-package folders (@deepakganesh78)
+- #858 Don't fold source after an f-string with an unmatched literal bracket, Python 3.12+ (@gadievron)
+- #859 Recognise `async def` method headers in worder (@gadievron)
+- #861, #865 Recognize match pattern captures as assignments (@yangfan-yf-yf)
+- #862, #874 Treat type alias statements as name assignments and refuse inlining them (@TanbirRamim)
+- #867 patchedast: raise MismatchedTokenError instead of AttributeError (@quazardous)
+- #868 patchedast: don't match tokens inside string literals (@quazardous)
+- #864, #866 Preserve compound assignments when inlining (@onuracar-dev)
+- #876 Fix extraction of nested named expressions (@yangfan-yf-yf)
+- #877 Preserve used imports during filtered import cleanup (@yangfan-yf-yf)
+- #878 Define functions extracted from a class body before the class (@ethanstoner)
+- #881 Preserve original names in external from-imports (@ryanchou1994)
+- #879, #880 Fix patchedast region for implicitly-concatenated f-strings (@stevemadere)
+- #802, #887 Fix source regions for regular argument annotations (@Strohutt)
+- #886, #889 autoimport: track and close SQLite connections across worker threads (@mcepl)
+- #827, #892 Preserve subscript index reads during method inlining (@SAY-5)
+- #893 Resolve function-local constructor names through their scope (@SAY-5)
+- #894 Refuse unsafe inlining into deferred annotations and type parameters (@yangfan-yf-yf)
+- #897 Refuse unsafe inlining of lambda-local bindings (@yangfan-yf-yf)
+- #898 Preserve positional-only and keyword-only parameter bindings (@yangfan-yf-yf)
+- #899 Keep unresolved call keyword labels separate from variables (@yangfan-yf-yf)
+- #900 Preserve annotation, lambda and comprehension source bindings (@yangfan-yf-yf)
+- #901 Fix field renames after external class data writes (@yangfan-yf-yf)
+- #902 Fix namespace package directory renames (@yangfan-yf-yf)
+- #903 Preserve initializer behavior when removing inlined variables (@yangfan-yf-yf)
+- #904 Bind receivers for ordinary functions stored on classes (@yangfan-yf-yf)
+- #905 Ignore `node_modules` directories by default (@marcoeangeli)
+
+Fork contributions (also proposed upstream):
+
+- #844 Detect the JoinedStr end quote from the terminating delimiter (@marlon-costa-dc)
+- #882 Match MatchSequence delimiters by tokenizing the node segment (@marlon-costa-dc)
+- Find textual occurrence offsets through the tokenizer so rename locates names inside PEP 701 f-strings
+- Walk positional-only, keyword-only and annotated parameters in patchedast signatures
+- Guard type-hint providers against non-AssignedName pynames and infer `X | Y` union annotations
+- Compute scope regions from native AST positions, preserving Unicode identifiers, decorators, and LF, CRLF, and CR newlines
+- Honor namespace-package precedence when resolving imports across source folders
+- Route project, resource, and observer filesystem queries through the fscommands owner (exists/isfile/isdir/listdir/stat/realpath)
+- Model namespace packages as empty modules so scope machinery can walk them
 - Discover the compiled extension module used by autoimport tests from the import system
+
+Datacosmos internal:
+
+- Project(external_project=...) and NoProject(fscommands=...) share one captured filesystem so native module resolution survives source-tree changes
 
 # Release 1.15.0
 
