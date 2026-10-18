@@ -36,7 +36,8 @@ calling the `create_finder()` function.
 """
 
 import contextlib
-import re
+import io
+import tokenize
 from typing import Iterator
 
 from rope.base import (
@@ -80,7 +81,9 @@ class Finder:
         tools = _OccurrenceToolsCreator(
             self.project, resource=resource, pymodule=pymodule, docs=self.docs
         )
-        for offset in self._textual_finder.find_offsets(tools.source_code):
+        for offset in self._textual_finder.find_offsets(
+            tools.source_code, tools.pymodule.get_ast()
+        ):
             occurrence = Occurrence(tools, offset)
             for filter in self.filters:
                 result = filter(occurrence)
@@ -311,41 +314,50 @@ class _TextualFinder:
     def __init__(self, name, docs=False):
         self.name = name
         self.docs = docs
-        self.comment_pattern = _TextualFinder.any("comment", [r"#[^\n]*"])
-        self.string_pattern = _TextualFinder.any(
-            "string", [codeanalyze.get_string_pattern()]
-        )
-        self.f_string_pattern = _TextualFinder.any(
-            "fstring", [codeanalyze.get_formatted_string_pattern()]
-        )
-        self.pattern = self._get_occurrence_pattern(self.name)
 
-    def find_offsets(self, source: str) -> Iterator[int]:
+    def find_offsets(self, source: str, module: ast.AST) -> Iterator[int]:
         if not self._fast_file_query(source):
             return
         if self.docs:
-            searcher = self._normal_search
+            yield from self._normal_search(source)
         else:
-            searcher = self._re_search
-        yield from searcher(source)
+            yield from self._token_search(source, module)
 
-    def _re_search(self, source: str) -> Iterator[int]:
-        for match in self.pattern.finditer(source):
-            if match.groupdict()["occurrence"]:
-                yield match.start("occurrence")
-            elif match.groupdict()["fstring"]:
-                f_string = match.groupdict()["fstring"]
-                for offset in self._search_in_f_string(f_string):
-                    yield match.start("fstring") + offset
+    def _token_search(self, source: str, module: ast.AST) -> Iterator[int]:
+        """Select native names, including expressions stored in string tokens.
 
-    def _search_in_f_string(self, f_string: str) -> Iterator[int]:
-        tree = ast.parse(f_string)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and node.id == self.name:
-                yield node.col_offset
-            elif isinstance(node, ast.Attribute) and node.attr == self.name:
-                assert node.end_col_offset is not None
-                yield node.end_col_offset - len(self.name)
+        The module AST locates real formatted expressions without interpreting
+        ordinary literal braces. Native NAME tokens preserve attributes and
+        keyword names. Deduplication retains textual order when both the full
+        tokenizer and a formatted expression expose the same occurrence.
+        """
+        offsets = set(self._token_offsets(source))
+        lines = codeanalyze.ASTLinesAdapter(source)
+        for node in ast.walk(module):
+            if isinstance(node, ast.FormattedValue):
+                start, end = lines[node.value]
+                if start is None or end is None:
+                    raise exceptions.RopeError(
+                        "F-string expression AST has no complete source positions"
+                    )
+                # AST positions omit enclosing parentheses and their continuation.
+                expression = "(" + source[start:end] + "\n)"
+                offsets.update(
+                    start + offset - 1 for offset in self._token_offsets(expression)
+                )
+        yield from sorted(offsets)
+
+    def _token_offsets(self, source: str) -> Iterator[int]:
+        line_starts = [
+            match.start()
+            for match in codeanalyze.ASTLinesAdapter.LINE_PATTERN_STR.finditer(source)
+        ]
+        for token in tokenize.generate_tokens(
+            io.StringIO(source, newline=None).readline
+        ):
+            if token.type == tokenize.NAME and token.string == self.name:
+                row, column = token.start
+                yield line_starts[row - 1] + column
 
     def _normal_search(self, source: str) -> Iterator[int]:
         current = 0
@@ -371,23 +383,6 @@ class _TextualFinder:
             return resource.read()
         else:
             return pymodule.source_code
-
-    def _get_occurrence_pattern(self, name):
-        occurrence_pattern = _TextualFinder.any("occurrence", ["\\b" + name + "\\b"])
-        pattern = re.compile(
-            occurrence_pattern
-            + "|"
-            + self.comment_pattern
-            + "|"
-            + self.string_pattern
-            + "|"
-            + self.f_string_pattern
-        )
-        return pattern
-
-    @staticmethod
-    def any(name, list_):
-        return "(?P<%s>" % name + "|".join(list_) + ")"
 
 
 class _OccurrenceToolsCreator:

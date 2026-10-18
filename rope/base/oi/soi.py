@@ -6,7 +6,7 @@ package.
 """
 
 import rope.base.builtins  # Use full qualification for clarity.
-from rope.base import arguments, evaluate, pynames, pyobjects, utils
+from rope.base import arguments, ast, evaluate, pynames, pyobjects, utils
 from rope.base.oi.type_hinting.factory import get_type_hinting_factory
 
 _ignore_inferred = utils.ignore_exception(pyobjects.IsBeingInferredError)
@@ -49,6 +49,10 @@ def infer_parameter_objects(pyfunction):
 
 def _handle_first_parameter(pyobject, parameters):
     kind = pyobject.get_kind()
+    if isinstance(pyobject, pyobjects.PyFunction) and not (
+        pyobject.arguments.posonlyargs or pyobject.arguments.args
+    ):
+        return
     if not parameters:
         if not pyobject.get_param_names(special_args=False):
             return
@@ -141,6 +145,9 @@ def _parameter_objects(pyobject):
 
 @_ignore_inferred
 def _infer_assignment(assignment, pymodule):
+    assign_node = assignment.type_hint or assignment.ast_node
+    if isinstance(assign_node, ast.pattern):
+        return pyobjects.get_unknown()
     result = _follow_pyname(assignment, pymodule)
     if result is None:
         return None

@@ -92,7 +92,8 @@ def set_prefs(prefs):
     #
     #     prefs["extension_modules"] = []
 
-    # Add all standard c-extensions to extension_modules list.
+    # Allow standard C extensions and loaded frozen standard-library modules.
+    # Frozen modules are inspected when no source resource is found.
     #
     #     prefs["import_dynload_stdmods"] = True
 

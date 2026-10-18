@@ -37,6 +37,18 @@ It's good to know that:
   has been passed to them.
 * Out of project modules that are imported from a module inside a
   project are handled but never changed by refactorings.
+* With ``import_dynload_stdmods`` enabled, loaded frozen standard-library
+  modules without a source resource are resolved through the native
+  builtin-module cache. This includes aliases such as ``collections.abc``
+  when the interpreter supplies no source file. Their admission does not
+  change the project's ``extension_modules`` preference. Admitted extension
+  modules retain their existing precedence; other source resources take
+  precedence over frozen aliases. The standard-library inspection policy
+  is captured with the core's extension-module cache.
+* String-backed modules without an associated resource have no relative
+  folder. Lookup without that context raises
+  ``rope.base.exceptions.ModuleNotFoundError``; import inference retains
+  Rope's unknown-object result for the missing module.
 * Rope makes a rope folder inside projects.  By default the name of this
   folder is ``.ropeproject``, but that can be changed using the
   constructor's ``ropefolder`` parameter. Passing ``None`` prevents rope
@@ -335,7 +347,7 @@ Retrieve the path relative to the project's root directory.
 .. code-block:: python
 
   # Get the path relative to the project's root directory.
-  relpath = libutils.relative(myproject.address, path)
+  relpath = libutils.path_relative_to_project_root(myproject, path)
 
 
 ``libutils.path_to_resource()``
@@ -426,6 +438,22 @@ module.  If you need other version control systems you can write a new
 class that provides this interface.  ``rope.base.project.Project``
 accepts an ``fscommands`` argument.  You can use this argument to force
 rope to use your new class.
+
+The same interface owns resource queries: ``exists``, ``isfile``,
+``isdir``, ``listdir``, ``stat``, and ``realpath``.  A captured filesystem can
+therefore keep both reads and directory elections independent of later
+disk changes.  Resource observers obtain the original modification and size
+indicator from this same ``stat`` port.  Directory enumeration and metadata
+errors propagate to the caller.
+
+Resources outside the project root are owned by ``NoProject``.
+For a closed analysis, construct ``NoProject(fscommands=captured)`` and
+pass it as ``external_project`` to ``Project`` together with the same
+``fscommands``.  This keeps the project's ordinary module lookup order
+and lexical scopes while binding external reads to the captured
+filesystem.  It does not modify the process-wide ``get_no_project()``
+instance.  Such read-only projects should use ``ropefolder=None``,
+``save_objectdb=False``, and ``save_history=False``.
 
 
 ``.ropeproject`` Folder
@@ -698,6 +726,21 @@ operator (see ref:`overview:Restructurings`):
   >>> mod2.remove()
   >>> project.close()
 
+
+``Restructure`` uses the public ``rope.refactor.restructure.ChangeComputer``
+to render the native matches returned by ``SimilarFinder`` or
+``RawSimilarFinder``.  The computer receives the original source, patched
+AST, line adapter, code template and matches.  ``get_changed()`` returns
+the changed source, or ``None`` when no change is needed, and retains the
+native errors for invalid template names.
+The matches and computer must share the same patched AST; ``replace()``
+shares that tree internally.
+
+Custom wildcard argument payloads pass unchanged to their matching
+implementations; the constructor does not coerce them into the default
+wildcard's argument format.
+The supplied argument mapping stays mutable and shared with its caller.
+Package initializers are restructured as source files.
 
 See code documentation and test suites for more information.
 

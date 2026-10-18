@@ -95,6 +95,75 @@ class SimilarFinderTest(unittest.TestCase):
         start = source.rfind("1")
         self.assertEqual([(start, start + 1)], result)
 
+    def test_return_annotation_names_have_match_regions(self):
+        source = "def f() -> target:\n    return target\n"
+        finder = self._create_finder(source)
+        self.assertEqual(
+            [
+                (source.rindex("target"), source.rindex("target") + len("target")),
+                (source.index("target"), source.index("target") + len("target")),
+            ],
+            list(finder.get_match_regions("target")),
+        )
+
+    def test_async_return_annotation_expression_has_match_region(self):
+        source = "async def f() -> list[target]:\n    return []\n"
+        finder = self._create_finder(source)
+        start = source.index("list[target]")
+        self.assertEqual(
+            [(start, start + len("list[target]"))],
+            list(finder.get_match_regions("list[target]")),
+        )
+
+    def test_region_filter_can_pass_names_in_return_annotations(self):
+        source = "def f() -> target:\n    return target\n"
+        finder = self._create_finder(source)
+        start = source.rindex("target")
+        end = start + len("target")
+        self.assertEqual(
+            [(start, end)],
+            list(finder.get_match_regions("target", start=start, end=end)),
+        )
+
+    def test_metaclass_only_header_names_have_match_regions(self):
+        source = "class C(metaclass=target):\n    pass\n"
+        finder = self._create_finder(source)
+        start = source.index("target")
+        self.assertEqual(
+            [(start, start + len("target"))],
+            list(finder.get_match_regions("target")),
+        )
+
+    def test_interleaved_class_header_names_have_match_regions(self):
+        source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
+        finder = self._create_finder(source)
+        for name in ("Base", "Meta", "bases", "options"):
+            with self.subTest(name=name):
+                start = source.index(name)
+                self.assertEqual(
+                    [(start, start + len(name))],
+                    list(finder.get_match_regions(name)),
+                )
+
+    @testutils.only_for_versions_higher("3.13")
+    def test_type_parameter_bound_default_and_return_names_have_regions(self):
+        source = "def f[T: Bound = Default](value: T) -> T:\n    return value\n"
+        finder = self._create_finder(source)
+        for name in ("Bound", "Default"):
+            with self.subTest(name=name):
+                start = source.index(name)
+                self.assertEqual(
+                    [(start, start + len(name))],
+                    list(finder.get_match_regions(name)),
+                )
+        self.assertEqual(
+            [
+                (source.index("T)"), source.index("T)") + 1),
+                (source.rindex("T:"), source.rindex("T:") + 1),
+            ],
+            list(finder.get_match_regions("T")),
+        )
+
     def test_matching_basic_patterns(self):
         source = "b = a\n"
         finder = self._create_finder(source)

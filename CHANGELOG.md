@@ -9,13 +9,38 @@
 - #851 Bump supported python version to up to Python 3.14 (@lieryan)
 - #852 Implement patchedast handlers for TypeAlias (@lieryan)
 - #853 Implement patchedast handlers TypeVar (@lieryan)
+- Route resource existence, directory elections, and observer metadata through the
+  filesystem commands owner. Allow an explicit external `NoProject` with the same
+  captured filesystem, preserving native module resolution after source trees change.
+- Validate the built wheel's captured local, relative, namespace, and stub-resource
+  contracts in a fresh isolated runtime outside the source checkout.
+- Compute scope regions from AST positions without patching the whole module,
+  preserving normalized Unicode identifiers, decorators, and LF, CRLF, and CR
+  newlines. Find f-string occurrences across native tokenizer formats and validate
+  literal-node expectations against the native AST.
+
+- #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
+- #850 Update and pin black version in pre-commit and Github Actions
+- #851 Bump supported python version to up to Python 3.14
+- #852 Implement patchedast handlers for TypeAlias
+- #853 Implement patchedast handlers TypeVar
 - #847 Avoid printing autoimport syntax errors (@yangfan-yf-yf)
 - #623, #819, #863 Support MatchOr, MatchSequence, MatchStar (@jheld, @lieryan)
+- #861 Recognize pattern captures for rename and reject unsupported inline operations (@yangfan-yf-yf)
 - #870 Add default implementation for is_dir() (@lieryan)
 - #872 Fix unicode handling in patchedast (@lieryan)
 - #845 Support PEP 695 type parameters on class definitions and type aliases in patchedast (@marlon-costa-dc)
 - #849 docs: resolve warnings and update Github Actions versions (@mcepl)
 - #835 Tear down tests using python from venv (@aeliton)
+- Support PEP 695 type parameters on class definitions and type aliases in patchedast
+- Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
+- Walk positional-only, keyword-only and annotated parameters in patchedast
+- Discover the compiled extension module used by autoimport tests from the import system
+- #879 Fix patchedast region for implicitly-concatenated f-strings whose trailing parts hold no interpolation (@stevemadere)
+- #868 Fix patchedast matching tokens inside string literals
+- #862 Recognize type alias statements as assignments in rename refactoring (@TanbirRamim)
+- Locate multi-line f-strings, replacement fields and match-sequence delimiters in patchedast by parser coordinates
+- Find occurrence offsets through the tokenizer so rename locates names inside PEP 701 f-strings whose replacement fields reuse the outer quote or carry format specs
 
 # Release 1.14.0
 

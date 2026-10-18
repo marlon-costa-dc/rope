@@ -91,9 +91,10 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
             pyfunction.get_returned_object(args)
 
     def _parameter_objects(self, pyfunction):
+        parameters = pyfunction.get_parameters()
         return [
-            pyfunction.get_parameter(i)
-            for i in range(len(pyfunction.get_param_names(False)))
+            parameters[name].get_object()
+            for name in pyfunction.get_param_names(special_args=False)
         ]
 
     def _AnnAssign(self, node):

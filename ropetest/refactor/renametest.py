@@ -242,6 +242,131 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
             refactored,
         )
 
+    @testutils.only_for_versions_higher("3.10")
+    def test_renaming_match_as_capture(self):
+        code = dedent("""\
+            match value:
+                case [1, *_] as old_name:
+                    print(old_name)
+        """)
+        refactored = self._local_rename(
+            code, code.rindex("old_name") + 1, "new_name"
+        )
+        self.assertEqual(
+            dedent("""\
+                match value:
+                    case [1, *_] as new_name:
+                        print(new_name)
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_renaming_match_star_capture(self):
+        code = dedent("""\
+            match value:
+                case [1, *old_name] if old_name:
+                    print(old_name)
+        """)
+        refactored = self._local_rename(
+            code, code.index("old_name") + 1, "new_name"
+        )
+        self.assertEqual(
+            dedent("""\
+                match value:
+                    case [1, *new_name] if new_name:
+                        print(new_name)
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.10")
+    def test_renaming_match_mapping_rest_capture(self):
+        code = dedent("""\
+            match value:
+                case {"key": item, **old_name}:
+                    print(old_name)
+        """)
+        refactored = self._local_rename(
+            code, code.index("old_name") + 1, "new_name"
+        )
+        self.assertEqual(
+            dedent("""\
+                match value:
+                    case {"key": item, **new_name}:
+                        print(new_name)
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_renaming_type_alias(self):
+        code = dedent("""\
+            type old_name = int
+            x: old_name = 1
+        """)
+        refactored = self._local_rename(code, code.index("old_name") + 1, "new_name")
+        self.assertEqual(
+            dedent("""\
+                type new_name = int
+                x: new_name = 1
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_renaming_type_alias_from_its_usage(self):
+        code = dedent("""\
+            type old_name = int
+            def a_func(param: old_name) -> old_name:
+                pass
+        """)
+        offset = code.rindex("old_name") + 1
+        refactored = self._local_rename(code, offset, "new_name")
+        self.assertEqual(
+            dedent("""\
+                type new_name = int
+                def a_func(param: new_name) -> new_name:
+                    pass
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_renaming_type_alias_in_function_scope(self):
+        code = dedent("""\
+            old_name = 1
+            def a_func():
+                type old_name = int
+                x: old_name = 1
+        """)
+        offset = code.index("old_name", code.index("type")) + 1
+        refactored = self._local_rename(code, offset, "new_name")
+        self.assertEqual(
+            dedent("""\
+                old_name = 1
+                def a_func():
+                    type new_name = int
+                    x: new_name = 1
+            """),
+            refactored,
+        )
+
+    @testutils.only_for_versions_higher("3.12")
+    def test_renaming_generic_type_alias(self):
+        code = dedent("""\
+            type OldAlias[T] = list[T]
+            x: OldAlias[int] = []
+        """)
+        refactored = self._local_rename(code, code.index("OldAlias") + 1, "NewAlias")
+        self.assertEqual(
+            dedent("""\
+                type NewAlias[T] = list[T]
+                x: NewAlias[int] = []
+            """),
+            refactored,
+        )
+
     def test_renaming_arguments_for_normal_args_changing_calls(self):
         code = dedent("""\
             def a_func(p1=None, p2=None):
@@ -322,12 +447,46 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_renaming_occurrence_in_nested_f_string(self):
         code = dedent("""\
             a_var = 20
-            a_string=f'{f"{a_var}"}'
+            marker = 'π'; a_string=f'{f"{a_var}"}' " a_var {a_var}"
         """)
         expected = dedent("""\
             new_var = 20
-            a_string=f'{f"{new_var}"}'
+            marker = 'π'; a_string=f'{f"{new_var}"}' " a_var {a_var}"
         """)
+        refactored = self._local_rename(code, 2, "new_var")
+        self.assertEqual(expected, refactored)
+
+    def test_renaming_occurrence_in_f_string_with_reused_quotes(self):
+        code = dedent('''\
+            a_var = {"key": 20}
+            a_string=f"{a_var['key']} and {a_var['key']:>2}"
+        ''')
+        expected = dedent('''\
+            new_var = {"key": 20}
+            a_string=f"{new_var['key']} and {new_var['key']:>2}"
+        ''')
+        refactored = self._local_rename(code, 2, "new_var")
+        self.assertEqual(expected, refactored)
+
+    def test_renaming_occurrence_in_f_string_format_spec(self):
+        code = dedent('''\
+            a_var = 4
+            marker = 'π'; a_string=f"""value {(
+                a_var +
+                    a_var +
+                  a_var
+            ):>{a_var}}
+            literal {{a_var}}"""
+        ''')
+        expected = dedent('''\
+            new_var = 4
+            marker = 'π'; a_string=f"""value {(
+                new_var +
+                    new_var +
+                  new_var
+            ):>{new_var}}
+            literal {{a_var}}"""
+        ''')
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 

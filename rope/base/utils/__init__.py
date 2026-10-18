@@ -1,13 +1,22 @@
 import sys
 import warnings
+from typing import Callable, Concatenate, ParamSpec, TypeVar
+
+_OwnerT = TypeVar("_OwnerT")
+_ReturnT = TypeVar("_ReturnT")
+_Params = ParamSpec("_Params")
 
 
-def saveit(func):
+def saveit(
+    func: Callable[Concatenate[_OwnerT, _Params], _ReturnT],
+) -> Callable[Concatenate[_OwnerT, _Params], _ReturnT]:
     """A decorator that caches the return value of a function"""
 
     name = "_" + func.__name__
 
-    def _wrapper(self, *args, **kwds):
+    def _wrapper(
+        self: _OwnerT, *args: _Params.args, **kwds: _Params.kwargs
+    ) -> _ReturnT:
         if not hasattr(self, name):
             setattr(self, name, func(self, *args, **kwds))
         return getattr(self, name)

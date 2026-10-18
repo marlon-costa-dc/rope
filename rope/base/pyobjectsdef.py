@@ -45,9 +45,10 @@ class PyFunction(pyobjects.PyFunction):
         return rope.base.oi.soi.infer_returned_object(self, args)
 
     def _handle_special_args(self, pyobjects):
-        if len(pyobjects) == len(self.arguments.args):
+        if len(pyobjects) == len(self.get_param_names(special_args=False)):
             if self.arguments.vararg:
-                pyobjects.append(rope.base.builtins.get_list())
+                position = len(self.arguments.posonlyargs) + len(self.arguments.args)
+                pyobjects.insert(position, rope.base.builtins.get_list())
             if self.arguments.kwarg:
                 pyobjects.append(rope.base.builtins.get_dict())
 
@@ -77,12 +78,22 @@ class PyFunction(pyobjects.PyFunction):
 
     def get_param_names(self, special_args=True):
         # TODO: handle tuple parameters
-        result = [node.arg for node in self.arguments.args if isinstance(node, ast.arg)]
+        result = [
+            node.arg
+            for node in (*self.arguments.posonlyargs, *self.arguments.args)
+            if isinstance(node, ast.arg)
+        ]
+        keyword_only = [
+            node.arg for node in self.arguments.kwonlyargs if isinstance(node, ast.arg)
+        ]
         if special_args:
             if self.arguments.vararg:
                 result.append(self.arguments.vararg.arg)
+            result.extend(keyword_only)
             if self.arguments.kwarg:
                 result.append(self.arguments.kwarg.arg)
+        else:
+            result.extend(keyword_only)
         return result
 
     def get_kind(self):
@@ -371,6 +382,12 @@ class _AssignVisitor(ast.RopeNodeVisitor):
             self.visit(child_node)
         _ExpressionVisitor(self.scope_visitor).visit(node.value)
 
+    def _TypeAlias(self, node):
+        # the alias value is not recorded as an assigned value: a type
+        # alias is a distinct TypeAliasType object whose value is evaluated
+        # lazily, so substituting the value for the alias name is unsafe
+        self.visit(node.name)
+
     def _assigned(self, name, assignment=None):
         self.scope_visitor._assigned(name, assignment)
 
@@ -451,8 +468,27 @@ class _ScopeVisitor(_ExpressionVisitor):
     def _AnnAssign(self, node):
         _AnnAssignVisitor(self).visit(node)
 
+    def _TypeAlias(self, node):
+        _AssignVisitor(self).visit(node)
+
     def _AugAssign(self, node):
         pass
+
+    def _add_match_capture(self, node, name):
+        if name is not None:
+            assignment = pynamesdef.AssignmentValue(node)
+            self._assigned(name, assignment)
+
+    def _MatchAs(self, node):
+        self._add_match_capture(node, node.name)
+        self.generic_visit(node)
+
+    def _MatchStar(self, node):
+        self._add_match_capture(node, node.name)
+
+    def _MatchMapping(self, node):
+        self._add_match_capture(node, node.rest)
+        self.generic_visit(node)
 
     def _For(self, node):
         self._update_evaluated(node.target, node.iter, ".__iter__().next()")
