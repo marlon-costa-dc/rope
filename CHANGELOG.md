@@ -32,6 +32,7 @@
 - Prevent unsafe initializer and annotation removal when inlining variables (@yangfan-yf-yf)
 - Preserve receivers and source identities for ordinary functions stored on classes (@yangfan-yf-yf)
 - #905 Ignore `node_modules` directories by default when scanning project files and source folders. (@marcoeangeli)
+- Compute scope regions from AST positions without patching the whole module, preserving normalized Unicode identifiers, decorators, and LF, CRLF, and CR newlines
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
