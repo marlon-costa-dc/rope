@@ -37,6 +37,7 @@ calling the `create_finder()` function.
 
 import contextlib
 import io
+import re
 import tokenize
 from typing import Iterator
 
@@ -224,12 +225,19 @@ def unsure_pyname(pyname, unbound=True):
         return True
 
 
-def check_opaque_references(project, pyname, resources, region=None):
+def check_opaque_references(project, pyname, resources, region=None, name=None):
     if not getattr(pyname, "is_refactoring_identity_safe", True):
         raise exceptions.RefactoringError(
             "Cannot refactor a name with an unresolved source binding."
         )
     for resource in resources:
+        # Opaque references are Name nodes in annotation contexts; a module
+        # whose source never spells the name cannot hold one, and building
+        # its full source-binding index just to prove that is wasted work.
+        if name is not None:
+            source = resource.read()
+            if not re.search(rf"\b{re.escape(name)}\b", source):
+                continue
         module = project.get_pymodule(resource)
         index = module.get_source_binding_index()
         for reference in index.opaque_references():
