@@ -11,6 +11,7 @@
 - #851 Bump supported python version to up to Python 3.14
 - #852 Implement patchedast handlers for TypeAlias
 - #853 Implement patchedast handlers TypeVar
+- #864 Preserve sibling assignments when inlining compound assignments (@onuracar-dev)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
