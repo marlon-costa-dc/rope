@@ -792,6 +792,27 @@ class PatchedASTTest(unittest.TestCase):
             "arguments", ["*", "", "args", "", ",", " ", "**", "", "kwds"]
         )
 
+    def test_return_annotation_roundtrip(self):
+        source = "def f() -> Result[Value]:\n    pass\n"
+        patched = patchedast.get_patched_ast(source, True)
+        self.assertEqual(source, patchedast.write_ast(patched))
+        annotation = patched.body[0].returns
+        self.assertEqual(
+            "Result[Value]",
+            source[slice(*patchedast.node_region(annotation))],
+        )
+
+    def test_interleaved_class_header_roundtrip(self):
+        source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
+        patched = patchedast.get_patched_ast(source, True)
+        self.assertEqual(source, patchedast.write_ast(patched))
+        for keyword in patched.body[0].keywords:
+            with self.subTest(keyword=keyword.arg):
+                self.assertEqual(
+                    keyword.value.id,
+                    source[slice(*patchedast.node_region(keyword.value))],
+                )
+
     def test_function_node(self):
         source = dedent("""\
             def f():
