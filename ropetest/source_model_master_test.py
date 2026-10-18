@@ -119,42 +119,59 @@ def test_outer_rename_does_not_capture_comprehension_local(model_project, expres
 @pytest.mark.parametrize(
     "signature,call", [("target, /", "str"), ("*, target", "target=str")]
 )
-def test_unsupported_ordinary_formals_have_readable_distinct_bindings(
+def test_ordinary_formal_kinds_use_parameter_protocol_bindings(
     model_project, signature, call
 ):
+    # The source binding index keeps these formals distinct from same-named
+    # outer variables (#900) while the ordinary parameter protocol owns their
+    # identity and refactoring (#898): both hold after the reconciliation.
     source = f"target = int\ndef func({signature}):\n    return target\nresult = (target, func({call}))\n"
     resource = module(model_project, source)
     pymodule = model_project.get_pymodule(resource)
     function = pymodule["func"].get_object()
     formal_offset = source.index("target", source.index("def func("))
     binder = evaluate.eval_location(pymodule, formal_offset)
-    assert binder is not None and binder is not pymodule["target"]
-    assert not binder.is_refactoring_identity_safe
-    assert binder.get_object() is pyobjects.get_unknown()
+    assert binder is function.get_parameters()["target"]
+    assert binder is not pymodule["target"]
     assert (
         evaluate.eval_location(
             pymodule, source.index("target", source.index("return "))
         )
         is binder
     )
-    assert function.get_parameters() == {}
-    assert function.get_param_names() == []
+    assert function.get_param_names() == ["target"]
     assert codeassist.get_definition_location(
         model_project, source, formal_offset, resource
     ) == (resource, 2)
     assert finderrors.find_errors(model_project, resource) == []
-    for offset in (formal_offset, source.index("target", source.index("return "))):
-        with pytest.raises(
-            exceptions.RefactoringError, match="unresolved source binding"
-        ):
-            rename.Rename(model_project, resource, offset).get_changes("renamed")
-        assert resource.read() == source
     changes = rename.Rename(model_project, resource, 0).get_changes("outer")
     model_project.do(changes)
     namespace = {}
     exec(resource.read(), namespace)
     assert namespace["result"] == (int, str)
     assert "return target" in resource.read()
+
+
+@pytest.mark.parametrize(
+    "signature,call", [("target, /", "str"), ("*, target", "target=str")]
+)
+@pytest.mark.parametrize("selected", ["formal", "body"])
+def test_ordinary_formal_kinds_rename_through_parameter_protocol(
+    model_project, signature, call, selected
+):
+    source = f"target = int\ndef func({signature}):\n    return target\nresult = (target, func({call}))\n"
+    resource = module(model_project, source)
+    before = {}
+    exec(source, before)
+    offset = source.index(
+        "target", source.index("def func(") if selected == "formal" else source.index("return ")
+    )
+    model_project.do(rename.Rename(model_project, resource, offset).get_changes("renamed"))
+    after = {}
+    exec(resource.read(), after)
+    assert after["result"] == before["result"] == (int, str)
+    assert "return renamed" in resource.read()
+    assert "target = int" in resource.read()
 
 
 @pytest.mark.parametrize(
@@ -401,8 +418,11 @@ def test_introduce_parameter_refuses_unsupported_ordinary_signature_atomically(
     operation = introduce_parameter.IntroduceParameter(
         model_project, resource, source.index("value", source.index("return"))
     )
+    # Both #898 and #900 refuse these signatures; the merged stack raises
+    # the functionutils guard shared by every signature-rewriting operation.
     with pytest.raises(
-        exceptions.RefactoringError, match="unsupported parameter categories"
+        exceptions.RefactoringError,
+        match="does not support positional-only or keyword-only parameters",
     ):
         operation.get_changes("provided")
     assert resource.read() == source

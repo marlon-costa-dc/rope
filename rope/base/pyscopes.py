@@ -219,7 +219,6 @@ class FunctionScope(Scope):
         if self.names is None:
             self._visit_function()
         module = self.pyobject.get_module()
-        module.get_source_binding_index().install_unsupported_formals(self)
         if ":=" in module.source_code:
             module.get_source_binding_index().prepare_header_bindings(self)
         return self.names
@@ -319,30 +318,10 @@ class _HoldingScopeFinder:
     def get_holding_scope_for_offset(scope, offset):
         for inner_scope in scope.get_scopes():
             if inner_scope.in_region(offset):
-                if isinstance(inner_scope, FunctionScope):
-                    if _HoldingScopeFinder._is_default_offset(inner_scope, offset):
-                        return scope
                 return _HoldingScopeFinder.get_holding_scope_for_offset(
                     inner_scope, offset
                 )
         return scope
-
-    @staticmethod
-    def _is_default_offset(scope, offset):
-        lines = scope.pyobject.get_module().lines
-
-        def source_offset(lineno, column):
-            # AST columns count UTF-8 bytes; source offsets count characters.
-            prefix = lines.get_line(lineno).encode("utf-8")[:column]
-            return lines.get_line_start(lineno) + len(prefix.decode("utf-8"))
-
-        defaults = scope.pyobject.get_parameter_defaults().values()
-        for default in defaults:
-            start = source_offset(default.lineno, default.col_offset)
-            end = source_offset(default.end_lineno, default.end_col_offset)
-            if start <= offset < end:
-                return True
-        return False
 
     def find_scope_end(self, scope):
         if not scope.parent:

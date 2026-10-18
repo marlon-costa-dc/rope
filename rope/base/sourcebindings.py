@@ -38,7 +38,6 @@ class _StructuralReference:
         self.redirected_headers = {}
         self._installed_slots = False
         self._installing_slots = False
-        self.unsupported_formals = {}
 
     def resolve(self):
         if self._scope is None:
@@ -336,15 +335,6 @@ class OpaqueSourceName(pynames.PyName):
         return any(
             same_pyname(candidate, pyname) for candidate in self.candidate_binders
         )
-
-
-class UnsupportedFormalName(OpaqueSourceName):
-    """A readable lexical binder outside the ordinary function's old protocol."""
-
-    def __init__(self, environment, name, node):
-        super().__init__(environment, name, node, ())
-        self.binding_scope = environment
-        self.reason = "ordinary function parameter category is not supported"
 
 
 @dataclass(frozen=True)
@@ -947,11 +937,6 @@ class SourceBindingIndex:
             finally:
                 self._preparing_headers = False
 
-    def install_unsupported_formals(self, scope):
-        owner = self._owners_by_node.get(id(scope.pyobject.get_ast()))
-        if owner is not None:
-            scope.names.update(owner.unsupported_formals)
-
     def opaque_references(self):
         known = {id(reference.node) for reference in self._opaque_references}
         for context in tuple(self.node_contexts.values()):
@@ -1476,12 +1461,10 @@ class SourceBindingIndex:
         parameters += [arg for arg in (args.vararg, args.kwarg) if arg is not None]
         for parameter in parameters:
             self._record(parameter, owner, owner, "formal-token", depth + 1)
-            if parameter in args.posonlyargs + args.kwonlyargs:
-                binding = UnsupportedFormalName(owner, parameter.arg, parameter)
-                owner.unsupported_formals[parameter.arg] = binding
-                self._token(parameter, parameter.arg, binding)
-            else:
-                self._token(parameter, parameter.arg, (owner, parameter.arg))
+            # Positional-only and keyword-only formals of ordinary functions
+            # resolve through the function scope's parameter protocol
+            # (get_parameters), which models every parameter category.
+            self._token(parameter, parameter.arg, (owner, parameter.arg))
         for expression in node.decorator_list:
             self._visit(expression, entry, parent_owner, "decorator", depth + 1)
         for expression in args.defaults + [
