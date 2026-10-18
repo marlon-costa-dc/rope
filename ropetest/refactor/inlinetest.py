@@ -70,12 +70,25 @@ class InlineTest(unittest.TestCase):
         self.assertEqual("value = 10\nprint(value, 10)\n", refactored)
 
     def test_inline_annotated_assignment(self):
+        # A module-level ``AnnAssign`` publishes its annotation in the
+        # module ``__annotations__`` mapping, so discarding the statement
+        # while inlining would change runtime-observable state (#903).
         code = dedent("""\
             value: int = 10
             print(value)
         """)
-        refactored = self._inline(code, code.index("value") + 1)
-        self.assertEqual("print(10)\n", refactored)
+        with self.assertRaises(rope.base.exceptions.RefactoringError):
+            self._inline(code, code.index("value") + 1)
+
+    def test_inline_annotated_assignment_without_removal_keeps_statement(self):
+        code = dedent("""\
+            value: int = 10
+            print(value)
+        """)
+        refactored = self._inline(
+            code, code.rindex("value") + 1, remove=False, only_current=True
+        )
+        self.assertEqual("value: int = 10\nprint(10)\n", refactored)
 
     def test_inline_attribute_before_same_named_local_assignment(self):
         code = dedent("""\
