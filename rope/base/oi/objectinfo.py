@@ -184,7 +184,7 @@ class ObjectInfoManager:
         returned_text = ("unknown",)
         if returned is not None:
             returned_text = self.to_textual(returned)
-        self._save_data(function_text, params_text, returned_text)
+        self._save_data(function_text, params_text, returned_text, pyfunction)
 
     def save_per_name(self, scope, name, data):
         path, key = self._get_scope(scope.pyobject)
@@ -198,8 +198,13 @@ class ObjectInfoManager:
             if result is not None:
                 return self.to_pyobject(result)
 
-    def _save_data(self, function, args, returned=("unknown",)):
-        pyfunction = self.to_pyobject(function)
+    def _save_data(self, function, args, returned=("unknown",), pyfunction=None):
+        if pyfunction is None:
+            # DOA data arrives as text; the live inference path always passes
+            # the function itself because resolving the text back through
+            # class attributes can re-enter the very inference in progress
+            # (e.g. a property getter records its own call information).
+            pyfunction = self.to_pyobject(function)
         if not isinstance(pyfunction, pyobjects.PyFunction):
             return
         path, key = self._get_call_scope(pyfunction)

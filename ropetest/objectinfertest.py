@@ -209,6 +209,28 @@ class ObjectInferTest(unittest.TestCase):
         a_var = pymod["a_var"].get_object()
         self.assertEqual(a_class, a_var.get_type())
 
+    def test_getting_property_decorator_attributes_on_file_modules(self):
+        # Recording the getter call information must not resolve the getter
+        # back from its own textual form: for a decorated property the class
+        # attribute is the evaluated property itself, and resolving it while
+        # the property is still being inferred discards the inference result.
+        mod = testutils.create_module(self.project, "mod")
+        mod.write(
+            dedent("""\
+                class A(object):
+                    pass
+                class B(object):
+                    @property
+                    def p(self):
+                        return A()
+                a_var = B().p
+            """)
+        )
+        pymod = self.project.get_pymodule(mod)
+        a_class = pymod["A"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(a_class, a_var.get_type())
+
     def test_lambda_functions(self):
         code = dedent("""\
             class C(object):
