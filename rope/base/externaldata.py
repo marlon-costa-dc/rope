@@ -1,8 +1,9 @@
 """Conservative same-module class data writes, without descriptor inference."""
 
+import collections
 import io
 import tokenize
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 
 from rope.base import (
     ast,
@@ -72,50 +73,69 @@ def _class_bindings(node):
     return names, unmergeable
 
 
-class _Bindings(ast.NodeVisitor):
-    def __init__(self):
-        self.counts = Counter()
-        self.wildcard_import = False
+def _walk_with_parents(tree):
+    """Return the module's nodes in ast.walk order together with a parent map."""
+    nodes = []
+    parents = {}
+    pending = collections.deque([tree])
+    while pending:
+        node = pending.popleft()
+        nodes.append(node)
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+            pending.append(child)
+    return nodes, parents
 
-    def visit_Name(self, node):
-        if isinstance(node.ctx, (ast.Store, ast.Del)):
-            self.counts[node.id] += 1
 
-    def visit_ClassDef(self, node):
-        self.counts[node.name] += 1
+def _count_module_bindings(tree):
+    """Count module-level name bindings exactly like _Bindings visiting tree.
 
-    visit_FunctionDef = visit_ClassDef
-    visit_AsyncFunctionDef = visit_ClassDef
+    Definitions and lambdas are not descended into, mirroring the visitor's
+    missing generic_visit calls; everything else is counted and traversed.
+    """
+    counts = Counter()
+    wildcard_import = False
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.Name):
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                counts[node.id] += 1
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            counts[node.name] += 1
+            continue
+        elif isinstance(node, ast.Import):
+            for item in node.names:
+                counts[item.asname or item.name.split(".")[0]] += 1
+        elif isinstance(node, ast.ImportFrom):
+            for item in node.names:
+                counts[item.asname or item.name] += 1
+                if item.name == "*":
+                    wildcard_import = True
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name:
+                counts[node.name] += 1
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)):
+            if node.name:
+                counts[node.name] += 1
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest:
+                counts[node.rest] += 1
+        stack.extend(ast.iter_child_nodes(node))
+    return _BindingCounts(counts, wildcard_import)
 
-    def visit_Lambda(self, node):
-        pass
 
-    def visit_Import(self, node):
-        for item in node.names:
-            self.counts[item.asname or item.name.split(".")[0]] += 1
+class _BindingCounts:
+    """The counts/wildcard_import surface _plans reads off _Bindings."""
 
-    def visit_ImportFrom(self, node):
-        for item in node.names:
-            self.counts[item.asname or item.name] += 1
-            if item.name == "*":
-                self.wildcard_import = True
+    def __init__(self, counts, wildcard_import):
+        self.counts = counts
+        self.wildcard_import = wildcard_import
 
-    def visit_ExceptHandler(self, node):
-        if node.name:
-            self.counts[node.name] += 1
-        self.generic_visit(node)
-
-    def visit_MatchAs(self, node):
-        if node.name:
-            self.counts[node.name] += 1
-        self.generic_visit(node)
-
-    visit_MatchStar = visit_MatchAs
-
-    def visit_MatchMapping(self, node):
-        if node.rest:
-            self.counts[node.rest] += 1
-        self.generic_visit(node)
+    def __getitem__(self, name):
+        return self.counts[name]
 
 
 class _UncertainDataName(pynames.PyName):
@@ -133,26 +153,24 @@ class _UncertainDataName(pynames.PyName):
 def _plans(module):
     tree = module.get_ast()
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
-    bindings = _Bindings()
-    bindings.visit(tree)
+    bindings = _count_module_bindings(tree)
     assignments = defaultdict(list)
-    parents = {
-        child: parent
-        for parent in ast.walk(tree)
-        for child in ast.iter_child_nodes(parent)
-    }
+    # One breadth-first pass yields the node list in ast.walk order and the
+    # parent map together; the scope and write phases below consume the list
+    # instead of re-walking the whole tree three more times.
+    nodes, parents = _walk_with_parents(tree)
     # Explicit global writes belong to module identity even inside a function.
-    for scope in ast.walk(tree):
+    for scope in nodes:
         if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        nodes = list(_scope_nodes(scope.body))
+        scoped = list(_scope_nodes(scope.body))
         globals_ = {
             name
-            for node in nodes
+            for node in scoped
             if isinstance(node, ast.Global)
             for name in node.names
         }
-        for node in nodes:
+        for node in scoped:
             names = set()
             if isinstance(node, ast.Name) and isinstance(
                 node.ctx, (ast.Store, ast.Del)
@@ -188,7 +206,7 @@ def _plans(module):
 
     writes = defaultdict(list)
     alias_writes = []
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Assign):
             targets = [
                 child
@@ -646,7 +664,19 @@ def check_rename(module, name, pyname, primary):
         _check_module_rename(current, name, pyname)
 
 
+def _module_source(module):
+    resource = module.get_resource() if hasattr(module, "get_resource") else None
+    if resource is not None and not resource.is_folder():
+        return resource.read()
+    return getattr(module, "source_code", None)
+
+
 def _check_module_rename(module, name, pyname):
+    # Plans only exist for attribute writes spelled `.name` somewhere in the
+    # module; without that text there is nothing this module can contribute.
+    source = _module_source(module)
+    if source is None or f".{name}" not in source:
+        return
     plans = _plans(module)
     classes = [
         cls
