@@ -1252,6 +1252,12 @@ class PatchedASTTest(unittest.TestCase):
             "Tuple", ["Tuple", "", ",", " ", NameConstant]
         )
 
+    def test_empty_tuple_node4(self):
+        source = "a = (\n# foo,\n)\n"
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        checker.check_children("Tuple", ["(\n# foo,\n)"])
+
     def test_yield_node(self):
         source = dedent("""\
             def f():
