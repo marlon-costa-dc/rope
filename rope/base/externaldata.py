@@ -149,8 +149,32 @@ class _UncertainDataName(pynames.PyName):
         return self.original.get_definition_location()
 
 
-@utils.saveit
-def _plans(module):
+class _ModulePlanContext:
+    __slots__ = (
+        "tree",
+        "classes",
+        "bindings",
+        "assignments",
+        "writes",
+        "parents",
+        "functions",
+        "readers_by_attr",
+        "class_bindings",
+        "types",
+        "plain_class",
+        "plain_rhs",
+        "enclosing",
+        "returned_types",
+        "receiver_names",
+        "hook_functions",
+    )
+
+    def __init__(self, **fields):
+        for name, value in fields.items():
+            setattr(self, name, value)
+
+
+def _plan_context(module):
     tree = module.get_ast()
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     bindings = _count_module_bindings(tree)
@@ -159,6 +183,14 @@ def _plans(module):
     # parent map together; the scope and write phases below consume the list
     # instead of re-walking the whole tree three more times.
     nodes, parents = _walk_with_parents(tree)
+    seen_class_bindings = {}
+
+    def class_bindings(node):
+        cached = seen_class_bindings.get(id(node))
+        if cached is None:
+            cached = seen_class_bindings[id(node)] = _class_bindings(node)
+        return cached
+
     # Explicit global writes belong to module identity even inside a function.
     for scope in nodes:
         if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -267,7 +299,7 @@ def _plans(module):
             and not node.bases
             and not node.keywords
             and not node.decorator_list
-            and not (_class_bindings(node)[0] & _CLASS_HOOKS)
+            and not (class_bindings(node)[0] & _CLASS_HOOKS)
             and not any((name, hook) in writes for hook in _CLASS_HOOKS)
         )
 
@@ -303,6 +335,12 @@ def _plans(module):
         for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
+    # Attribute reads grouped by name in one pass; the per-entry reader scan
+    # below used to re-walk the whole tree for every planned write.
+    readers_by_attr = collections.defaultdict(list)
+    for node in nodes:
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            readers_by_attr[node.attr].append(node)
 
     def returned_types(function, seeds=None, active=()):
         if function.name in active:
@@ -469,163 +507,240 @@ def _plans(module):
                 result.append(None)
         for event in writes.get((cls.name, hook), ()):
             result.extend(resolve(getattr(event, "value", None)))
-        if not result and hook in _class_bindings(cls)[0]:
+        if not result and hook in class_bindings(cls)[0]:
             result.append(None)
         return result
 
-    result = {}
-    for (owner, attribute), events in writes.items():
-        value_types = set().union(
-            *(types(getattr(event, "value", None)) for event in events)
+    return _ModulePlanContext(
+        tree=tree,
+        classes=classes,
+        bindings=bindings,
+        assignments=assignments,
+        writes=writes,
+        parents=parents,
+        functions=functions,
+        readers_by_attr=readers_by_attr,
+        class_bindings=class_bindings,
+        types=types,
+        plain_class=plain_class,
+        plain_rhs=plain_rhs,
+        enclosing=enclosing,
+        returned_types=returned_types,
+        receiver_names=receiver_names,
+        hook_functions=hook_functions,
+    )
+
+
+class _ModulePlanState:
+    """Shared per-module plan store.
+
+    Every (owner, attribute) entry is resolved at most once into ``result``
+    and is then shared by all consumers: add_class_data records observation
+    downgrades (unsupported existing PyName, original values) into the plan
+    dicts, and the rename checks must observe exactly those records.
+    """
+
+    __slots__ = ("context", "result", "complete")
+
+    def __init__(self, context):
+        self.context = context
+        self.result = {}
+        self.complete = False
+
+
+def _plan_state(module):
+    state = module.__dict__.get("_dc_plan_state")
+    if state is None:
+        state = module.__dict__["_dc_plan_state"] = _ModulePlanState(
+            _plan_context(module)
         )
-        if not value_types:
-            continue
-        # Functions and custom data descriptors retain their existing boundary.
-        if any(
-            _class_bindings(classes[name])[0] & {"__get__", "__set__", "__delete__"}
-            for name in value_types
-        ):
-            continue
-        possible_owners = {owner}
-        for assignment in assignments[owner]:
-            aliases = types(getattr(assignment, "value", None))
-            possible_owners.update(aliases or set(classes))
-        for decorator in classes[owner].decorator_list:
-            if isinstance(decorator, ast.Name) and decorator.id in functions:
-                returned, unknown = returned_types(functions[decorator.id])
-                possible_owners.update(set(classes) if unknown else returned)
-        reasons = []
-        event = events[0]
-        if len(events) != 1:
-            reasons.append("multiple writes")
-        if not (
-            isinstance(event, ast.Assign)
-            and len(event.targets) == 1
-            and parents.get(event) is tree
-        ):
-            reasons.append("conditional or unsupported write")
-        if not plain_class(owner) or classes[owner].lineno >= event.lineno:
-            reasons.append("class identity or behavior")
-        if bindings.wildcard_import:
-            reasons.append("wildcard import identity")
-        if any(
-            any(
-                isinstance(base, ast.Name) and owner in (types(base) or {base.id})
-                for base in node.bases
-            )
-            for node in classes.values()
-        ):
-            reasons.append("inheritance")
-        if not plain_rhs(getattr(event, "value", None), event):
-            reasons.append("data value identity")
-        for owner_name in possible_owners:
-            cls = classes[owner_name]
-            if attribute in _class_bindings(cls)[1]:
-                reasons.append("existing non-assignment binding")
-            for child in cls.body:
-                if isinstance(child, ast.Assign) and any(
-                    isinstance(target, ast.Name) and target.id == attribute
-                    for target in child.targets
-                ):
-                    value_types.update(types(child.value))
-            for node in _scope_nodes(cls.body):
-                if (
-                    isinstance(node, ast.Name)
-                    and isinstance(node.ctx, ast.Load)
-                    and node.id == attribute
-                ):
-                    reasons.append("early class namespace reader")
-            for node in ast.walk(cls):
-                if (
-                    isinstance(node, ast.Attribute)
-                    and node.attr == attribute
-                    and isinstance(node.ctx, ast.Store)
-                ):
-                    reasons.append("instance write")
-                    assignment = parents.get(node)
-                    value_types.update(types(getattr(assignment, "value", None)))
-        for node in ast.walk(tree):
-            if (
-                not isinstance(node, ast.Attribute)
-                or node.attr != attribute
-                or not isinstance(node.ctx, ast.Load)
+    return state
+
+
+def _resolve_entry(context, result, key, events):
+    tree = context.tree
+    classes = context.classes
+    bindings = context.bindings
+    assignments = context.assignments
+    writes = context.writes
+    parents = context.parents
+    functions = context.functions
+    readers_by_attr = context.readers_by_attr
+    class_bindings = context.class_bindings
+    types = context.types
+    plain_class = context.plain_class
+    plain_rhs = context.plain_rhs
+    enclosing = context.enclosing
+    returned_types = context.returned_types
+    receiver_names = context.receiver_names
+    hook_functions = context.hook_functions
+    owner, attribute = key
+    value_types = set().union(
+        *(types(getattr(event, "value", None)) for event in events)
+    )
+    if not value_types:
+        return
+    # Functions and custom data descriptors retain their existing boundary.
+    if any(
+        class_bindings(classes[name])[0] & {"__get__", "__set__", "__delete__"}
+        for name in value_types
+    ):
+        return
+    possible_owners = {owner}
+    for assignment in assignments[owner]:
+        aliases = types(getattr(assignment, "value", None))
+        possible_owners.update(aliases or set(classes))
+    for decorator in classes[owner].decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id in functions:
+            returned, unknown = returned_types(functions[decorator.id])
+            possible_owners.update(set(classes) if unknown else returned)
+    reasons = []
+    event = events[0]
+    if len(events) != 1:
+        reasons.append("multiple writes")
+    if not (
+        isinstance(event, ast.Assign)
+        and len(event.targets) == 1
+        and parents.get(event) is tree
+    ):
+        reasons.append("conditional or unsupported write")
+    if not plain_class(owner) or classes[owner].lineno >= event.lineno:
+        reasons.append("class identity or behavior")
+    if bindings.wildcard_import:
+        reasons.append("wildcard import identity")
+    if any(
+        any(
+            isinstance(base, ast.Name) and owner in (types(base) or {base.id})
+            for base in node.bases
+        )
+        for node in classes.values()
+    ):
+        reasons.append("inheritance")
+    if not plain_rhs(getattr(event, "value", None), event):
+        reasons.append("data value identity")
+    for owner_name in possible_owners:
+        cls = classes[owner_name]
+        if attribute in class_bindings(cls)[1]:
+            reasons.append("existing non-assignment binding")
+        for child in cls.body:
+            if isinstance(child, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == attribute
+                for target in child.targets
             ):
-                continue
-            receivers = receiver_names(node.value, node)
-            if receivers and not (receivers & possible_owners):
-                continue
-            if not receivers:
-                reasons.append("unknown reader")
+                value_types.update(types(child.value))
+        for node in _scope_nodes(cls.body):
             if (
-                enclosing(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
-                is not None
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id == attribute
             ):
-                reasons.append("deferred reader")
-            elif node.lineno <= event.lineno:
-                reasons.append("early reader")
-        # Lookup/constructor rewrites can return another local data class.
-        # They stay unknown; include explicit returns in the mutation guard.
-        pending_types = list(possible_owners | value_types)
-        seen_types = set()
-        while pending_types:
-            class_name = pending_types.pop()
-            if class_name in seen_types:
-                continue
-            seen_types.add(class_name)
-            cls = classes[class_name]
-            rewrite_classes = [cls]
-            for keyword in cls.keywords:
-                if (
-                    keyword.arg == "metaclass"
-                    and isinstance(keyword.value, ast.Name)
-                    and keyword.value.id in classes
-                ):
-                    rewrite_classes.append(classes[keyword.value.id])
-            for rewrite in rewrite_classes:
-                for hook in _VALUE_HOOKS:
-                    for function in hook_functions(rewrite, hook):
-                        if function is None:
-                            added = set(classes)
-                        else:
-                            seeds = {}
-                            parameters = function.args.posonlyargs + function.args.args
-                            if parameters:
-                                seeds[parameters[0].arg] = ({class_name}, False)
-                            returned, unknown = returned_types(function, seeds)
-                            added = set(classes) if unknown else returned
-                        value_types.update(added)
-                        pending_types.extend(added - seen_types)
-        for owner_name in possible_owners:
-            result[owner_name, attribute] = {
-                "event": event,
-                "allowed": not reasons,
-                "reasons": tuple(sorted(set(reasons))),
-                "affected_types": frozenset(value_types),
-                "unaliased_import": any(
-                    isinstance(node, (ast.Import, ast.ImportFrom))
-                    and any(
-                        alias.asname is None
-                        and (
-                            alias.name.split(".")[0]
-                            if isinstance(node, ast.Import)
-                            else alias.name
-                        )
-                        == attribute
-                        for alias in node.names
+                reasons.append("early class namespace reader")
+        for node in ast.walk(cls):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == attribute
+                and isinstance(node.ctx, ast.Store)
+            ):
+                reasons.append("instance write")
+                assignment = parents.get(node)
+                value_types.update(types(getattr(assignment, "value", None)))
+    for node in readers_by_attr.get(attribute, ()):
+        receivers = receiver_names(node.value, node)
+        if receivers and not (receivers & possible_owners):
+            continue
+        if not receivers:
+            reasons.append("unknown reader")
+        if (
+            enclosing(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+            is not None
+        ):
+            reasons.append("deferred reader")
+        elif node.lineno <= event.lineno:
+            reasons.append("early reader")
+    # Lookup/constructor rewrites can return another local data class.
+    # They stay unknown; include explicit returns in the mutation guard.
+    pending_types = list(possible_owners | value_types)
+    seen_types = set()
+    while pending_types:
+        class_name = pending_types.pop()
+        if class_name in seen_types:
+            continue
+        seen_types.add(class_name)
+        cls = classes[class_name]
+        rewrite_classes = [cls]
+        for keyword in cls.keywords:
+            if (
+                keyword.arg == "metaclass"
+                and isinstance(keyword.value, ast.Name)
+                and keyword.value.id in classes
+            ):
+                rewrite_classes.append(classes[keyword.value.id])
+        for rewrite in rewrite_classes:
+            for hook in _VALUE_HOOKS:
+                for function in hook_functions(rewrite, hook):
+                    if function is None:
+                        added = set(classes)
+                    else:
+                        seeds = {}
+                        parameters = function.args.posonlyargs + function.args.args
+                        if parameters:
+                            seeds[parameters[0].arg] = ({class_name}, False)
+                        returned, unknown = returned_types(function, seeds)
+                        added = set(classes) if unknown else returned
+                    value_types.update(added)
+                    pending_types.extend(added - seen_types)
+    for owner_name in possible_owners:
+        result[owner_name, attribute] = {
+            "event": event,
+            "allowed": not reasons,
+            "reasons": tuple(sorted(set(reasons))),
+            "affected_types": frozenset(value_types),
+            "unaliased_import": any(
+                isinstance(node, (ast.Import, ast.ImportFrom))
+                and any(
+                    alias.asname is None
+                    and (
+                        alias.name.split(".")[0]
+                        if isinstance(node, ast.Import)
+                        else alias.name
                     )
-                    for node in _scope_nodes(classes[owner_name].body)
-                ),
-            }
-    return result
+                    == attribute
+                    for alias in node.names
+                )
+                for node in _scope_nodes(classes[owner_name].body)
+            ),
+        }
+
+
+def _resolve_owner(state, owner):
+    result = state.result
+    for key, events in state.context.writes.items():
+        if key[0] != owner or key in result:
+            continue
+        _resolve_entry(state.context, result, key, events)
+    return {key[1]: plan for key, plan in result.items() if key[0] == owner}
+
+
+@utils.saveit
+def _plans(module):
+    state = _plan_state(module)
+    if not state.complete:
+        for key, events in state.context.writes.items():
+            if key not in state.result:
+                _resolve_entry(state.context, state.result, key, events)
+        state.complete = True
+    return state.result
+
+
+def _plans_for(module, owner):
+    return _resolve_owner(_plan_state(module), owner)
 
 
 def add_class_data(pyclass, attributes):
     module = pyclass.get_module()
     if pyclass.parent is not module:
         return attributes
-    for (owner, name), plan in _plans(module).items():
-        if owner != pyclass.get_name():
-            continue
+    for name, plan in _plans_for(module, pyclass.get_name()).items():
         original = attributes.get(name)
         if plan["allowed"] and isinstance(
             original, (pynames.ImportedName, pynames.ImportedModule)
