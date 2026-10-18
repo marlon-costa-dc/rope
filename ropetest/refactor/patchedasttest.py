@@ -2112,18 +2112,12 @@ class PatchedASTTest(unittest.TestCase):
             "Tuple",
         ])
 
-    def test_unparsable_string_region_raises_rope_error(self):
-        """Parentheses inside a triple-quoted string can desynchronise the
-        source walker; when that happens `_consume_pattern` used to call
-        `.group()` on a None match and raise a bare AttributeError.
-
-        Reduced from a real module (a SQL schema kept in a module-level
-        string). Removing the parentheses from the string makes it pass,
-        which is why they are part of the fixture.
-
-        This test does not claim the source becomes patchable — only that
-        the failure is reported as rope's own error, with a location,
-        instead of an AttributeError from deep inside the walker.
+    def test_string_literals_do_not_desynchronise_the_walker(self):
+        """Parentheses inside a triple-quoted string used to desynchronise
+        the source walker and surface a bare AttributeError. Tokens are no
+        longer matched inside string literals, so this module — reduced
+        from a real one (a SQL schema kept in a module-level string) — now
+        patches cleanly instead of failing.
         """
         source = dedent("""\
             def check_transition(src: str, dst: str) -> None:
@@ -2142,8 +2136,17 @@ class PatchedASTTest(unittest.TestCase):
                         r
         """)
 
+        ast_frag = patchedast.get_patched_ast(source, True)
+        self.assertEqual(ast_frag.region, (0, len(source)))
+
+    def test_consume_reports_mismatched_token_with_location(self):
+        """Whatever desynchronises the walker, the failure must surface as
+        rope's own error with a location, never a bare AttributeError from
+        deep inside the walker.
+        """
+        source = patchedast._Source("def f(): pass")
         with self.assertRaises(patchedast.MismatchedTokenError):
-            patchedast.get_patched_ast(source, True)
+            source.consume("class")
 
 
 
