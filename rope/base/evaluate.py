@@ -138,7 +138,9 @@ class ScopeNameFinder:
                     parameter_name = pyobject.get_parameters().get(keyword_name)
                 return (None, parameter_name)
             elif isinstance(pyobject, pyobjectsdef.PyFunction):
-                parameter_name = pyobject.get_parameters().get(keyword_name, None)
+                parameter_name = None
+                if keyword_name in pyobject.get_keyword_param_names():
+                    parameter_name = pyobject.get_parameters().get(keyword_name)
                 return (None, parameter_name)
             elif isinstance(pyobject, pyobjects.AbstractFunction):
                 parameter_name = rope.base.pynames.ParameterName()
@@ -294,7 +296,10 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                 self.result = None
 
     def _Call(self, node):
-        primary, pyobject = self._get_primary_and_object_for_node(node.func)
+        primary, func_pyname = eval_node2(self.scope, node.func)
+        pyobject = None
+        if func_pyname is not None:
+            pyobject = func_pyname.get_object()
         if pyobject is None:
             return
 
@@ -347,6 +352,10 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                 pyfunction = pyfunction.bind_receiver(
                     rope.base.pynames.UnboundName(pyobject)
                 )
+            else:
+                # The receiver of an instance __call__ is the callable
+                # value itself, not the receiver of the attribute access.
+                receiver = func_pyname
         if pyfunction is not None:
             self.result = rope.base.pynames.UnboundName(
                 pyobject=_get_returned(pyfunction, receiver)
@@ -528,13 +537,6 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         if pyname is not None:
             pyobject = pyname.get_object()
         return pyobject
-
-    def _get_primary_and_object_for_node(self, stmt):
-        primary, pyname = eval_node2(self.scope, stmt)
-        pyobject = None
-        if pyname is not None:
-            pyobject = pyname.get_object()
-        return primary, pyobject
 
     def _Subscript(self, node):
         if isinstance(node.slice, ast.Index):
