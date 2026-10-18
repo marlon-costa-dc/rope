@@ -19,6 +19,7 @@
 - #802 Patch annotations on regular function arguments (@Strohutt)
 - #886 Track and close SQLite connections created in worker threads in AutoImport (@mcepl)
 - #827 Fix inlining parameters used as indices in subscript assignments (@SAY-5)
+- #893 Fix changing constructor signatures for classes defined inside functions (@SAY-5)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
