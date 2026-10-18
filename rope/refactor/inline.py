@@ -641,8 +641,15 @@ class InlineVariable(_Inliner):
         changed = rename.rename_in_module(
             finder, self.imported, resource=resource, replace_primary=True
         )
-        if changed and remove:
-            changed = _remove_from(self.project, self.pyname, changed, resource)
+        if remove:
+            # An importing module without value reads still needs its import
+            # cleaned up once the definition is discarded.
+            changed = _remove_from(
+                self.project,
+                self.pyname,
+                changed if changed is not None else resource.read(),
+                resource,
+            )
         return changed
 
     def get_kind(self):
@@ -1023,7 +1030,11 @@ def _is_bound_initializer_name(pymodule, statement, initializer):
         return False
     scope = pymodule.get_scope().get_inner_scope_for_line(statement.lineno)
     if scope.get_kind() == "Class":
-        return False
+        # Class-body aliasing stays conservative, but a builtin initializer
+        # name is always bound wherever it is substituted.
+        return isinstance(
+            evaluate.eval_node(scope, initializer), rope.base.builtins.BuiltinName
+        )
     pyname = evaluate.eval_node(scope, initializer)
     if any(
         isinstance(node, ast.Name)

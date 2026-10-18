@@ -88,27 +88,48 @@ NAMED_EXPR = dedent("""\
             "True\n",
         ),
         (NAMED_EXPR, "True\n42\n"),
-        (
-            dedent("""\
-                def make_target():
-                    print("initialized")
-                    return 42
-                target = make_target()
-                value = (lambda target: target)(int)
-                print(value is int)
-            """),
-            "initialized\nTrue\n",
-        ),
     ],
 )
-def test_refuses_replacing_lambda_local_bindings(project, code, expected):
+def test_inlining_outer_variable_preserves_lambda_local_bindings(
+    project, code, expected
+):
+    # Source bindings (#900) keep the lambda parameter distinct from the
+    # outer variable, so inlining the outer definition no longer needs to
+    # refuse: it substitutes only the real references and keeps the lambda
+    # binding intact, verified by execution before and after.
     source = module(project, "source", code)
     before = source.read()
     assert execute(project, source) == expected
-    with pytest.raises(RefactoringError, match="lambda-local"):
+    project.do(
+        create_inline(project, source, before.index("target =") + 1).get_changes()
+    )
+    assert source.read() != before
+    assert "target = 42" not in source.read()
+    assert execute(project, source) == expected
+
+
+def test_refuses_discarding_side_effectful_initializer_without_reads(project):
+    # The lambda parameter is not a read of the outer variable, so no
+    # reference survives; discarding ``target = make_target()`` would drop
+    # its side effect and change the output.
+    source = module(
+        project,
+        "source",
+        dedent("""\
+            def make_target():
+                print("initialized")
+                return 42
+            target = make_target()
+            value = (lambda target: target)(int)
+            print(value is int)
+        """),
+    )
+    before = source.read()
+    assert execute(project, source) == "initialized\nTrue\n"
+    with pytest.raises(RefactoringError, match="unused variable initializer"):
         create_inline(project, source, before.index("target =") + 1).get_changes()
     assert source.read() == before
-    assert execute(project, source) == expected
+    assert execute(project, source) == "initialized\nTrue\n"
 
 
 @pytest.mark.parametrize(
@@ -132,9 +153,11 @@ def test_covers_parameter_kinds(project, expression):
     )
     before = source.read()
     assert execute(project, source) == "True\n"
-    with pytest.raises(RefactoringError, match="lambda-local"):
+    project.do(
         create_inline(project, source, before.index("target") + 1).get_changes()
-    assert source.read() == before
+    )
+    assert "target = 42" not in source.read()
+    assert expression in source.read()
     assert execute(project, source) == "True\n"
 
 
@@ -185,7 +208,10 @@ def test_does_not_mistake_lambda_binding_for_outer_parameter(
     assert execute(project, source) == "True\n"
 
 
-def test_refuses_other_module_false_occurrences_atomically(project):
+def test_other_module_lambda_shadowing_inline_cleans_up_import(project):
+    # The lambda parameter in the caller is not a false occurrence anymore,
+    # so inlining succeeds, discards the definition and removes the import
+    # the caller no longer needs.
     source = module(project, "source", "target = 42\n")
     caller = module(
         project,
@@ -196,11 +222,11 @@ def test_refuses_other_module_false_occurrences_atomically(project):
             print(value is int)
         """),
     )
-    originals = source.read(), caller.read()
     assert execute(project, caller) == "True\n"
-    with pytest.raises(RefactoringError, match="lambda-local"):
-        create_inline(project, source, 1).get_changes()
-    assert (source.read(), caller.read()) == originals
+    project.do(create_inline(project, source, 1).get_changes())
+    assert source.read() == ""
+    assert "import" not in caller.read()
+    assert "lambda target: target" in caller.read()
     assert execute(project, caller) == "True\n"
 
 
@@ -346,25 +372,48 @@ def test_preserves_real_external_references_and_independent_names(
     assert execute(project, source) == expected
 
 
-@pytest.mark.parametrize(
-    "expression",
-    [
-        "(lambda target: target.value)(Inner())",
-        "(lambda target: target)(Inner()).value",
-    ],
-)
-def test_refuses_attribute_lookup_through_lambda_local_receiver(project, expression):
+def test_inline_discards_unused_outer_initializer_through_lambda_receiver(project):
+    # ``target.value`` resolves through the lambda-local receiver to Inner,
+    # so Outer.value has no surviving reads and its initializer is simply
+    # discarded; the lambda body is left untouched.
     source = module(
         project,
         "source",
-        dedent(f"""\
+        dedent("""\
             class Outer:
                 value = 42
                 pass
             class Inner:
                 value = int
             target = Outer()
-            result = {expression}
+            result = (lambda target: target.value)(Inner())
+            print(result is int)
+        """),
+    )
+    before = source.read()
+    assert execute(project, source) == "True\n"
+    project.do(
+        create_inline(project, source, before.index("value = 42") + 1).get_changes()
+    )
+    assert "value = 42" not in source.read()
+    assert "(lambda target: target.value)(Inner())" in source.read()
+    assert execute(project, source) == "True\n"
+
+
+def test_refuses_attribute_lookup_through_lambda_local_receiver(project):
+    # The receiver of ``.value`` is the value a lambda-local binding
+    # produces, so replacing the attribute there is not safe.
+    source = module(
+        project,
+        "source",
+        dedent("""\
+            class Outer:
+                value = 42
+                pass
+            class Inner:
+                value = int
+            target = Outer()
+            result = (lambda target: target)(Inner()).value
             print(result is int)
         """),
     )
