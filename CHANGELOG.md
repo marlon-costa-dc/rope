@@ -28,6 +28,7 @@
 - Keep initialized instance lambda values separate from same-named class values
 - Refuse edits to ordinary positional-only and keyword-only parameter bindings
 - Preserve same-module class data assignments and reject unsafe dependent renames (@yangfan-yf-yf)
+- Fix namespace package directory renames and preserve explicit resource limits.
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)

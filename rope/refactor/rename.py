@@ -105,6 +105,7 @@ class Rename:
                 resources = [self.resource]
         if _is_local(self.old_pyname):
             resources = [self.resource]
+        all_project_resources = resources is None
         if resources is None:
             resources = self.project.get_python_files()
         resources = list(resources)
@@ -148,7 +149,7 @@ class Rename:
             job_set.finished_job()
         if self._is_renaming_a_module():
             resource = self.old_pyname.get_object().get_resource()
-            if self._is_allowed_to_move(resources, resource):
+            if self._is_allowed_to_move(resources, resource, all_project_resources):
                 self._rename_module(resource, new_name, changes)
         return changes
 
@@ -189,12 +190,21 @@ class Rename:
                 f"Invalid refactoring target name. '{new_name}' is a Python keyword."
             )
 
-    def _is_allowed_to_move(self, resources, resource):
+    def _is_allowed_to_move(self, resources, resource, all_project_resources=False):
         if resource.is_folder():
             try:
                 return resource.get_child("__init__.py") in resources
             except exceptions.ResourceNotFoundError:
-                return False
+                if all_project_resources:
+                    return True
+                package_files = [
+                    file
+                    for file in self.project.get_python_files()
+                    if resource.contains(file)
+                ]
+                return bool(package_files) and all(
+                    file in resources for file in package_files
+                )
         else:
             return resource in resources
 
@@ -342,13 +352,4 @@ def _is_local(pyname):
     if lineno is None:
         return False
     scope = module.get_scope().get_inner_scope_for_line(lineno)
-    if isinstance(pyname, pynames.DefinedName) and scope.get_kind() in (
-        "Function",
-        "Class",
-    ):
-        scope = scope.parent
-    return (
-        scope.get_kind() == "Function"
-        and pyname in scope.get_names().values()
-        and isinstance(pyname, pynames.AssignedName)
-    )
+    return scope.get_kind() == "Function" and pyname in scope.get_names().values()
