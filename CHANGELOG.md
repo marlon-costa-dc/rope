@@ -24,6 +24,9 @@
 - Refuse inlining that mistakes lambda-local bindings for enclosing names.
 - Preserve positional-only and keyword-only parameter bindings, call inference,
 - Keep keyword labels of unresolved calls separate from same-named variables during renaming.
+- Preserve source bindings in function annotations, lambdas and comprehensions
+- Keep initialized instance lambda values separate from same-named class values
+- Refuse edits to ordinary positional-only and keyword-only parameter bindings
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
