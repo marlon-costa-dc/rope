@@ -24,6 +24,56 @@ class SimilarFinderTest(unittest.TestCase):
         finder = self._create_finder("")
         self.assertEqual([], list(finder.get_match_regions("10")))
 
+    def test_return_annotation_names_have_match_regions(self):
+        source = "def f() -> target:\n    return target\n"
+        finder = self._create_finder(source)
+        self.assertEqual(
+            [
+                (source.rindex("target"), source.rindex("target") + len("target")),
+                (source.index("target"), source.index("target") + len("target")),
+            ],
+            list(finder.get_match_regions("target")),
+        )
+
+    def test_async_return_annotation_expression_has_match_region(self):
+        source = "async def f() -> list[target]:\n    return []\n"
+        finder = self._create_finder(source)
+        start = source.index("list[target]")
+        self.assertEqual(
+            [(start, start + len("list[target]"))],
+            list(finder.get_match_regions("list[target]")),
+        )
+
+    def test_region_filter_can_pass_names_in_return_annotations(self):
+        source = "def f() -> target:\n    return target\n"
+        finder = self._create_finder(source)
+        start = source.rindex("target")
+        end = start + len("target")
+        self.assertEqual(
+            [(start, end)],
+            list(finder.get_match_regions("target", start=start, end=end)),
+        )
+
+    def test_metaclass_only_header_names_have_match_regions(self):
+        source = "class C(metaclass=target):\n    pass\n"
+        finder = self._create_finder(source)
+        start = source.index("target")
+        self.assertEqual(
+            [(start, start + len("target"))],
+            list(finder.get_match_regions("target")),
+        )
+
+    def test_interleaved_class_header_names_have_match_regions(self):
+        source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
+        finder = self._create_finder(source)
+        for name in ("Base", "Meta", "bases", "options"):
+            with self.subTest(name=name):
+                start = source.index(name)
+                self.assertEqual(
+                    [(start, start + len(name))],
+                    list(finder.get_match_regions(name)),
+                )
+
     def test_constant_integer(self):
         source = "a = 10\n"
         finder = self._create_finder(source)
