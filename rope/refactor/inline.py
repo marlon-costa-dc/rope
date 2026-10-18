@@ -500,9 +500,7 @@ class InlineVariable(_Inliner):
             and remove
             and any(
                 isinstance(node, (ast.Name, ast.Attribute))
-                and occurrences.same_pyname(
-                    self.pyname, runtime_annotation_eval(node)
-                )
+                and occurrences.same_pyname(self.pyname, runtime_annotation_eval(node))
                 for annotation in annotations
                 if annotation is not None
                 for node in ast.walk(annotation)
@@ -533,6 +531,7 @@ class InlineVariable(_Inliner):
                 raise exceptions.RefactoringError(
                     "Cannot inline a variable referenced in a deferred annotation."
                 )
+
     def _check_initializer_removal(self, resources, only_current):
         initializer = self.pyname.assignments[0].ast_node
         statement = next(
