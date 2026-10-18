@@ -644,12 +644,7 @@ class InlineVariable(_Inliner):
         if remove:
             # An importing module without value reads still needs its import
             # cleaned up once the definition is discarded.
-            changed = _remove_from(
-                self.project,
-                self.pyname,
-                changed if changed is not None else resource.read(),
-                resource,
-            )
+            changed = _remove_from(self.project, self.pyname, changed, resource)
         return changed
 
     def get_kind(self):
@@ -1438,7 +1433,10 @@ def _lambda_owned_name_ranges(pymodule):
 
 
 def _remove_from(project, pyname, source, resource):
-    pymodule = libutils.get_string_module(project, source, resource)
+    pymodule = libutils.get_string_module(
+        project, source if source is not None else resource.read(), resource
+    )
     module_import = importutils.get_module_imports(project, pymodule)
-    module_import.remove_pyname(pyname)
-    return module_import.get_changed_source()
+    if module_import.remove_pyname(pyname):
+        source = module_import.get_changed_source()
+    return source

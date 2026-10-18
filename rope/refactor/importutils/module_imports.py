@@ -373,12 +373,16 @@ class ModuleImports:
         return visitor.to_be_renamed
 
     def remove_pyname(self, pyname):
-        """Removes pyname when imported in ``from mod import x``"""
+        """Remove pyname when imported in ``from mod import x``.
+
+        Returns the names that were actually removed.
+        """
         visitor = actions.RemovePyNameVisitor(
             self.project, self.pymodule, pyname, self._current_folder()
         )
         for import_stmt in self.imports:
             import_stmt.accept(visitor)
+        return visitor.removed_names
 
 
 def get_first_decorator_or_function_start_line(node):
