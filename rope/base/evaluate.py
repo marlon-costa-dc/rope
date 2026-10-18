@@ -7,6 +7,7 @@ import rope.base.pyobjects
 from rope.base import (
     arguments,
     ast,
+    classfunctions,
     codeanalyze,
     exceptions,
     nameanalyze,
@@ -233,7 +234,7 @@ class ScopeNameFinder:
     @staticmethod
     def _callable_object(function_pyname):
         if function_pyname is not None:
-            pyobject = function_pyname.get_object()
+            pyobject = classfunctions.canonical_function(function_pyname.get_object())
             if isinstance(pyobject, pyobjects.AbstractFunction):
                 return pyobject
             elif (
@@ -270,6 +271,9 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         if pyname.get_object() != rope.base.pyobjects.get_unknown():
             try:
                 self.result = pyname.get_object()[node.attr]
+                self.result = classfunctions.instance_access(
+                    pyname, node.attr, self.result, self.scope
+                )
                 from rope.base.sourcebindings import (
                     SourceLambdaFunction,
                     SourceValueName,
