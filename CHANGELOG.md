@@ -36,6 +36,7 @@
 - Honor native module and namespace precedence when resolving imports: regular packages and modules win over namespace-package directories, and namespace portions are combined across source folders
 - Route resource existence, directory enumeration, and observer metadata through the filesystem commands owner: FileSystemCommands gained exists/isfile/isdir/listdir/stat/realpath and project, resource, and observer queries no longer bypass custom fscommands
 - Allow an explicit external NoProject with the same captured filesystem via Project(external_project=...) and NoProject(fscommands=...), preserving native module resolution after source trees change (internal closed-source line)
+- Walk positional-only, keyword-only and annotated parameters in patchedast
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
