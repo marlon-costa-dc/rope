@@ -421,7 +421,9 @@ class PatchedASTTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.12")
     def test_handling_pep695_type_alias(self):
-        source = "type Alias[T] = list[T]\n"
+        source = dedent("""\
+            type Alias[T] = list[T]
+        """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
@@ -434,7 +436,10 @@ class PatchedASTTest(unittest.TestCase):
     def test_handling_pep695_generic_function(self):
         # TP occurs only in the type parameter list, so its region can only
         # come from the "[TP]" clause rendered between the name and "(".
-        source = "def f[TP](x):\n    return x\n"
+        source = dedent("""\
+            def f[TP](x):
+                return x
+        """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
@@ -447,7 +452,10 @@ class PatchedASTTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.12")
     def test_handling_pep695_generic_class(self):
-        source = "class C[TP]:\n    pass\n"
+        source = dedent("""\
+            class C[TP]:
+                pass
+        """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
@@ -460,7 +468,11 @@ class PatchedASTTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.10")
     def test_handling_match_sequence_and_star(self):
-        source = "match x:\n    case [1, *rest]:\n        pass\n"
+        source = dedent("""\
+            match x:
+                case [1, *rest]:
+                    pass
+        """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
@@ -473,7 +485,11 @@ class PatchedASTTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.10")
     def test_handling_match_or_and_singleton(self):
-        source = "match x:\n    case 1 | None:\n        pass\n"
+        source = dedent("""\
+            match x:
+                case 1 | None:
+                    pass
+        """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
@@ -686,7 +702,7 @@ class PatchedASTTest(unittest.TestCase):
         source = "f(**kwds)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Call", ["Name", "", "(", "**", "keyword", "", ")"])
+        checker.check_children("Call", ["Name", "", "(", "", "keyword", "", ")"])
 
     def test_call_func_and_both_varargs_and_kwargs_python35(self):
         source = "f(*args, **kwds)\n"
@@ -694,7 +710,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "Call",
-            ["Name", "", "(", "*", "Starred", "", ",", " **", "keyword", "", ")"],
+            ["Name", "", "(", "", "Starred", "", ",", " ", "keyword", "", ")"],
         )
 
     def test_class_node(self):
@@ -1336,7 +1352,23 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "With",
-            ["with", " ", "Name", " ", "as", " ", "Name", "", ":", "\n    ", "Pass"],
+            ["with", " ", "withitem", "", ":", "\n    ", "Pass"],
+        )
+        checker.check_children(
+            "withitem",
+            ["Name", " ", "as", " ", "Name"],
+        )
+
+    def test_with_node_multiple_items(self):
+        source = dedent("""\
+            with a as b, c as d:
+                pass
+        """)
+        ast_frag = patchedast.get_patched_ast(source, True)
+        checker = _ResultChecker(self, ast_frag)
+        checker.check_children(
+            "With",
+            ["with", " ", "withitem", "", ",", " ", "withitem", "", ":", "\n    ", "Pass"],
         )
 
     def test_async_with_node(self):
@@ -1349,7 +1381,11 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "AsyncWith",
-            ["async", " ", "with", " ", "Name", " ", "as", " ", "Name", "", ":", "\n        ", "Pass"],
+            ["async", " ", "with", " ", "withitem", "", ":", "\n        ", "Pass"],
+        )
+        checker.check_children(
+            "withitem",
+            ["Name", " ", "as", " ", "Name"],
         )
 
     def test_try_finally_node(self):
@@ -1464,7 +1500,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Call", ["Name", "", "(", "*", "Starred", "", ",", " ", "keyword", "", ")"]
+            "Call", ["Name", "", "(", "", "Starred", "", ",", " ", "keyword", "", ")"]
         )
 
     def test_starargs_in_keywords(self):
@@ -1473,7 +1509,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "Call",
-            ["Name", "", "(", "", "keyword", "", ",", " *", "Starred", "", ",", " ", "keyword", "", ")"],
+            ["Name", "", "(", "", "keyword", "", ",", " ", "Starred", "", ",", " ", "keyword", "", ")"],
         )
 
     def test_starargs_in_positional(self):
@@ -1482,7 +1518,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "Call",
-            ["Name", "", "(", "", "Name", "", ",", " *", "Starred", "", ",", " ", "Name", "", ")"],
+            ["Name", "", "(", "", "Name", "", ",", " ", "Starred", "", ",", " ", "Name", "", ")"],
         )
 
     def test_starargs_after_keywords(self):
@@ -1490,7 +1526,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Call", ["Name", "", "(", "", "keyword", "", ",", " *", "Starred", "", ")"]
+            "Call", ["Name", "", "(", "", "keyword", "", ",", " ", "Starred", "", ")"]
         )
 
     @testutils.only_for_versions_higher("3.5")

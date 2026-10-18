@@ -1,5 +1,14 @@
 # **Upcoming release**
 
+- #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
+- #896 patchedast cleanup and refactoring (@lieryan)
+
+# Release 1.15.0
+
+- #850 Update and pin black version in pre-commit and Github Actions (@lieryan)
+- #851 Bump supported python version to up to Python 3.14 (@lieryan)
+- #852 Implement patchedast handlers for TypeAlias (@lieryan)
+- #853 Implement patchedast handlers TypeVar (@lieryan)
 - Route resource existence, directory elections, and observer metadata through the
   filesystem commands owner. Allow an explicit external `NoProject` with the same
   captured filesystem, preserving native module resolution after source trees change.
@@ -20,6 +29,9 @@
 - #861 Recognize pattern captures for rename and reject unsupported inline operations (@yangfan-yf-yf)
 - #870 Add default implementation for is_dir() (@lieryan)
 - #872 Fix unicode handling in patchedast (@lieryan)
+- #845 Support PEP 695 type parameters on class definitions and type aliases in patchedast (@marlon-costa-dc)
+- #849 docs: resolve warnings and update Github Actions versions (@mcepl)
+- #835 Tear down tests using python from venv (@aeliton)
 - Support PEP 695 type parameters on class definitions and type aliases in patchedast
 - Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
 - Walk positional-only, keyword-only and annotated parameters in patchedast
