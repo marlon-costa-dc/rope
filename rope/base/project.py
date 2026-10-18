@@ -27,9 +27,10 @@ except ImportError:
 class _Project:
     prefs: Prefs
 
-    def __init__(self, fscommands):
+    def __init__(self, fscommands, external_project=None):
         self.observers = []
         self.fscommands = fscommands
+        self.external_project = external_project
         self.prefs = Prefs()
         self.data_files = _DataFiles(self)
         self._custom_source_folders = []
@@ -70,9 +71,12 @@ class _Project:
 
     def get_python_path_folders(self):
         result = []
+        external = (
+            get_no_project() if self.external_project is None else self.external_project
+        )
         for src in self.prefs.get("python_path", []) + sys.path:
             with contextlib.suppress(exceptions.ResourceNotFoundError):
-                src_folder = get_no_project().get_resource(src)
+                src_folder = external.get_resource(src)
                 result.append(src_folder)
         return result
 
@@ -195,7 +199,12 @@ class Project(_Project):
     """A Project containing files and folders"""
 
     def __init__(
-        self, projectroot, fscommands=None, ropefolder=".ropeproject", **prefs
+        self,
+        projectroot,
+        fscommands=None,
+        ropefolder=".ropeproject",
+        external_project=None,
+        **prefs,
     ):
         """A rope project
 
@@ -206,6 +215,9 @@ class Project(_Project):
             - `ropefolder`: The name of the folder in which rope stores
               project configurations and data.  Pass `None` for not using
               such a folder at all.
+            - `external_project`: Resource owner for Python-path modules.
+              Pass a separate ``NoProject`` with the same filesystem commands
+              to keep external and local reads in one captured filesystem.
             - `prefs`: Specify project preferences.  These values
               overwrite config file preferences.
 
@@ -230,7 +242,7 @@ class Project(_Project):
             raise exceptions.RopeError("Project root exists and" " is not a directory")
         if fscommands is None:
             fscommands = rope.base.fscommands.create_fscommands(self._address)
-        super().__init__(fscommands)
+        super().__init__(fscommands, external_project=external_project)
         self.ignored = _ResourceMatcher()
         self.file_list = _FileListCacher(self)
         self._init_prefs(prefs)
@@ -325,16 +337,17 @@ class NoProject(_Project):
     This class is singleton use `get_no_project` global function
     """
 
-    def __init__(self):
-        fscommands = rope.base.fscommands.FileSystemCommands()
+    def __init__(self, fscommands=None):
+        if fscommands is None:
+            fscommands = rope.base.fscommands.FileSystemCommands()
         super().__init__(fscommands)
 
     def _get_resource_path(self, name):
         real_name = name.replace("/", os.path.sep)
-        return _realpath(real_name)
+        return self.fscommands.realpath(real_name)
 
     def get_resource(self, name):
-        universal_name = _realpath(name).replace(os.path.sep, "/")
+        universal_name = self.fscommands.realpath(name).replace(os.path.sep, "/")
         return super().get_resource(universal_name)
 
     def get_files(self):
