@@ -1245,3 +1245,48 @@ def test_direct_inline_parameter_on_assignment_preserves_runtime(project):
         inline.InlineParameter(project, source, before.index("target") + 1)
     assert source.read() == before
     assert execute(project, source) == "True\n"
+
+
+def test_keyword_only_without_varargs_parameter_info(project):
+    from rope.base import libutils
+
+    mod = libutils.get_string_module(
+        project,
+        "def func(first, /, *, named):\n    return first, named\n",
+    )
+    function = mod["func"].get_object()
+    assert function.get_param_names() == ["first", "named"]
+    assert set(function.get_parameters()) == {"first", "named"}
+
+
+def test_keyword_only_method_without_positional_receiver(project):
+    from rope.base import libutils
+
+    mod = libutils.get_string_module(
+        project,
+        "class Sample:\n"
+        "    def method(*, named: str):\n"
+        "        return named\n",
+    )
+    method = mod["Sample"].get_object()["method"].get_object()
+    assert method.get_param_names() == ["named"]
+    assert (
+        method.get_parameters()["named"].get_object().get_type()
+        != mod["Sample"].get_object()
+    )
+
+
+def test_keyword_only_call_information_skips_varargs_slot(project):
+    code = dedent("""\
+        class C:
+            pass
+        def func(first, /, *items, named=None):
+            return named
+        func(1, 2, named=C())
+    """)
+    source = module(project, code)
+    project.pycore.analyze_module(source)
+    pymod = project.get_pymodule(source)
+    c_class = pymod["C"].get_object()
+    scope = pymod["func"].get_object().get_scope()
+    assert scope["named"].get_object().get_type() == c_class
