@@ -18,6 +18,7 @@
 - #831 Preserve external imported names when renaming their local bindings (@ryanchou1994)
 - #802 Patch annotations on regular function arguments (@Strohutt)
 - #886 Track and close SQLite connections created in worker threads in AutoImport (@mcepl)
+- #827 Fix inlining parameters used as indices in subscript assignments (@SAY-5)
 
 - #858 Fix `find_definition`/Rename mis-handling class methods defined after an f-string with an unmatched literal bracket (Python 3.12+) (@gadievron)
 - #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
