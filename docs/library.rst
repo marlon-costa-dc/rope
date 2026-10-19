@@ -910,6 +910,11 @@ See pydocs and source code for more information (other functions in
 this module might be interesting, too; like ``get_doc``,
 ``get_definition_location``).
 
+For PEP 695 type aliases, ``PyName.get_definition_location()`` retains the
+declaring module and first binding line in module, function, and class scopes.
+Imported aliases preserve that declaration location. Reading this metadata does
+not evaluate the lazy alias value or substitute its right-hand side for the alias.
+
 
 `rope.contrib.findit`
 ---------------------
