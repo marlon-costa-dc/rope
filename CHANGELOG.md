@@ -1,5 +1,15 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.5
+
+- Record PEP 695 type-alias declaration locations in module, function, and class
+  scopes without evaluating or substituting the lazy alias value.
+- Preserve first-binding locations across ordinary assignments, repeated aliases,
+  imports, and native renames; verify these contracts against the installed wheel.
+- Keep constructor and method aliases local to their declaration scope, without
+  polluting instance attributes collected by the target-only visitor.
+- Select native setup interpreters independently of ancestor project constraints.
+
 # Release 1.15.0+dc.4
 
 - Patch expressions in the `else` suite before `finally` for both `try` and

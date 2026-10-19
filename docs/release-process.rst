@@ -46,6 +46,8 @@ It reports downloaded asset hashes and validates the published distributions,
 rather than building replacements. Setup uses the installed
 ``uv`` executable: invoking ``python -m uv`` while Make exports a bytecode cache
 inside the future virtualenv would create that directory before its safety check.
+Native interpreter discovery uses ``uv python find --no-project`` so an ambient
+workspace selection cannot impose an unrelated project's Python constraint.
 
 .. _version specification: https://packaging.python.org/en/latest/specifications/version-specifiers/#local-version-identifiers
 

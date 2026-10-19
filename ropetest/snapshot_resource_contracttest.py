@@ -4,13 +4,129 @@ import ast
 import os
 import shutil
 import sys
-from textwrap import dedent
+import typing
+from textwrap import dedent, indent
 
 import pytest
 
+from rope.base import evaluate, pyobjects
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
-from rope.refactor import patchedast, similarfinder
+from rope.refactor import patchedast, rename, similarfinder
+
+
+@pytest.fixture
+def alias_project(tmp_path):
+    project = Project(str(tmp_path))
+    try:
+        yield project
+    finally:
+        project.close()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("owner", ["module", "function", "class"])
+@pytest.mark.parametrize("bindings", ["alias", "ordinary-first", "alias-first", "repeated"])
+def test_type_alias_definition_location_preserves_first_binding(alias_project, owner, bindings):
+    declaration = "type Bag[T] = (\n    SequenceOf[T]\n)\n"
+    body = "ordinary = 0\n\n"
+    if bindings == "ordinary-first":
+        body += "Bag = 1\n"
+    body += declaration
+    if bindings == "alias-first":
+        body += "Bag = 1\n"
+    elif bindings == "repeated":
+        body += "type Bag[U] = SequenceOf[U]\n"
+    body += "reference = Bag\n"
+    header = {"module": "", "function": "def factory():\n", "class": "class Owner:\n"}[owner]
+    source = "from collections.abc import Sequence as SequenceOf\n" + header
+    source += indent(body, "    ") if header else body
+    resource = alias_project.root.create_file("declarations.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    scope = module.get_scope()
+    if owner != "module":
+        scope = module["factory" if owner == "function" else "Owner"].get_object().get_scope()
+    alias = scope["Bag"]
+    first_line = source[:source.index("Bag")].count("\n") + 1
+    ordinary_line = source[:source.index("ordinary =")].count("\n") + 1
+    assert alias.get_definition_location() == (module, first_line)
+    assert scope["ordinary"].get_definition_location() == (module, ordinary_line)
+    if bindings in {"ordinary-first", "alias-first"}:
+        assert alias.get_object().get_type() is scope["ordinary"].get_object().get_type()
+    else:
+        assert alias.get_object() is pyobjects.get_unknown()
+    assert alias.get_definition_location() == (module, first_line)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("owner", ["module", "function", "class"])
+def test_type_alias_location_does_not_evaluate_or_substitute_lazy_value(alias_project, owner):
+    source = "events = []\ndef resolve():\n    events.append('value')\n    raise RuntimeError('lazy value')\n"
+    declaration = "type Bag[T] = resolve()\n"
+    if owner == "module":
+        source += declaration + "selected = Bag\n"
+    elif owner == "class":
+        source += "class Owner:\n" + indent(declaration, "    ") + "selected = Owner.Bag\n"
+    else:
+        source += "def factory():\n" + indent(declaration + "return Bag\n", "    ") + "selected = factory()\n"
+    resource = alias_project.root.create_file("lazy.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    scope = module.get_scope()
+    if owner != "module":
+        scope = module["factory" if owner == "function" else "Owner"].get_object().get_scope()
+    alias = scope["Bag"]
+    assert alias.get_definition_location() == (module, source[:source.index("type Bag")].count("\n") + 1)
+    assert alias.get_object() is pyobjects.get_unknown()
+    namespace = {}
+    exec(compile(source, resource.real_path, "exec"), namespace)
+    assert isinstance(namespace["selected"], typing.TypeAliasType)
+    assert namespace["events"] == []
+    with pytest.raises(RuntimeError, match="lazy value"):
+        namespace["selected"].__value__
+    assert namespace["events"] == ["value"]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("method", ["__init__", "method"])
+def test_method_type_alias_is_local_not_an_instance_attribute(alias_project, method):
+    source = f"class Owner:\n    ordinary = 0\n    def {method}(self):\n        type Bag[T] = list[T]\n        value = 1\n        self.actual = value\n"
+    resource = alias_project.root.create_file("methods.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    owner = module["Owner"].get_object()
+    assert "Bag" not in owner.get_attributes()
+    assert "value" not in owner.get_attributes()
+    assert owner["ordinary"].get_definition_location() == (module, 2)
+    assert owner["actual"].get_definition_location() == (module, 6)
+    scope = owner[method].get_object().get_scope()
+    assert scope["Bag"].get_definition_location() == (module, 4)
+    assert scope["value"].get_definition_location() == (module, 5)
+    assert scope["Bag"].get_object() is pyobjects.get_unknown()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("imports,reference", [
+    ("from supplier import Bag", "Bag"),
+    ("from supplier import Bag as Alias", "Alias"),
+    ("import supplier", "supplier.Bag"),
+])
+def test_imported_type_alias_location_and_native_rename(alias_project, imports, reference):
+    supplier = alias_project.root.create_file("supplier.py")
+    source = "from collections.abc import Sequence\n\ntype Bag[T] = Sequence[T]\n"
+    supplier.write(source)
+    client = alias_project.root.create_file("client.py")
+    client_source = imports + "\nreference = " + reference + "[int]\n"
+    client.write(client_source)
+    producer = alias_project.get_pymodule(supplier)
+    consumer = alias_project.get_pymodule(client)
+    offset = client_source.rindex(reference.rsplit(".", 1)[-1]) + 1
+    binding = evaluate.eval_location(consumer, offset)
+    assert binding.get_definition_location() == (producer, 3)
+    alias_project.do(rename.Rename(alias_project, supplier, source.index("Bag")).get_changes("Crate"))
+    assert supplier.read() == source.replace("Bag", "Crate")
+    assert client.read() == client_source.replace("Bag", "Crate")
 
 
 def test_default_project_initialization_has_no_warnings(tmp_path, recwarn):

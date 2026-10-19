@@ -583,6 +583,12 @@ class _ScopeVisitor(_ExpressionVisitor):
 
     def _TypeAlias(self, node):
         _AssignVisitor(self).visit(node)
+        pyname = self.names[node.name.id]
+        if (
+            isinstance(pyname, pynamesdef.AssignedName)
+            and pyname.get_definition_location()[1] is None
+        ):
+            pyname.lineno = node.lineno
 
     def _AugAssign(self, node):
         pass
