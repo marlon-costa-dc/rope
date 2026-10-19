@@ -1,12 +1,28 @@
 """Real source snapshots keep local and external resource reads closed."""
 
+import ast
 import os
 import shutil
+from textwrap import dedent
 
 import pytest
 
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+from rope.refactor import patchedast
+
+
+@pytest.mark.parametrize("prefix", ["", "\u03c0"])
+def test_fstring_fields_follow_expression_coordinates(prefix):
+    source = dedent(
+        'result = f"${{frozen}}({{{literal}}})" if frozen else literal\n'
+    ).replace('f"', f'f"{prefix}', 1)
+    module = patchedast.get_patched_ast(source, sorted_children=True)
+    fields = [node for node in ast.walk(module) if isinstance(node, ast.FormattedValue)]
+    start = source.index("{literal}")
+    assert len(fields) == 1
+    assert fields[0].region == (start, start + len("{literal}"))
+    assert patchedast.write_ast(module) == source
 
 
 class CapturedFileSystem(FileSystemCommands):

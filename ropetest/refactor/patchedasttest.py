@@ -574,6 +574,27 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_children("JoinedStr", ['f"', "abc", "FormattedValue", "", '"'])
         checker.check_children("FormattedValue", ["{", "", "BinOp", "", "}"])
 
+    def test_escaped_format_fields_preserve_conditional_expression(self):
+        for prefix, literal_prefix in (
+            ("", ""),
+            ("label = '\u03c0'\n", ""),
+            ("", "\u03c0"),
+        ):
+            with self.subTest(prefix=prefix, literal_prefix=literal_prefix):
+                source = prefix + dedent(
+                    'expression = f"${{frozen}}({{{literal}}})" if frozen else literal\n'
+                )
+                source = source.replace('f"', f'f"{literal_prefix}', 1)
+                ast_frag = patchedast.get_patched_ast(source, True)
+                checker = _ResultChecker(self, ast_frag)
+                start = source.index("{literal}")
+                checker.check_region("FormattedValue", start, start + len("{literal}"))
+                checker.check_children(
+                    "IfExp",
+                    ["JoinedStr", " ", "if", " ", "Name", " ", "else", " ", "Name"],
+                )
+                self.assertEqual(source, patchedast.write_ast(ast_frag))
+
     def test_complex_number_literals(self):
         source = "1.0e2j + a"
         ast_frag = patchedast.get_patched_ast(source, True)
@@ -664,16 +685,7 @@ class PatchedASTTest(unittest.TestCase):
             "Call", ["Name", "", "(", "", "Num", "", ",", " ", "keyword", "", ")"]
         )
 
-    @testutils.only_for_versions_lower("3.5")
     def test_call_func_and_star_args(self):
-        source = "f(1, *args)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Call", ["Name", "", "(", "", "Num", "", ",", " ", "*", "", "Name", "", ")"]
-        )
-
-    def test_call_func_and_star_argspython35(self):
         source = "f(1, *args)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
@@ -681,30 +693,13 @@ class PatchedASTTest(unittest.TestCase):
             "Call", ["Name", "", "(", "", "Num", "", ",", " ", "Starred", "", ")"]
         )
 
-    @testutils.only_for_versions_lower("3.5")
     def test_call_func_and_only_dstar_args(self):
-        source = "f(**kwds)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Call", ["Name", "", "(", "", "**", "", "Name", "", ")"])
-
-    def test_call_func_and_only_dstar_args_python35(self):
         source = "f(**kwds)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children("Call", ["Name", "", "(", "", "keyword", "", ")"])
 
-    @testutils.only_for_versions_lower("3.5")
     def test_call_func_and_both_varargs_and_kwargs(self):
-        source = "f(*args, **kwds)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Call",
-            ["Name", "", "(", "", "*", "", "Name", "", ",", " ", "**", "", "Name", "", ")"],
-        )
-
-    def test_call_func_and_both_varargs_and_kwargs_python35(self):
         source = "f(*args, **kwds)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
@@ -1551,36 +1546,6 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children("Delete", ["del", " ", "Name", "", ",", " ", "Name"])
-
-    @testutils.only_for_versions_lower("3.5")
-    def test_starargs_before_keywords_legacy(self):
-        source = "foo(*args, a=1)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Call",
-            ["Name", "", "(", "", "*", "", "Name", "", ",", " ", "keyword", "", ")"],
-        )
-
-    @testutils.only_for_versions_lower("3.5")
-    def test_starargs_in_keywords_legacy(self):
-        source = "foo(a=1, *args, b=2)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Call",
-            ["Name", "", "(", "", "keyword", "", ",", " ", "*", "", "Name", "", ",", " ", "keyword", "", ")"],
-        )
-
-    @testutils.only_for_versions_lower("3.5")
-    def test_starargs_after_keywords_legacy(self):
-        source = "foo(a=1, *args)\n"
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Call",
-            ["Name", "", "(", "", "keyword", "", ",", " ", "*", "", "Name", "", ")"],
-        )
 
     def test_starargs_before_keywords(self):
         source = "foo(*args, a=1)\n"

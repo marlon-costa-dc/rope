@@ -103,7 +103,7 @@ class ChangeSignature:
     def normalize(self):
         functionutils._check_signature_parameters(self.pyname.get_object())
         changer = _FunctionChangers(
-            self.pyname.get_object(), self.get_definition_info(), [ArgumentNormalizer()]
+            self.pyname.get_object(), self._definfo(), [ArgumentNormalizer()]
         )
         return self._change_calls(changer)
 
@@ -112,7 +112,7 @@ class ChangeSignature:
         functionutils._check_signature_parameters(self.pyname.get_object())
         changer = _FunctionChangers(
             self.pyname.get_object(),
-            self.get_definition_info(),
+            self._definfo(),
             [ArgumentRemover(index)],
         )
         return self._change_calls(changer)
@@ -122,7 +122,7 @@ class ChangeSignature:
         functionutils._check_signature_parameters(self.pyname.get_object())
         changer = _FunctionChangers(
             self.pyname.get_object(),
-            self.get_definition_info(),
+            self._definfo(),
             [ArgumentAdder(index, name, default, value)],
         )
         return self._change_calls(changer)
@@ -132,7 +132,7 @@ class ChangeSignature:
         functionutils._check_signature_parameters(self.pyname.get_object())
         changer = _FunctionChangers(
             self.pyname.get_object(),
-            self.get_definition_info(),
+            self._definfo(),
             [ArgumentDefaultInliner(index)],
         )
         return self._change_calls(changer)
@@ -142,7 +142,7 @@ class ChangeSignature:
         functionutils._check_signature_parameters(self.pyname.get_object())
         changer = _FunctionChangers(
             self.pyname.get_object(),
-            self.get_definition_info(),
+            self._definfo(),
             [ArgumentReorderer(new_ordering)],
         )
         return self._change_calls(changer)
