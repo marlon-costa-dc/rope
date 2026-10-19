@@ -24,6 +24,41 @@ class SimilarFinderTest(unittest.TestCase):
         finder = self._create_finder("")
         self.assertEqual([], list(finder.get_match_regions("10")))
 
+    def _assert_try_else_with_finally_regions(self, handler):
+        source = (
+            "before = module.Model\n"
+            "try:\n    value = 1\n"
+            + handler
+            + " ValueError:\n    value = 2\n"
+            "else:\n    value = module.Model\n"
+            "finally:\n    value = 3\n"
+        )
+        first = source.index("module.Model")
+        last = source.rindex("module.Model")
+        size = len("module.Model")
+        for warm_ast in (False, True):
+            with self.subTest(warm_ast=warm_ast):
+                finder = self._create_finder(source)
+                if warm_ast:
+                    finder = similarfinder.SimilarFinder(
+                        self.project.get_pymodule(self.mod)
+                    )
+                self.assertEqual(
+                    [(first, first + size), (last, last + size)],
+                    sorted(finder.get_match_regions("module.Model")),
+                )
+                self.assertEqual(
+                    [(first, first + size)],
+                    list(finder.get_match_regions("module.Model", end=first + size)),
+                )
+
+    def test_matching_try_else_with_finally(self):
+        self._assert_try_else_with_finally_regions("except")
+
+    @testutils.only_for("3.11")
+    def test_matching_try_star_else_with_finally(self):
+        self._assert_try_else_with_finally_regions("except*")
+
     def test_matching_argument_annotation(self):
         source = "def foo(l: list):\n    pass\n"
         finder = similarfinder.RawSimilarFinder(source)

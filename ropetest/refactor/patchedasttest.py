@@ -7,8 +7,6 @@ from rope.base import ast
 from rope.refactor import patchedast
 from ropetest import testutils
 
-NameConstant = "Name" if sys.version_info <= (3, 8) else "NameConstant"
-
 
 class PatchedASTTest(unittest.TestCase):
     def setUp(self):
@@ -110,15 +108,15 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         str_fragment = 'b"("'
         start = source.index(str_fragment)
-        checker.check_region("Bytes", start, start + len(str_fragment))
-        checker.check_children("Bytes", [str_fragment])
+        checker.check_region("Constant", start, start + len(str_fragment))
+        checker.check_children("Constant", [str_fragment])
 
     def test_integer_literals_and_region(self):
         source = "a = 10\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         start = source.index("10")
-        checker.check_region("Num", start, start + 2)
+        checker.check_region("Constant", start, start + 2)
 
     def test_negative_integer_literals_and_region(self):
         source = "a = -10\n"
@@ -126,8 +124,8 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         start = source.index("-10") + 1
         end = start + 2
-        # Python 3 parses as UnaryOp(op=USub(), operand=Num(n=10))
-        checker.check_region("Num", start, end)
+        # Python parses the sign as UnaryOp, with a Constant operand.
+        checker.check_region("Constant", start, end)
 
     def test_scientific_integer_literals_and_region(self):
         source = "a = -1.0e-3\n"
@@ -135,15 +133,15 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         start = source.index("-1.0e-3") + 1
         end = start + 6
-        # Python 3 parses as UnaryOp(op=USub(), operand=Num(n=10))
-        checker.check_region("Num", start, end)
+        # Python parses the sign as UnaryOp, with a Constant operand.
+        checker.check_region("Constant", start, end)
 
     def test_hex_integer_literals_and_region(self):
         source = "a = 0x1\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         start = source.index("0x1")
-        checker.check_region("Num", start, start + 3)
+        checker.check_region("Constant", start, start + 3)
 
     def test_octal_integer_literals_and_region(self):
         source = "a = -0o1251\n"
@@ -151,22 +149,22 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         start = source.index("-0o1251") + 1
         end = start + 6
-        # Python 3 parses as UnaryOp(op=USub(), operand=Num(n=10))
-        checker.check_region("Num", start, end)
-        checker.check_children("Num", ["0o1251"])
+        # Python parses the sign as UnaryOp, with a Constant operand.
+        checker.check_region("Constant", start, end)
+        checker.check_children("Constant", ["0o1251"])
 
     def test_integer_literals_and_sorted_children(self):
         source = "a = 10\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Num", ["10"])
+        checker.check_children("Constant", ["10"])
 
     def test_ellipsis(self):
         source = "a[...]\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         start = source.index("...")
-        checker.check_region("Ellipsis", start, start + len("..."))
+        checker.check_region("Constant", start, start + len("..."))
 
     def test_positional_only_and_keyword_only_parameters(self):
         source = "def f(a, /, b, *, c):\n    pass\n"
@@ -183,7 +181,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "arguments", ["*", "", ",", " ", "arg", "", "=", "", "NameConstant"]
+            "arguments", ["*", "", ",", " ", "arg", "", "=", "", "Constant"]
         )
 
     def test_annotated_parameters_are_walked_as_nodes(self):
@@ -217,7 +215,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Assign", 0, len(source) - 1)
-        checker.check_children("Assign", ["Name", " ", "=", " ", "Num"])
+        checker.check_children("Assign", ["Name", " ", "=", " ", "Constant"])
 
     @testutils.only_for_versions_higher("3.6")
     def test_ann_assign_node_without_target(self):
@@ -234,7 +232,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("AnnAssign", 0, len(source) - 1)
         checker.check_children(
-            "AnnAssign", ["Name", "", ":", " ", "Name", " ", "=", " ", "Num"]
+            "AnnAssign", ["Name", "", ":", " ", "Name", " ", "=", " ", "Constant"]
         )
 
     def test_add_node(self):
@@ -242,21 +240,21 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "+", " ", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " ", "Constant"])
 
     def test_lshift_node(self):
         source = "1 << 2\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "<<", " ", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "<<", " ", "Constant"])
 
     def test_and_node(self):
         source = "True and True\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BoolOp", 0, len(source) - 1)
-        checker.check_children("BoolOp", [NameConstant, " ", "and", " ", NameConstant])
+        checker.check_children("BoolOp", ["Constant", " ", "and", " ", "Constant"])
 
     def test_matmult_node(self):
         source = "a @ b\n"
@@ -269,52 +267,52 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "+", " (", "Num", ")"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " (", "Constant", ")"])
 
     def test_basic_opening_parens(self):
         source = "(1) + 2\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["(", "Num", ") ", "+", " ", "Num"])
+        checker.check_children("BinOp", ["(", "Constant", ") ", "+", " ", "Constant"])
 
     def test_basic_opening_biway(self):
         source = "(1) + (2)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["(", "Num", ") ", "+", " (", "Num", ")"])
+        checker.check_children("BinOp", ["(", "Constant", ") ", "+", " (", "Constant", ")"])
 
     def test_basic_opening_double(self):
         source = "1 + ((2))\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "+", " ((", "Num", "))"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " ((", "Constant", "))"])
 
     def test_handling_comments(self):
         source = "(1 + #(\n2)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "+", " #(\n", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " #(\n", "Constant"])
 
     def test_handling_parens_with_spaces(self):
         source = "1 + (2\n    )\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "+", " (", "Num", "\n    )"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " (", "Constant", "\n    )"])
 
     def test_handling_strings(self):
         source = '1 + "("\n'
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "+", " ", "Str"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " ", "Constant"])
 
     def test_handling_fstrings(self):
         source = '1 + f"("\n'
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "+", " ", "JoinedStr"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " ", "JoinedStr"])
 
     def test_handling_hash_inside_implicitly_concatenated_fstrings(self):
         # The walker searches the source as plain text.  A `#` inside a
@@ -352,8 +350,8 @@ class PatchedASTTest(unittest.TestCase):
         source = "a = '1''2'"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Assign", ["Name", " ", "=", " ", "Str"])
-        checker.check_children("Str", ["'1''2'"])
+        checker.check_children("Assign", ["Name", " ", "=", " ", "Constant"])
+        checker.check_children("Constant", ["'1''2'"])
 
     def test_handling_implicit_string_concatenation_line_breaks(self):
         source = dedent("""\
@@ -361,15 +359,15 @@ class PatchedASTTest(unittest.TestCase):
             '2'""")
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Assign", ["Name", " ", "=", " ", "Str"])
-        checker.check_children("Str", ["'1' \\\n'2'"])
+        checker.check_children("Assign", ["Name", " ", "=", " ", "Constant"])
+        checker.check_children("Constant", ["'1' \\\n'2'"])
 
     def test_handling_explicit_string_concatenation_line_breaks(self):
         source = "a = ('1' \n'2')"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Assign", ["Name", " ", "=", " (", "Str", ")"])
-        checker.check_children("Str", ["'1' \n'2'"])
+        checker.check_children("Assign", ["Name", " ", "=", " (", "Constant", ")"])
+        checker.check_children("Constant", ["'1' \n'2'"])
 
     def test_not_concatenating_strings_on_separate_lines(self):
         source = dedent("""\
@@ -384,7 +382,7 @@ class PatchedASTTest(unittest.TestCase):
         source = 'r"abc"\n'
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Str", ['r"abc"'])
+        checker.check_children("Constant", ['r"abc"'])
 
     @testutils.only_for_versions_higher("3.6")
     def test_handling_format_strings_basic(self):
@@ -599,8 +597,8 @@ class PatchedASTTest(unittest.TestCase):
         source = "1.0e2j + a"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "+", " ", "Name"])
-        checker.check_children("Num", ["1.0e2j"])
+        checker.check_children("BinOp", ["Constant", " ", "+", " ", "Name"])
+        checker.check_children("Constant", ["1.0e2j"])
 
     def test_ass_attr_node(self):
         source = "a.b = 1\n"
@@ -637,7 +635,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Assert", 0, len(source) - 1)
-        checker.check_children("Assert", ["assert", " ", NameConstant])
+        checker.check_children("Assert", ["assert", " ", "Constant"])
 
     def test_assert2(self):
         source = 'assert True, "error"\n'
@@ -645,7 +643,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Assert", 0, len(source) - 1)
         checker.check_children(
-            "Assert", ["assert", " ", NameConstant, "", ",", " ", "Str"]
+            "Assert", ["assert", " ", "Constant", "", ",", " ", "Constant"]
         )
 
     def test_aug_assign_node(self):
@@ -653,20 +651,20 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("AugAssign", 0, len(source) - 1)
-        checker.check_children("AugAssign", ["Name", " ", "+", "", "=", " ", "Num"])
+        checker.check_children("AugAssign", ["Name", " ", "+", "", "=", " ", "Constant"])
 
     def test_bitand(self):
         source = "1 & 2\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "&", " ", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "&", " ", "Constant"])
 
     def test_bitor(self):
         source = "1 | 2\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("BinOp", ["Num", " ", "|", " ", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "|", " ", "Constant"])
 
     def test_call_func(self):
         source = "f(1, 2)\n"
@@ -674,7 +672,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Call", 0, len(source) - 1)
         checker.check_children(
-            "Call", ["Name", "", "(", "", "Num", "", ",", " ", "Num", "", ")"]
+            "Call", ["Name", "", "(", "", "Constant", "", ",", " ", "Constant", "", ")"]
         )
 
     def test_call_func_and_keywords(self):
@@ -682,7 +680,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Call", ["Name", "", "(", "", "Num", "", ",", " ", "keyword", "", ")"]
+            "Call", ["Name", "", "(", "", "Constant", "", ",", " ", "keyword", "", ")"]
         )
 
     def test_call_func_and_star_args(self):
@@ -690,7 +688,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Call", ["Name", "", "(", "", "Num", "", ",", " ", "Starred", "", ")"]
+            "Call", ["Name", "", "(", "", "Constant", "", ",", " ", "Starred", "", ")"]
         )
 
     def test_call_func_and_only_dstar_args(self):
@@ -737,7 +735,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Compare", 0, len(source) - 1)
-        checker.check_children("Compare", ["Num", " ", "<", " ", "Num"])
+        checker.check_children("Compare", ["Constant", " ", "<", " ", "Constant"])
 
     def test_multiple_compare(self):
         source = "1 < 2 <= 3\n"
@@ -745,7 +743,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Compare", 0, len(source) - 1)
         checker.check_children(
-            "Compare", ["Num", " ", "<", " ", "Num", " ", "<=", " ", "Num"]
+            "Compare", ["Constant", " ", "<", " ", "Constant", " ", "<=", " ", "Constant"]
         )
 
     def test_decorators_node(self):
@@ -890,7 +888,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("Dict", 0, len(source) - 1)
         checker.check_children(
             "Dict",
-            ["{", "", "Num", "", ":", " ", "Num", "", ",", " ", "Num", "", ":", " ", "Num", "", "}"],
+            ["{", "", "Constant", "", ":", " ", "Constant", "", ",", " ", "Constant", "", ":", " ", "Constant", "", "}"],
         )
 
     def test_dict_node_with_unpacking(self):
@@ -907,7 +905,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("BinOp", 0, len(source) - 1)
-        checker.check_children("BinOp", ["Num", " ", "/", " ", "Num"])
+        checker.check_children("BinOp", ["Constant", " ", "/", " ", "Constant"])
 
     def test_for_node(self):
         source = dedent("""\
@@ -1059,7 +1057,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("If", 0, len(source) - 1)
         checker.check_children(
             "If",
-            ["if", " ", NameConstant, "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "Pass"],
+            ["if", " ", "Constant", "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "Pass"],
         )
 
     def test_if_node2(self):
@@ -1073,7 +1071,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("If", 0, len(source) - 1)
         checker.check_children(
-            "If", ["if", " ", NameConstant, "", ":", "\n    ", "Pass", "\n", "If"]
+            "If", ["if", " ", "Constant", "", ":", "\n    ", "Pass", "\n", "If"]
         )
 
     def test_if_node3(self):
@@ -1089,7 +1087,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("If", 0, len(source) - 1)
         checker.check_children(
             "If",
-            ["if", " ", NameConstant, "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "If"],
+            ["if", " ", "Constant", "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "If"],
         )
 
     def test_import_node(self):
@@ -1116,12 +1114,12 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Lambda", 0, len(source) - 1)
         checker.check_children(
-            "Lambda", ["lambda", " ", "arguments", "", ":", " ", NameConstant]
+            "Lambda", ["lambda", " ", "arguments", "", ":", " ", "Constant"]
         )
         expected_child = ast.arg.__name__
         checker.check_children(
             "arguments",
-            [expected_child, "", ",", " ", expected_child, "", "=", "", "Num", "", ",", " ", "*", "", "z"],
+            [expected_child, "", ",", " ", expected_child, "", "=", "", "Constant", "", ",", " ", "*", "", "z"],
         )
 
     def test_list_node(self):
@@ -1129,7 +1127,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("List", 0, len(source) - 1)
-        checker.check_children("List", ["[", "", "Num", "", ",", " ", "Num", "", "]"])
+        checker.check_children("List", ["[", "", "Constant", "", ",", " ", "Constant", "", "]"])
 
     def test_list_comp_node(self):
         source = "[i for i in range(1) if True]\n"
@@ -1141,7 +1139,7 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children(
             "comprehension",
-            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", NameConstant],
+            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", "Constant"],
         )
 
     def test_list_comp_node_with_multiple_comprehensions(self):
@@ -1155,7 +1153,7 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children(
             "comprehension",
-            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", NameConstant],
+            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", "Constant"],
         )
 
     def test_set_node(self):
@@ -1163,7 +1161,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Set", 0, len(source) - 1)
-        checker.check_children("Set", ["{", "", "Num", "", ",", " ", "Num", "", "}"])
+        checker.check_children("Set", ["{", "", "Constant", "", ",", " ", "Constant", "", "}"])
 
     def test_set_comp_node(self):
         source = "{i for i in range(1) if True}\n"
@@ -1175,7 +1173,7 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children(
             "comprehension",
-            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", NameConstant],
+            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", "Constant"],
         )
 
     def test_dict_comp_node(self):
@@ -1189,7 +1187,7 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children(
             "comprehension",
-            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", NameConstant],
+            ["for", " ", "Name", " ", "in", " ", "Call", " ", "if", " ", "Constant"],
         )
 
     def test_ext_slice_node(self):
@@ -1198,7 +1196,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         if sys.version_info >= (3, 9):
             checker.check_region("Tuple", 7, len(source) - 2)
-            checker.check_children("Tuple", ["Num", "", ",", "", "Slice"])
+            checker.check_children("Tuple", ["Constant", "", ",", "", "Slice"])
         else:
             checker.check_region("ExtSlice", 7, len(source) - 2)
             checker.check_children("ExtSlice", ["Index", "", ",", "", "Slice"])
@@ -1219,14 +1217,14 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Module", 0, len(source))
         checker.check_children("Module", ["", "Expr", "\n", "Pass", "\n"])
-        checker.check_children("Str", ['"""docs"""'])
+        checker.check_children("Constant", ['"""docs"""'])
 
     def test_not_and_or_nodes(self):
         source = "not True or False\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children("Expr", ["BoolOp"])
-        checker.check_children("BoolOp", ["UnaryOp", " ", "or", " ", NameConstant])
+        checker.check_children("BoolOp", ["UnaryOp", " ", "or", " ", "Constant"])
 
     def test_raise_node_bare(self):
         source = "raise\n"
@@ -1256,7 +1254,7 @@ class PatchedASTTest(unittest.TestCase):
         """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Return", ["return", " ", NameConstant])
+        checker.check_children("Return", ["return", " ", "Constant"])
 
     def test_empty_return_node(self):
         source = dedent("""\
@@ -1272,7 +1270,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children("Subscript", ["Name", "", "[", "", "Slice", "", "]"])
-        checker.check_children("Slice", ["Num", "", ":", "", "Num"])
+        checker.check_children("Slice", ["Constant", "", ":", "", "Constant"])
 
     def test_slice_node2(self):
         source = "a[:]\n"
@@ -1286,29 +1284,29 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         if sys.version_info >= (3, 9):
-            checker.check_children("Subscript", ["Name", "", "[", "", "Num", "", "]"])
+            checker.check_children("Subscript", ["Name", "", "[", "", "Constant", "", "]"])
         else:
             checker.check_children("Subscript", ["Name", "", "[", "", "Index", "", "]"])
-            checker.check_children("Index", ["Num"])
+            checker.check_children("Index", ["Constant"])
 
     def test_tuple_node(self):
         source = "(1, 2)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Tuple", ["(", "", "Num", "", ",", " ", "Num", "", ")"])
+        checker.check_children("Tuple", ["(", "", "Constant", "", ",", " ", "Constant", "", ")"])
 
     def test_tuple_node2(self):
         source = "#(\n1, 2\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Tuple", ["Num", "", ",", " ", "Num"])
+        checker.check_children("Tuple", ["Constant", "", ",", " ", "Constant"])
 
     def test_tuple_with_complex_parentheses1(self):
         source = "a = ( # (he\n ((((), None))))\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Tuple", ["(", "", "Tuple", "", ",", " ", NameConstant, "", ")"]
+            "Tuple", ["(", "", "Tuple", "", ",", " ", "Constant", "", ")"]
         )
 
     def test_tuple_with_complex_parentheses2(self):
@@ -1316,7 +1314,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Tuple", ["(", "", "((", "Str", "))", ",", " (", "Str", ")", "", ")"]
+            "Tuple", ["(", "", "((", "Constant", "))", ",", " (", "Constant", ")", "", ")"]
         )
 
     def test_tuple_with_complex_parentheses3(self):
@@ -1331,7 +1329,7 @@ class PatchedASTTest(unittest.TestCase):
         source = "(1,)\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Tuple", ["(", "", "Num", ",", ")"])
+        checker.check_children("Tuple", ["(", "", "Constant", ",", ")"])
 
     def test_empty_tuple_node(self):
         source = "()\n"
@@ -1344,7 +1342,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Tuple", ["(", "", "Tuple", "", ",", " ", NameConstant, "", ")"]
+            "Tuple", ["(", "", "Tuple", "", ",", " ", "Constant", "", ")"]
         )
 
     def test_empty_tuple_node3(self):
@@ -1352,7 +1350,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "Tuple", ["Tuple", "", ",", " ", NameConstant]
+            "Tuple", ["Tuple", "", ",", " ", "Constant"]
         )
 
     def test_empty_tuple_node4(self):
@@ -1368,7 +1366,7 @@ class PatchedASTTest(unittest.TestCase):
         """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Yield", ["yield", " ", NameConstant])
+        checker.check_children("Yield", ["yield", " ", "Constant"])
 
     @testutils.only_for_versions_higher("3.3")
     def test_yield_from_node(self):
@@ -1391,7 +1389,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "While",
-            ["while", " ", NameConstant, "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "Pass"],
+            ["while", " ", "Constant", "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "Pass"],
         )
 
     def test_with_node(self):
@@ -1515,13 +1513,13 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         start = source.rindex("1")
-        checker.check_region("Num", start, start + 1)
+        checker.check_region("Constant", start, start + 1)
 
     def test_simple_sliceobj(self):
         source = "a[1::3]\n"
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children("Slice", ["Num", "", ":", "", ":", "", "Num"])
+        checker.check_children("Slice", ["Constant", "", ":", "", ":", "", "Constant"])
 
     def test_ignoring_strings_that_start_with_a_char(self):
         source = 'r"""("""\n1\n'
@@ -1538,7 +1536,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
-            "IfExp", ["Num", " ", "if", " ", NameConstant, " ", "else", " ", "Num"]
+            "IfExp", ["Constant", " ", "if", " ", "Constant", " ", "else", " ", "Constant"]
         )
 
     def test_delete_node(self):
@@ -1602,7 +1600,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchValue")
         checker.check_children("MatchValue", [
-            "Num"
+            "Constant"
         ])
 
     @testutils.only_for_versions_higher("3.10")
@@ -1657,7 +1655,7 @@ class PatchedASTTest(unittest.TestCase):
             ")",
         ])
         checker.check_children("MatchValue", [
-            "Num"
+            "Constant"
         ])
 
     @testutils.only_for_versions_higher("3.10")
@@ -2025,7 +2023,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_children("MatchMapping", [
             "{",
             "",
-            "Str",
+            "Constant",
             "",
             ":",
             " ",
@@ -2258,26 +2256,33 @@ class PatchedASTTest(unittest.TestCase):
 
 
 
-class ConstNodeTypeNamesTest(unittest.TestCase):
-    def _name(self, value):
-        import ast as stdlib_ast
-        node = stdlib_ast.Constant(value=value)
-        return ast.get_const_subtype_name(node)
-
-    @unittest.skipIf(sys.version_info < (3, 8), "get_const_subtype_name requires 3.8+")
-    def test_int_name(self):
-        expected = "Constant" if sys.version_info >= (3, 14) else "Num"
-        self.assertEqual(self._name(1), expected)
-
-    @unittest.skipIf(sys.version_info < (3, 8), "get_const_subtype_name requires 3.8+")
-    def test_str_name(self):
-        expected = "Constant" if sys.version_info >= (3, 14) else "Str"
-        self.assertEqual(self._name("hello"), expected)
-
-    @unittest.skipIf(sys.version_info < (3, 8), "get_const_subtype_name requires 3.8+")
-    def test_none_name(self):
-        expected = "Constant" if sys.version_info >= (3, 14) else "NameConstant"
-        self.assertEqual(self._name(None), expected)
+class ConstantNodeTest(unittest.TestCase):
+    def test_parsed_literal_values_and_types(self):
+        for literal, expected, value_type in (
+            ("None", None, type(None)),
+            ("True", True, bool),
+            ("False", False, bool),
+            ("1", 1, int),
+            ("1.5", 1.5, float),
+            ("2j", 2j, complex),
+            ('"hello"', "hello", str),
+            ('b"hello"', b"hello", bytes),
+            ("...", Ellipsis, type(Ellipsis)),
+        ):
+            with self.subTest(literal=literal):
+                source = dedent(f"""\
+                    value = {literal}
+                """)
+                ast_frag = patchedast.get_patched_ast(source, True)
+                node = ast_frag.body[0].value
+                self.assertIs(type(node), ast.Constant)
+                self.assertEqual(expected, node.value)
+                self.assertIs(type(node.value), value_type)
+                checker = _ResultChecker(self, ast_frag)
+                start = source.index(literal)
+                checker.check_region("Constant", start, start + len(literal))
+                checker.check_children("Constant", [literal])
+                self.assertEqual(source, patchedast.write_ast(ast_frag))
 
 
 class _ResultChecker:
@@ -2327,10 +2332,7 @@ class _ResultChecker:
 
             def __call__(self, node):
                 for text in goal:
-                    if str(node).startswith(text):
-                        self.result = node
-                        break
-                    if ast.get_node_type_name(node).startswith(text):
+                    if type(node).__name__.startswith(text):
                         self.result = node
                         break
                 return self.result is not None
@@ -2362,7 +2364,7 @@ class _ResultChecker:
             else:
                 self.test_case.assertNotEqual("", text, "probably ignoring some node")
                 self.test_case.assertTrue(
-                    ast.get_node_type_name(child).startswith(expected),
+                    type(child).__name__.startswith(expected),
                     msg="Expected <%s> but was <%s>"
-                    % (expected, ast.get_node_type_name(child)),
+                    % (expected, type(child).__name__),
                 )

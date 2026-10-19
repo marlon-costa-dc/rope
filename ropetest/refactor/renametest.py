@@ -444,6 +444,46 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 
+    def test_renaming_preserves_normalized_fstring_identifiers(self):
+        code = dedent("""\
+            target = 1
+            K = 2
+            unrelated = f'{\u212a}'
+            message = f'{target + \u212a}'
+        """)
+        expected = dedent("""\
+            renamed = 1
+            K = 2
+            unrelated = f'{\u212a}'
+            message = f'{renamed + \u212a}'
+        """)
+        self.assertEqual(
+            expected,
+            self._local_rename(code, code.index("target"), "renamed"),
+        )
+
+    def test_renaming_multiline_fstring_preserves_continuation_indentation(self):
+        code = dedent('''\
+            target = 1
+            message = f"""{(
+                target
+                + target
+              + target
+            )}"""
+        ''')
+        expected = dedent('''\
+            renamed = 1
+            message = f"""{(
+                renamed
+                + renamed
+              + renamed
+            )}"""
+        ''')
+        self.assertEqual(
+            expected,
+            self._local_rename(code, code.index("target"), "renamed"),
+        )
+
     def test_renaming_occurrence_in_nested_f_string(self):
         code = dedent("""\
             a_var = 20
