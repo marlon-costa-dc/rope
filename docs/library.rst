@@ -914,6 +914,8 @@ For PEP 695 type aliases, ``PyName.get_definition_location()`` retains the
 declaring module and first binding line in module, function, and class scopes.
 Imported aliases preserve that declaration location. Reading this metadata does
 not evaluate the lazy alias value or substitute its right-hand side for the alias.
+Aliases declared inside constructors and methods remain local bindings, not
+instance attributes.
 
 
 `rope.contrib.findit`

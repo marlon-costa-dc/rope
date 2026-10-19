@@ -10,7 +10,7 @@ export COVERAGE_FILE := $(VENV)/.coverage
 
 setup:
 	@set -eu; \
-	expected_python="$$( $(UV) python find --system "$(BOOTSTRAP_PYTHON)" )"; \
+	expected_python="$$( $(UV) python find --no-project --system "$(BOOTSTRAP_PYTHON)" )"; \
 	if [ -e "$(VENV)" ] || [ -L "$(VENV)" ]; then \
 		if [ -L "$(VENV)" ] || [ ! -x "$(PYTHON)" ] || [ ! -f "$(VENV)/pyvenv.cfg" ]; then \
 			printf 'ERROR: existing environment is not a physical venv: %s\n' "$(VENV)" >&2; \

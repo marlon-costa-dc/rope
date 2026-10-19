@@ -89,6 +89,24 @@ def test_type_alias_location_does_not_evaluate_or_substitute_lazy_value(alias_pr
 
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("method", ["__init__", "method"])
+def test_method_type_alias_is_local_not_an_instance_attribute(alias_project, method):
+    source = f"class Owner:\n    ordinary = 0\n    def {method}(self):\n        type Bag[T] = list[T]\n        value = 1\n        self.actual = value\n"
+    resource = alias_project.root.create_file("methods.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    owner = module["Owner"].get_object()
+    assert "Bag" not in owner.get_attributes()
+    assert "value" not in owner.get_attributes()
+    assert owner["ordinary"].get_definition_location() == (module, 2)
+    assert owner["actual"].get_definition_location() == (module, 6)
+    scope = owner[method].get_object().get_scope()
+    assert scope["Bag"].get_definition_location() == (module, 4)
+    assert scope["value"].get_definition_location() == (module, 5)
+    assert scope["Bag"].get_object() is pyobjects.get_unknown()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("imports,reference", [
     ("from supplier import Bag", "Bag"),
     ("from supplier import Bag as Alias", "Alias"),

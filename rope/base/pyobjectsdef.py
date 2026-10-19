@@ -500,12 +500,6 @@ class _AssignVisitor(ast.RopeNodeVisitor):
         # alias is a distinct TypeAliasType object whose value is evaluated
         # lazily, so substituting the value for the alias name is unsafe
         self.visit(node.name)
-        pyname = self.scope_visitor.names[node.name.id]
-        if (
-            isinstance(pyname, pynamesdef.AssignedName)
-            and pyname.get_definition_location()[1] is None
-        ):
-            pyname.lineno = node.lineno
 
     def _assigned(self, name, assignment=None):
         self.scope_visitor._assigned(name, assignment)
@@ -589,6 +583,12 @@ class _ScopeVisitor(_ExpressionVisitor):
 
     def _TypeAlias(self, node):
         _AssignVisitor(self).visit(node)
+        pyname = self.names[node.name.id]
+        if (
+            isinstance(pyname, pynamesdef.AssignedName)
+            and pyname.get_definition_location()[1] is None
+        ):
+            pyname.lineno = node.lineno
 
     def _AugAssign(self, node):
         pass
