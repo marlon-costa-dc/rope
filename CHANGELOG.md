@@ -12,6 +12,8 @@
   coordinates for escaped braces and Unicode, adopting the reviewed native fixes.
 - Keep autoimport project-relative paths and nested installation roots separate on
   Windows, and scope the metadata task check to its required checks permission.
+- Validate published downstream GitHub Release assets through the native installed
+  wheel contract, without sending local-version builds to the upstream PyPI publisher.
 
 # Release 1.15.0+dc.3
 

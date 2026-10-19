@@ -20,6 +20,24 @@ Release
 7. Create Github Release
 8. Publish release announcements to GitHub Discussions
 
+Downstream Fork Releases
+------------------------
+
+Local-version releases (a ``+`` label) are distributed as GitHub Release wheel and
+source-distribution assets, not uploaded to PyPI. The `version specification`_
+prohibits local version identifiers on PyPI. Public upstream releases retain the
+existing trusted-publisher workflow.
+
+Run ``make setup fmt check test build`` on the release candidate. The native
+``build`` target invokes ``artifact-check`` to verify typed markers and exercise
+the installed wheel outside the checkout. After merging and creating the signed,
+annotated version tag, create the GitHub Release with both validated artifacts.
+The release workflow downloads those published assets and runs the same
+``make artifact-check`` against them; a locally rebuilt wheel is not a substitute
+for that published-artifact receipt.
+
+.. _version specification: https://packaging.python.org/en/latest/specifications/version-specifiers/#local-version-identifiers
+
 
 Release Schedule
 ================

@@ -6,7 +6,7 @@ export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
 
-.PHONY: setup test test-file check check-codecov fmt build
+.PHONY: setup test test-file check check-codecov fmt build artifact-check
 
 setup:
 	@set -eu; \
@@ -44,4 +44,7 @@ fmt:
 
 build:
 	"$(PYTHON)" -m build "$(CURDIR)"
+	$(MAKE) artifact-check
+
+artifact-check:
 	"$(PYTHON)" "$(CURDIR)/ropetest/package_artifact_contract.py"
