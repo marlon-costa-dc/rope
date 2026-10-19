@@ -6,8 +6,12 @@
   `try`/`except*`, preserving source regions and semantic matching.
 - Verify source round-tripping and parenthesized attribute matching against the
   installed wheel as well as the source checkout.
-- Avoid invoking deprecated source-folder setup for default project configuration;
-  retain its warning and selection when legacy folders are explicitly configured.
+- Initialize the documented source-folder configuration without invoking a
+  deprecated private helper, preserving explicit folder selection without warnings.
+- Preserve f-string references across supported Python tokenizers and expression
+  coordinates for escaped braces and Unicode, adopting the reviewed native fixes.
+- Keep autoimport project-relative paths and nested installation roots separate on
+  Windows, and scope the metadata task check to its required checks permission.
 
 # Release 1.15.0+dc.3
 

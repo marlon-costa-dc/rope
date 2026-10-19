@@ -71,7 +71,12 @@ def test_signature_writers_refuse_new_kinds_atomically(project, parameters, api)
         "inline_default": lambda: signature.inline_default(0),
         "reorder": lambda: signature.reorder([0]),
     }
-    refused([resource, other], operations[api])
+    if api == "get_changes":
+        refused([resource, other], operations[api])
+    else:
+        with pytest.warns(DeprecationWarning, match=rf"^{api} is deprecated$") as recorded:
+            refused([resource, other], operations[api])
+        assert len(recorded) == 1
 
 
 @pytest.mark.parametrize("kind", ["posonly", "kwonly"])

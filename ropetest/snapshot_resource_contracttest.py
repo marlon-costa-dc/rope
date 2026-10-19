@@ -1,9 +1,9 @@
 """Real source snapshots keep local and external resource reads closed."""
 
+import ast
 import os
 import shutil
 import sys
-import warnings
 from textwrap import dedent
 
 import pytest
@@ -13,25 +13,24 @@ from rope.base.project import NoProject, Project, get_no_project
 from rope.refactor import patchedast, similarfinder
 
 
-def test_default_project_does_not_invoke_deprecated_source_folder_setup(tmp_path):
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        project = Project(str(tmp_path))
-        try:
-            assert project.root.pathlib == tmp_path
-        finally:
-            project.close()
+def test_default_project_initialization_has_no_warnings(tmp_path, recwarn):
+    project = Project(str(tmp_path))
+    try:
+        assert project.root.pathlib == tmp_path
+    finally:
+        project.close()
+    assert not recwarn.list
 
 
-def test_legacy_source_folder_setup_retains_warning_and_selection(tmp_path):
+def test_configured_source_folder_selection_has_no_warnings(tmp_path, recwarn):
     source = tmp_path / "src"
     source.mkdir()
-    with pytest.warns(DeprecationWarning, match="Delete once deprecated functions"):
-        project = Project(str(tmp_path), source_folders=["src"])
+    project = Project(str(tmp_path), source_folders=["src"])
     try:
         assert project.get_resource("src") in project.get_source_folders()
     finally:
         project.close()
+    assert not recwarn.list
 
 
 @pytest.mark.parametrize("handler", ["except", "except*"])
@@ -66,6 +65,19 @@ def test_try_else_finally_expression_regions_and_matching(tmp_path, handler):
         assert [match.get_region() for match in matches] == [expected]
     finally:
         project.close()
+
+
+@pytest.mark.parametrize("prefix", ["", "\u03c0"])
+def test_fstring_fields_follow_expression_coordinates(prefix):
+    source = dedent(
+        'result = f"${{frozen}}({{{literal}}})" if frozen else literal\n'
+    ).replace('f"', f'f"{prefix}', 1)
+    module = patchedast.get_patched_ast(source, sorted_children=True)
+    fields = [node for node in ast.walk(module) if isinstance(node, ast.FormattedValue)]
+    start = source.index("{literal}")
+    assert len(fields) == 1
+    assert fields[0].region == (start, start + len("{literal}"))
+    assert patchedast.write_ast(module) == source
 
 
 class CapturedFileSystem(FileSystemCommands):

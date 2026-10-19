@@ -15,7 +15,7 @@ from rope.contrib.autoimport.sqlite import AutoImport
 
 @pytest.fixture
 def autoimport(project: Project):
-    with closing(AutoImport(project)) as ai:
+    with closing(AutoImport(project, memory=True)) as ai:
         yield ai
 
 
@@ -30,17 +30,17 @@ def database_list(connection):
 
 
 def test_in_memory_database_share_cache(project, project2):
-    ai_1 = AutoImport(project, memory=True)
-    ai_2 = AutoImport(project, memory=True)
-
-    ai_3 = AutoImport(project2, memory=True)
-
-    with ai_1.connection:
-        ai_1.connection.execute("CREATE TABLE shared(data)")
-        ai_1.connection.execute("INSERT INTO shared VALUES(28)")
-    assert ai_2.connection.execute("SELECT data FROM shared").fetchone() == (28,)
-    with pytest.raises(sqlite3.OperationalError, match="no such table: shared"):
-        ai_3.connection.execute("SELECT data FROM shared").fetchone()
+    with (
+        AutoImport(project, memory=True) as ai_1,
+        AutoImport(project, memory=True) as ai_2,
+        AutoImport(project2, memory=True) as ai_3,
+    ):
+        with ai_1.connection:
+            ai_1.connection.execute("CREATE TABLE shared(data)")
+            ai_1.connection.execute("INSERT INTO shared VALUES(28)")
+        assert ai_2.connection.execute("SELECT data FROM shared").fetchone() == (28,)
+        with pytest.raises(sqlite3.OperationalError, match="no such table: shared"):
+            ai_3.connection.execute("SELECT data FROM shared").fetchone()
 
 
 def test_autoimport_connection_parameter_with_in_memory(
@@ -71,16 +71,16 @@ def test_autoimport_memory_parameter_is_true(
     project: Project,
     autoimport: AutoImport,
 ):
-    ai = AutoImport(project, memory=True)
-    assert is_in_memory_database(ai.connection)
+    with AutoImport(project, memory=True) as ai:
+        assert is_in_memory_database(ai.connection)
 
 
 def test_autoimport_memory_parameter_is_false(
     project: Project,
     autoimport: AutoImport,
 ):
-    ai = AutoImport(project, memory=False)
-    assert not is_in_memory_database(ai.connection)
+    with AutoImport(project, memory=False) as ai:
+        assert not is_in_memory_database(ai.connection)
 
 
 def test_init_py(
@@ -206,8 +206,7 @@ def test_connection_setter_after_close(project: Project):
 
 
 def test_connection_setter_replaces_existing(project: Project):
-    with AutoImport(project, memory=True) as ai:
-        old_conn = ai.connection
+    with AutoImport(project, memory=True) as ai, closing(ai.connection) as old_conn:
         assert old_conn in ai._connections
         with closing(AutoImport.create_database_connection(memory=True)) as conn:
             ai.connection = conn
@@ -217,12 +216,13 @@ def test_connection_setter_replaces_existing(project: Project):
 
 
 def test_connection(project: Project, project2: Project):
-    ai1 = AutoImport(project)
-    ai2 = AutoImport(project)
-    ai3 = AutoImport(project2)
-
-    assert ai1.connection is not ai2.connection
-    assert ai1.connection is not ai3.connection
+    with (
+        AutoImport(project, memory=True) as ai1,
+        AutoImport(project, memory=True) as ai2,
+        AutoImport(project2, memory=True) as ai3,
+    ):
+        assert ai1.connection is not ai2.connection
+        assert ai1.connection is not ai3.connection
 
 
 def test_resource_to_module_skips_non_package_folders(

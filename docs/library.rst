@@ -372,7 +372,7 @@ Retrieve the path relative to the project's root directory.
 .. code-block:: python
 
   # Get the path relative to the project's root directory.
-  relpath = libutils.relative(myproject.address, path)
+  relpath = libutils.path_relative_to_project_root(myproject, path)
 
 
 ``libutils.path_to_resource()``
