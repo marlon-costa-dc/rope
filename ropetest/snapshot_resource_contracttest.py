@@ -3,6 +3,7 @@
 import os
 import shutil
 import sys
+import warnings
 from textwrap import dedent
 
 import pytest
@@ -10,6 +11,27 @@ import pytest
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
 from rope.refactor import patchedast, similarfinder
+
+
+def test_default_project_does_not_invoke_deprecated_source_folder_setup(tmp_path):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        project = Project(str(tmp_path))
+        try:
+            assert project.root.pathlib == tmp_path
+        finally:
+            project.close()
+
+
+def test_legacy_source_folder_setup_retains_warning_and_selection(tmp_path):
+    source = tmp_path / "src"
+    source.mkdir()
+    with pytest.warns(DeprecationWarning, match="Delete once deprecated functions"):
+        project = Project(str(tmp_path), source_folders=["src"])
+    try:
+        assert project.get_resource("src") in project.get_source_folders()
+    finally:
+        project.close()
 
 
 @pytest.mark.parametrize("handler", ["except", "except*"])

@@ -258,7 +258,8 @@ class Project(_Project):
         if ropefolder is not None:
             self.prefs.add("ignored_resources", ropefolder)
 
-        self._init_source_folders()
+        if self.prefs.get("source_folders"):
+            self._init_source_folders()
 
     def __repr__(self):
         return '<{}.{} "{}">'.format(
