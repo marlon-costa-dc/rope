@@ -6,7 +6,7 @@ export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
 
-.PHONY: setup test test-file check check-codecov fmt build
+.PHONY: setup test test-file check check-codecov fmt build artifact-check
 
 setup:
 	@set -eu; \
@@ -23,7 +23,7 @@ setup:
 	else \
 		$(UV) venv --python "$$expected_python" "$(VENV)"; \
 	fi
-	$(UV) pip install --python "$(PYTHON)" -e '.[dev]'
+	$(UV) pip install --python "$(PYTHON)" -e '$(CURDIR)[dev]'
 
 test:
 	"$(PYTHON)" -m pytest --cov -v -ra -o cache_dir="$(VENV)/pytest-cache"
@@ -43,5 +43,8 @@ fmt:
 	"$(PYTHON)" -m pre_commit run isort --all-files
 
 build:
-	"$(PYTHON)" -m build
-	"$(PYTHON)" -m ropetest.package_artifact_contract
+	"$(PYTHON)" -m build "$(CURDIR)"
+	$(MAKE) artifact-check
+
+artifact-check:
+	"$(PYTHON)" "$(CURDIR)/ropetest/package_artifact_contract.py"

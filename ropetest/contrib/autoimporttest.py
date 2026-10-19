@@ -12,7 +12,7 @@ class AutoImportTest(unittest.TestCase):
         self.mod1 = testutils.create_module(self.project, "mod1")
         self.pkg = testutils.create_package(self.project, "pkg")
         self.mod2 = testutils.create_module(self.project, "mod2", self.pkg)
-        self.importer = autoimport.AutoImport(self.project, observe=False)
+        self.importer = autoimport.AutoImport(self.project, observe=False, memory=True)
 
     def tearDown(self):
         self.importer.close()
@@ -88,10 +88,12 @@ class AutoImportTest(unittest.TestCase):
         self.assertEqual(["mod1"], self.importer.get_modules("_myvar"))
 
     def test_caching_underlined_names_passing_to_the_constructor(self):
-        importer = autoimport.AutoImport(self.project, False, True)
-        self.mod1.write("_myvar = None\n")
-        importer.update_resource(self.mod1)
-        self.assertEqual(["mod1"], importer.get_modules("_myvar"))
+        with autoimport.AutoImport(
+            self.project, observe=False, underlined=True, memory=True
+        ) as importer:
+            self.mod1.write("_myvar = None\n")
+            importer.update_resource(self.mod1)
+            self.assertEqual(["mod1"], importer.get_modules("_myvar"))
 
     def test_name_locations(self):
         self.mod1.write("myvar = None\n")
@@ -179,7 +181,7 @@ class AutoImportTest(unittest.TestCase):
 
 
 def test_search_submodule(project, external_fixturepkg):
-    with autoimport.AutoImport(project, observe=False) as importer:
+    with autoimport.AutoImport(project, observe=False, memory=True) as importer:
         importer.update_module("external_fixturepkg")
         import_statement = ("from external_fixturepkg import mod1", "mod1")
         assert import_statement in importer.search("mod1", exact_match=True)
@@ -194,7 +196,7 @@ class AutoImportObservingTest(unittest.TestCase):
         self.mod1 = testutils.create_module(self.project, "mod1")
         self.pkg = testutils.create_package(self.project, "pkg")
         self.mod2 = testutils.create_module(self.project, "mod2", self.pkg)
-        self.importer = autoimport.AutoImport(self.project, observe=True)
+        self.importer = autoimport.AutoImport(self.project, observe=True, memory=True)
 
     def tearDown(self):
         self.importer.close()

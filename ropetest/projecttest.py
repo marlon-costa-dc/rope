@@ -2,12 +2,13 @@ import os.path
 import pathlib
 import tempfile
 import unittest
+import warnings
 from textwrap import dedent
 from unittest.mock import patch
 
 from rope.base.exceptions import ResourceNotFoundError, RopeError
 from rope.base.fscommands import FileSystemCommands
-from rope.base.libutils import path_to_resource
+from rope.base.libutils import path_relative_to_project_root, path_to_resource, relative
 from rope.base.project import NoProject, Project, _realpath
 from rope.base.resourceobserver import ChangeIndicator, FilteredResourceObserver
 from rope.base.resources import File, Folder
@@ -554,6 +555,45 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(
             myfolder, path_to_resource(self.project, myfolder.real_path, type="folder")
         )
+
+    def test_project_relative_paths_do_not_warn(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertEqual(
+                "", path_relative_to_project_root(self.project, self.project.address)
+            )
+            self.assertEqual(
+                "sample_folder/child.py",
+                path_relative_to_project_root(
+                    self.project,
+                    os.path.join(self.project.address, "sample_folder", "child.py"),
+                ),
+            )
+            self.assertEqual(
+                self.project.get_resource(self.sample_file),
+                path_to_resource(self.project, self.sample_path),
+            )
+        self.assertEqual([], caught)
+
+    def test_project_relative_paths_reject_outside_paths(self):
+        paths = [
+            os.path.dirname(self.project.address),
+            self.project.address + "-sibling/child.py",
+            os.path.join(self.project.address, os.pardir, "outside.py"),
+        ]
+        if os.name == "nt":
+            drive = os.path.splitdrive(self.project.address)[0]
+            other_drive = "D:" if drive.upper() == "C:" else "C:"
+            paths.append(other_drive + "\\outside.py")
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertIsNone(path_relative_to_project_root(self.project, path))
+
+    def test_legacy_relative_path_warns(self):
+        with self.assertWarnsRegex(DeprecationWarning, "relative is deprecated"):
+            self.assertEqual(
+                self.sample_file, relative(self.project.address, self.sample_path)
+            )
 
     @testutils.skipNotPOSIX()
     def test_ignoring_symlinks_inside_project(self):

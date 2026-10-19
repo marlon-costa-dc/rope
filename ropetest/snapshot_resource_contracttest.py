@@ -1,12 +1,83 @@
 """Real source snapshots keep local and external resource reads closed."""
 
+import ast
 import os
 import shutil
+import sys
+from textwrap import dedent
 
 import pytest
 
 from rope.base.fscommands import FileSystemCommands
 from rope.base.project import NoProject, Project, get_no_project
+from rope.refactor import patchedast, similarfinder
+
+
+def test_default_project_initialization_has_no_warnings(tmp_path, recwarn):
+    project = Project(str(tmp_path))
+    try:
+        assert project.root.pathlib == tmp_path
+    finally:
+        project.close()
+    assert not recwarn.list
+
+
+def test_configured_source_folder_selection_has_no_warnings(tmp_path, recwarn):
+    source = tmp_path / "src"
+    source.mkdir()
+    project = Project(str(tmp_path), source_folders=["src"])
+    try:
+        assert project.get_resource("src") in project.get_source_folders()
+    finally:
+        project.close()
+    assert not recwarn.list
+
+
+@pytest.mark.parametrize("handler", ["except", "except*"])
+def test_try_else_finally_expression_regions_and_matching(tmp_path, handler):
+    if handler == "except*" and sys.version_info < (3, 11):
+        pytest.skip("exception groups require Python 3.11")
+    source = dedent(f"""\
+        def execute(self):
+            try:
+                self.run()
+            {handler} Exception:
+                self.failed()
+            else:
+                (
+                    self._record_execution_metrics
+                )
+            finally:
+                self.cleanup()
+    """)
+    tree = patchedast.get_patched_ast(source, True)
+    expression = tree.body[0].body[0].orelse[0].value
+    start = source.index("self._record_execution_metrics")
+    expected = (start, start + len("self._record_execution_metrics"))
+    assert expression.region == expected
+    assert patchedast.write_ast(tree) == source
+    project = Project(str(tmp_path))
+    try:
+        module = project.root.create_file("consumer.py")
+        module.write(source)
+        finder = similarfinder.SimilarFinder(project.get_pymodule(module))
+        matches = list(finder.get_matches("(\nself._record_execution_metrics\n)"))
+        assert [match.get_region() for match in matches] == [expected]
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize("prefix", ["", "\u03c0"])
+def test_fstring_fields_follow_expression_coordinates(prefix):
+    source = dedent(
+        'result = f"${{frozen}}({{{literal}}})" if frozen else literal\n'
+    ).replace('f"', f'f"{prefix}', 1)
+    module = patchedast.get_patched_ast(source, sorted_children=True)
+    fields = [node for node in ast.walk(module) if isinstance(node, ast.FormattedValue)]
+    start = source.index("{literal}")
+    assert len(fields) == 1
+    assert fields[0].region == (start, start + len("{literal}"))
+    assert patchedast.write_ast(module) == source
 
 
 class CapturedFileSystem(FileSystemCommands):

@@ -402,6 +402,16 @@ class _PatchingASTWalker:
         node.region = (node.region[0], string_end)
 
     def _FormattedValue(self, node):
+        # Expression positions distinguish real fields from escaped literal braces.
+        value_start, _ = self.ast_adapter[node.value]
+        if value_start is None:
+            raise MismatchedTokenError("F-string expression AST has no source position")
+        field_start = self.source.rfind_token("{", self.source.offset, value_start)
+        if field_start is None:
+            raise MismatchedTokenError(
+                "F-string expression has no matching opening brace"
+            )
+        self.source.offset = field_start
         children = []
         children.append("{")
         children.append(node.value)
@@ -689,6 +699,9 @@ class _PatchingASTWalker:
             children.extend(["try", ":"])
         children.extend(node.body)
         children.extend(node.handlers)
+        if node.orelse:
+            children.extend(["else", ":"])
+            children.extend(node.orelse)
         children.extend(["finally", ":"])
         children.extend(node.finalbody)
         self._handle(node, children)
