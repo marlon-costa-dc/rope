@@ -36,6 +36,13 @@ The release workflow downloads those published assets and runs the same
 ``make artifact-check`` against them; a locally rebuilt wheel is not a substitute
 for that published-artifact receipt.
 
+To repeat validation without changing an existing tag or its assets, dispatch the
+maintained controller with ``gh workflow run python-publish.yml --ref dc-use
+-f release_tag=<version>``. It checks out that immutable tag and downloads its
+published distributions, rather than building replacements. Setup uses the installed
+``uv`` executable: invoking ``python -m uv`` while Make exports a bytecode cache
+inside the future virtualenv would create that directory before its safety check.
+
 .. _version specification: https://packaging.python.org/en/latest/specifications/version-specifiers/#local-version-identifiers
 
 
