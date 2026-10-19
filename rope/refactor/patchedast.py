@@ -689,6 +689,9 @@ class _PatchingASTWalker:
             children.extend(["try", ":"])
         children.extend(node.body)
         children.extend(node.handlers)
+        if node.orelse:
+            children.extend(["else", ":"])
+            children.extend(node.orelse)
         children.extend(["finally", ":"])
         children.extend(node.finalbody)
         self._handle(node, children)

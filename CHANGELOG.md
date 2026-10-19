@@ -1,5 +1,12 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.4
+
+- Patch expressions in the `else` suite before `finally` for both `try` and
+  `try`/`except*`, preserving source regions and semantic matching.
+- Verify source round-tripping and parenthesized attribute matching against the
+  installed wheel as well as the source checkout.
+
 # Release 1.15.0+dc.3
 
 Flext-ecosystem compatibility and robustness over 1.15.0+dc.2:
