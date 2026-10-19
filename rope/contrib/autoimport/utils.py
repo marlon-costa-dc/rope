@@ -5,6 +5,7 @@ import sys
 from collections import OrderedDict
 from typing import Generator, List, Optional, Tuple
 
+from rope.base import libutils
 from rope.base.project import Project
 
 from .defs import ModuleCompiled, ModuleFile, ModuleInfo, Package, PackageType, Source
@@ -49,12 +50,10 @@ def get_package_source(
     """Detect the source of a given package. Rudimentary implementation."""
     if name in sys.builtin_module_names:
         return Source.BUILTIN
-    if (
-        project is not None
-        and project.address in str(package)
-        and not project.is_ignored(project.get_file(str(package)))
-    ):
-        return Source.PROJECT
+    if project is not None:
+        relative = libutils.path_relative_to_project_root(project, str(package))
+        if relative is not None and not project.is_ignored(project.get_file(relative)):
+            return Source.PROJECT
     if "site-packages" in package.parts:
         return Source.SITE_PACKAGE
     if sys.version_info < (3, 10, 0):
@@ -132,6 +131,9 @@ def get_files(
     else:
         assert package.path
         for file in package.path.glob("**/*.py"):
+            # Nested installation roots are discovered as separate packages.
+            if "site-packages" in file.relative_to(package.path).parts:
+                continue
             if file.name == "__init__.py":
                 yield ModuleFile(
                     file,

@@ -15,6 +15,11 @@ def test_get_package_source_not_project(mod1_path):
     assert utils.get_package_source(mod1_path, None, "") == Source.UNKNOWN
 
 
+def test_get_package_source_project_prefix_is_not_ancestry(project):
+    sibling = Path(project.address + "-other") / "module.py"
+    assert utils.get_package_source(sibling, project, "module") == Source.UNKNOWN
+
+
 def test_get_package_source_pytest(example_external_package_path):
     # pytest is not installed as part of the standard library
     # but should be installed into site_packages,
@@ -104,3 +109,17 @@ def test_get_files(project, mod1, pkg1, mod2):
         Path("pkg1/__init__.py"),
         Path("pkg1/mod2.py"),
     }
+
+
+def test_get_files_keeps_nested_installation_roots_separate(tmp_path):
+    library = tmp_path / "Lib"
+    installed = library / "site-packages"
+    installed.mkdir(parents=True)
+    (library / "stdlib_module.py").write_text("value = 1\n")
+    (installed / "dependency.py").write_text("value = 2\n")
+    package = utils.get_package_tuple(library)
+    assert [module.modname for module in utils.get_files(package)] == [
+        "Lib.stdlib_module"
+    ]
+    dependency = utils.get_package_tuple(installed / "dependency.py")
+    assert [module.modname for module in utils.get_files(dependency)] == ["dependency"]
