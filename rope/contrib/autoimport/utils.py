@@ -49,12 +49,12 @@ def get_package_source(
     """Detect the source of a given package. Rudimentary implementation."""
     if name in sys.builtin_module_names:
         return Source.BUILTIN
-    if (
-        project is not None
-        and project.address in str(package)
-        and not project.is_ignored(project.get_file(str(package)))
-    ):
-        return Source.PROJECT
+    if project is not None:
+        package_path = package.resolve()
+        if package_path.is_relative_to(project.root.pathlib) and not project.is_ignored(
+            project.get_file(package_path.relative_to(project.root.pathlib).as_posix())
+        ):
+            return Source.PROJECT
     if "site-packages" in package.parts:
         return Source.SITE_PACKAGE
     if sys.version_info < (3, 10, 0):
@@ -131,15 +131,26 @@ def get_files(
         yield ModuleFile(package.path, package.path.stem, underlined, False)
     else:
         assert package.path
-        for file in package.path.glob("**/*.py"):
-            if file.name == "__init__.py":
-                yield ModuleFile(
-                    file,
-                    get_modname_from_path(file.parent, package.path),
-                    underlined,
-                    True,
-                )
-            elif should_parse(file, underlined):
-                yield ModuleFile(
-                    file, get_modname_from_path(file, package.path), underlined, False
-                )
+        folders = [package.path]
+        while folders:
+            folder = folders.pop()
+            for file in folder.iterdir():
+                if file.is_dir():
+                    # Use the same package boundaries as sys.path enumeration.
+                    if not file.is_symlink() and get_package_tuple(file) is not None:
+                        folders.append(file)
+                elif file.suffix == ".py":
+                    if file.name == "__init__.py":
+                        yield ModuleFile(
+                            file,
+                            get_modname_from_path(file.parent, package.path),
+                            underlined,
+                            True,
+                        )
+                    elif should_parse(file, underlined):
+                        yield ModuleFile(
+                            file,
+                            get_modname_from_path(file, package.path),
+                            underlined,
+                            False,
+                        )
