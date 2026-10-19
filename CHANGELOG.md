@@ -14,6 +14,8 @@
   Windows, and scope the metadata task check to its required checks permission.
 - Validate published downstream GitHub Release assets through the native installed
   wheel contract, without sending local-version builds to the upstream PyPI publisher.
+- Isolate installed-wheel pytest configuration from ancestor projects and inherited
+  pytest options while retaining the native test configuration and contracts.
 
 # Release 1.15.0+dc.3
 
