@@ -25,7 +25,21 @@ def installed_contract(expected_version, contract):
         raise RuntimeError("installed rope version differs from the built artifact")
     print(f"Installed rope {version('rope')} from {origin}", flush=True)
     subprocess.run(
-        [sys.executable, "-I", "-m", "pytest", "-v", "-ra", str(contract)],
+        [
+            sys.executable,
+            "-I",
+            "-m",
+            "pytest",
+            "-v",
+            "-ra",
+            "-c",
+            str(contract.parent / "pyproject.toml"),
+            "--rootdir",
+            str(contract.parent),
+            "--confcutdir",
+            str(contract.parent),
+            str(contract),
+        ],
         cwd=contract.parent,
         check=True,
     )
@@ -64,7 +78,11 @@ def main():
         target = runtime / "venv"
         venv.EnvBuilder(with_pip=True).create(target)
         python = target / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        consumer_environment = os.environ.copy()
+        consumer_environment = {
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith("PYTEST_")
+        }
         consumer_environment["PIP_CACHE_DIR"] = str(runtime / "pip-cache")
         subprocess.run(
             [str(python), "-I", "-m", "pip", "install", f"{wheel.resolve()}[dev]"],
@@ -74,6 +92,7 @@ def main():
         )
         contract = runtime / "snapshot_resource_contracttest.py"
         shutil.copyfile(source_root / "ropetest" / contract.name, contract)
+        shutil.copyfile(source_root / "pyproject.toml", runtime / "pyproject.toml")
         subprocess.run(
             [
                 str(python), "-I", str(Path(__file__).resolve()),

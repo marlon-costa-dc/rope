@@ -53,6 +53,11 @@ def test_get_package_source_precedence(project):
     assert utils.get_package_source(module, project, builtin) == Source.BUILTIN
 
 
+def test_get_package_source_project_prefix_is_not_ancestry(project):
+    sibling = Path(project.address + "-other") / "module.py"
+    assert utils.get_package_source(sibling, project, "module") == Source.UNKNOWN
+
+
 def test_get_package_source_pytest(example_external_package_path):
     # pytest is not installed as part of the standard library
     # but should be installed into site_packages,
@@ -188,3 +193,17 @@ def test_get_files_separate_site_packages(tmp_path, project, underlined):
         assert autoimport.get_modules("cfgv_name") == ["cfgv"]
         assert autoimport.get_modules("distribution_name") == ["fixture_distribution"]
         assert autoimport.get_modules("module_name") == ["fixture_distribution.module"]
+
+
+def test_get_files_keeps_nested_installation_roots_separate(tmp_path):
+    library = tmp_path / "Lib"
+    installed = library / "site-packages"
+    installed.mkdir(parents=True)
+    (library / "stdlib_module.py").write_text("value = 1\n")
+    (installed / "dependency.py").write_text("value = 2\n")
+    package = utils.get_package_tuple(library)
+    assert [module.modname for module in utils.get_files(package)] == [
+        "Lib.stdlib_module"
+    ]
+    dependency = utils.get_package_tuple(installed / "dependency.py")
+    assert [module.modname for module in utils.get_files(dependency)] == ["dependency"]

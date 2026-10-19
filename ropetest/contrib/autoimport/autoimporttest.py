@@ -75,6 +75,16 @@ def test_autoimport_memory_parameter_is_true(
         assert is_in_memory_database(ai.connection)
 
 
+def test_autoimport_omitted_memory_parameter_is_deprecated(project: Project):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"The default value for `AutoImport\(memory\)` argument will change",
+    ):
+        with AutoImport(project) as ai:
+            assert ai.memory is True
+            assert is_in_memory_database(ai.connection)
+
+
 def test_autoimport_memory_parameter_is_false(
     project: Project,
     autoimport: AutoImport,

@@ -1,5 +1,22 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.4
+
+- Patch expressions in the `else` suite before `finally` for both `try` and
+  `try`/`except*`, preserving source regions and semantic matching.
+- Verify source round-tripping and parenthesized attribute matching against the
+  installed wheel as well as the source checkout.
+- Initialize the documented source-folder configuration without invoking a
+  deprecated private helper, preserving explicit folder selection without warnings.
+- Preserve f-string references across supported Python tokenizers and expression
+  coordinates for escaped braces and Unicode, adopting the reviewed native fixes.
+- Keep autoimport project-relative paths and nested installation roots separate on
+  Windows, and scope the metadata task check to its required checks permission.
+- Validate published downstream GitHub Release assets through the native installed
+  wheel contract, without sending local-version builds to the upstream PyPI publisher.
+- Isolate installed-wheel pytest configuration from ancestor projects and inherited
+  pytest options while retaining the native test configuration and contracts.
+
 # Release 1.15.0+dc.3
 
 Flext-ecosystem compatibility and robustness over 1.15.0+dc.2:

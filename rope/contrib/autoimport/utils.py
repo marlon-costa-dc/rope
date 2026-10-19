@@ -5,6 +5,7 @@ import sys
 from collections import OrderedDict
 from typing import Generator, List, Optional, Tuple
 
+from rope.base import libutils
 from rope.base.project import Project
 
 from .defs import ModuleCompiled, ModuleFile, ModuleInfo, Package, PackageType, Source
@@ -50,10 +51,8 @@ def get_package_source(
     if name in sys.builtin_module_names:
         return Source.BUILTIN
     if project is not None:
-        package_path = package.resolve()
-        if package_path.is_relative_to(project.root.pathlib) and not project.is_ignored(
-            project.get_file(package_path.relative_to(project.root.pathlib).as_posix())
-        ):
+        relative = libutils.path_relative_to_project_root(project, str(package))
+        if relative is not None and not project.is_ignored(project.get_file(relative)):
             return Source.PROJECT
     if "site-packages" in package.parts:
         return Source.SITE_PACKAGE
@@ -131,26 +130,18 @@ def get_files(
         yield ModuleFile(package.path, package.path.stem, underlined, False)
     else:
         assert package.path
-        folders = [package.path]
-        while folders:
-            folder = folders.pop()
-            for file in folder.iterdir():
-                if file.is_dir():
-                    # Use the same package boundaries as sys.path enumeration.
-                    if not file.is_symlink() and get_package_tuple(file) is not None:
-                        folders.append(file)
-                elif file.suffix == ".py":
-                    if file.name == "__init__.py":
-                        yield ModuleFile(
-                            file,
-                            get_modname_from_path(file.parent, package.path),
-                            underlined,
-                            True,
-                        )
-                    elif should_parse(file, underlined):
-                        yield ModuleFile(
-                            file,
-                            get_modname_from_path(file, package.path),
-                            underlined,
-                            False,
-                        )
+        for file in package.path.glob("**/*.py"):
+            # Nested installation roots are discovered as separate packages.
+            if "site-packages" in file.relative_to(package.path).parts:
+                continue
+            if file.name == "__init__.py":
+                yield ModuleFile(
+                    file,
+                    get_modname_from_path(file.parent, package.path),
+                    underlined,
+                    True,
+                )
+            elif should_parse(file, underlined):
+                yield ModuleFile(
+                    file, get_modname_from_path(file, package.path), underlined, False
+                )
