@@ -25,7 +25,7 @@ setup:
 	else \
 		$(UV) venv --python "$$expected_python" "$(VENV)"; \
 	fi
-	$(UV) pip install --python "$(PYTHON)" -e '$(CURDIR)[dev]'
+	$(UV) pip install --python "$(PYTHON)" -e '$(CURDIR)[doc,dev]'
 
 test:
 	@set -- --cov -v -ra -o cache_dir="$(VENV)/pytest-cache" \

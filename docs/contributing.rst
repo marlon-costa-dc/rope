@@ -92,20 +92,36 @@ more specific to Traad.
 Source Repository
 =================
 
-Rope uses GitHub_. The repository exists at
-`python-rope/rope`_.
+Rope uses GitHub_. The upstream repository is `python-rope/rope`_.
+This guide's fork automation is maintained in `marlon-costa-dc/rope`_.
+
+.. _`marlon-costa-dc/rope`: https://github.com/marlon-costa-dc/rope
 
 Setting up for local development
 ================================
 
-#. Clone this fork and enter its checkout.
+Clone the fork's ``dc-use`` integration branch, which contains this Makefile::
+
+    git clone --branch dc-use https://github.com/marlon-costa-dc/rope.git
+    cd rope
+
+On a POSIX system:
+
 #. Install Make and ``uv``.
-#. From the checkout root, run ``make setup``.
+#. Run ``make setup`` from the checkout root.
 
 The fork's Makefile owns the physical development environment outside the
 checkout. ``BOOTSTRAP_PYTHON`` selects its interpreter; its default is declared
 in that Makefile. Use the same root Makefile for the checks described below.
-An existing environment with another interpreter is rejected before installation.
+Setup installs the project's ``doc`` and ``dev`` extras. An existing environment
+with another interpreter is rejected before installation.
+
+On native Windows, use Python's ``venv`` module to create a separate environment
+outside the checkout, select that environment's interpreter, then run
+``python -m pip install -e ".[doc,dev]"`` from the checkout root. The native
+``python -m pytest`` workflow in ``.github/workflows/main.yml`` runs on Windows;
+the POSIX Makefile is not its launcher. Both platforms consume the same project
+extras and test suite.
 
 Submitting pull requests
 ========================
@@ -132,7 +148,7 @@ Programming Style
 Testing
 -------
 
-Rope uses `pytest`_. The fork's root Makefile prepares its own physical
+Rope uses `pytest`_. On POSIX, the fork's root Makefile prepares its own physical
 development environment and runs the complete suite with coverage::
 
     make setup
