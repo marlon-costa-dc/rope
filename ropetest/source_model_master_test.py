@@ -1385,8 +1385,10 @@ def test_lambda_walrus_local_value_keeps_outer_value_and_field_rename_independen
     sys.version_info < (3, 12), reason="type aliases require Python 3.12"
 )
 @pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("query_first", [False, True])
+@pytest.mark.parametrize("refactoring", [rename.Rename, rename.ChangeOccurrences])
 def test_conditional_class_alias_queries_are_readable_and_candidate_edits_are_atomic(
-    model_project, enabled
+    model_project, enabled, query_first, refactoring
 ):
     source = (
         f"target = int\nenabled = {enabled}\nclass Owner:\n"
@@ -1397,6 +1399,9 @@ def test_conditional_class_alias_queries_are_readable_and_candidate_edits_are_at
     resource = module(model_project, source)
     pymodule = model_project.get_pymodule(resource)
     offset = source.index("target", source.index("tuple["))
+    if not query_first:
+        with pytest.raises(exceptions.RefactoringError, match="unresolved"):
+            refactoring(model_project, resource, 0).get_changes("changed")
     assert (
         evaluate.eval_location(pymodule, offset).get_object() is pyobjects.get_unknown()
     )
@@ -1410,7 +1415,7 @@ def test_conditional_class_alias_queries_are_readable_and_candidate_edits_are_at
     assert before["Owner"].Alias.__value__.__args__ == (expected, expected)
     for selection in (offset, 0, source.index("target = bytes")):
         with pytest.raises(exceptions.RefactoringError, match="unresolved"):
-            rename.Rename(model_project, resource, selection).get_changes("changed")
+            refactoring(model_project, resource, selection).get_changes("changed")
         assert resource.read() == source
     model_project.do(
         rename.Rename(model_project, resource, source.index("unrelated =")).get_changes(

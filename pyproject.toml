@@ -49,6 +49,7 @@ dev = [
     'pytest>=7.0.1',
     'pytest-cov>=4.1.0',
     'pytest-timeout>=2.1.0',
+    'pytest-xdist>=3.8.0',
     'build>=0.7.0',
     'pre-commit>=3.2.0',
 ]
@@ -90,10 +91,6 @@ testpaths = "ropetest"
 python_files = [
     "*test.py",
     "__init__.py",
-]
-
-markers = [
-    "time_limit: sets a maximum amount of time the test can run",
 ]
 
 [build-system]

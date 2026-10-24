@@ -129,6 +129,47 @@ def test_imported_type_alias_location_and_native_rename(alias_project, imports, 
     assert client.read() == client_source.replace("Bag", "Crate")
 
 
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+@pytest.mark.parametrize("forward", [False, True])
+@pytest.mark.parametrize("shadowed", [False, True])
+def test_class_type_alias_value_resolves_its_sibling(alias_project, forward, shadowed):
+    declaration = "type Bag[T] = list[T]\n"
+    reference = "type Items = Bag[int]\n"
+    body = reference + declaration if forward else declaration + reference
+    source = "type Bag[T] = tuple[T, ...]\n" if shadowed else ""
+    source += "class Owner:\n" + indent(body, "    ")
+    resource = alias_project.root.create_file("class_aliases.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    owner = module["Owner"].get_object()
+
+    binding = evaluate.eval_location(module, source.index("Bag[int]") + 1)
+
+    assert binding is owner["Bag"]
+    namespace = {}
+    exec(compile(source, resource.real_path, "exec"), namespace)
+    runtime_owner = namespace["Owner"]
+    assert typing.get_origin(runtime_owner.Items.__value__) is runtime_owner.Bag
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+def test_conditional_class_type_alias_retains_ambiguous_binding(alias_project):
+    source = (
+        "condition = True\n"
+        "class Owner:\n"
+        "    if condition:\n"
+        "        type Bag[T] = list[T]\n"
+        "    type Items = Bag[int]\n"
+    )
+    resource = alias_project.root.create_file("conditional_alias.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    binding = evaluate.eval_location(module, source.index("Bag[int]") + 1)
+
+    assert binding.is_refactoring_identity_safe is False
+    assert binding.may_reference(module["Owner"].get_object()["Bag"])
+
+
 def test_default_project_initialization_has_no_warnings(tmp_path, recwarn):
     project = Project(str(tmp_path))
     try:

@@ -1312,6 +1312,10 @@ class SourceBindingIndex:
                 if statement.name == name:
                     status = "bound"
                 continue
+            if _TYPE_ALIAS_TYPES and isinstance(statement, _TYPE_ALIAS_TYPES):
+                if statement.name.id == name:
+                    status = "bound"
+                continue
             if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
                 if isinstance(statement, ast.AnnAssign) and statement.value is None:
                     continue
@@ -1451,7 +1455,7 @@ class SourceBindingIndex:
     def _visit(self, node, environment, owner, role, depth, annotation=None):
         if node is None:
             return
-        context = self._record(node, environment, owner, role, depth, annotation)
+        self._record(node, environment, owner, role, depth, annotation)
         cls = node.__class__
         kind = _NODE_KINDS.get(cls, -1)
         if kind < 0:
@@ -1515,16 +1519,6 @@ class SourceBindingIndex:
         if kind == _KIND_COMPREHENSION:
             self._comprehension(node, environment, owner, depth, annotation)
             return
-        if (
-            annotation is not None
-            and isinstance(node, ast.Name)
-            and isinstance(node.ctx, ast.Load)
-        ):
-            candidate = self._opaque_binding(environment, node.id)
-            if candidate is not None:
-                self._opaque_references.append(
-                    OpaqueReference(node, context, candidate)
-                )
         if kind == _KIND_WALRUS:
             target_env = environment
             while isinstance(target_env, ComprehensionBindingScope):
@@ -1577,43 +1571,6 @@ class SourceBindingIndex:
                         visit(item, environment, owner, role, child_depth, annotation)
             elif isinstance(value, ast.AST):
                 visit(value, environment, owner, role, child_depth, annotation)
-
-    def _opaque_binding(self, environment, name):
-        while isinstance(environment, BindingEnvironment):
-            if name in environment.names:
-                return None
-            if isinstance(environment, TypeAliasEnvironment):
-                return environment.opaque_binding(name)
-            if isinstance(environment, AnnotationEnvironment):
-                if name in environment.generic_names:
-                    return environment.lookup(name)
-                class_reference = environment.parent
-                if isinstance(class_reference, _GenericOwnerEnvironment):
-                    class_reference = class_reference.structural_reference
-                if (
-                    environment.policy.mode in ("eager", "lazy")
-                    and isinstance(class_reference, _StructuralReference)
-                    and class_reference.get_kind() == "Class"
-                ):
-                    cutoff = (
-                        environment.node if environment.policy.mode == "eager" else None
-                    )
-                    if (
-                        self._class_binding_before(class_reference.node, name, cutoff)
-                        == "ambiguous"
-                    ):
-                        if name not in environment.opaque_names:
-                            fallback = self._class_fallback(class_reference, name)
-                            environment.opaque_names[name] = OpaqueSourceName(
-                                environment,
-                                name,
-                                environment.node,
-                                (class_reference, fallback),
-                            )
-                        return environment.opaque_names[name]
-                return None
-            environment = environment.parent
-        return None
 
     def _function(self, node, entry, parent_owner, depth):
         owner = _StructuralReference(self, node, parent_owner, entry)
