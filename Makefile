@@ -31,7 +31,7 @@ test:
 	@set -- --cov -v -ra -o cache_dir="$(VENV)/pytest-cache" \
 		--numprocesses="$(TEST_WORKERS)" --dist=loadscope --max-worker-restart=0; \
 	if [ -n "$(TEST_PROFILE)" ]; then \
-		"$(PYTHON)" -c 'import cProfile, pstats, runpy, sys; exec("\n\
+		"$(PYTHON)" -c 'import cProfile, pstats, runpy, sys, traceback; exec("\n\
 profiler = cProfile.Profile()\n\
 profile_path = sys.argv.pop(1)\n\
 original = None\n\
@@ -48,7 +48,7 @@ finally:\n\
     except BaseException as publication:\n\
         if original is None or (isinstance(original, SystemExit) and original.code in (None, 0)):\n\
             raise\n\
-        original.add_note(f\"Profile publication failed: {publication!r}\")\n\
+        traceback.print_exception(type(publication), publication, publication.__traceback__)\n\
 ")' "$(TEST_PROFILE)" "$$@"; \
 	else \
 		"$(PYTHON)" -m pytest "$$@"; \

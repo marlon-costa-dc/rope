@@ -169,8 +169,9 @@ or cache configuration. The profile covers the controller's pytest module,
 including worker coordination and pytest teardown; it does not cover worker
 execution, other subprocess internals, or interpreter shutdown after the module
 exits. Original exceptions and nonzero exits propagate unchanged. A profile
-publication failure fails an otherwise successful invocation and is attached
-to an existing failure without replacing it. An interrupted or incomplete run
+publication failure fails an otherwise successful invocation. When execution
+already failed, its secondary publication traceback is printed without replacing
+the original failure or changing its exception chain. An interrupted or incomplete run
 remains a failed diagnostic, even when a profile was saved.
 
 Many of rope's tests are still written using
