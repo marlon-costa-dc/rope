@@ -98,10 +98,14 @@ Rope uses GitHub_. The repository exists at
 Setting up for local development
 ================================
 
-#. Clone repository: ``git clone https://github.com/python-rope/rope.git``
-#. Create a virtualenv: ``python -m venv rope-venv``
-#. Activate the virtualenv
-#. Install the project into the venv: ``pip install -e '.[doc,dev]'``
+#. Clone this fork and enter its checkout.
+#. Install Make and ``uv``.
+#. From the checkout root, run ``make setup``.
+
+The fork's Makefile owns the physical development environment outside the
+checkout. ``BOOTSTRAP_PYTHON`` selects its interpreter; its default is declared
+in that Makefile. Use the same root Makefile for the checks described below.
+An existing environment with another interpreter is rejected before installation.
 
 Submitting pull requests
 ========================
@@ -144,7 +148,10 @@ worker fails the invocation without rerunning its tests.
 Before collection, the pytest session selects the public multiprocessing
 ``spawn`` context. This keeps process-based tests safe inside multithreaded
 xdist workers on the supported Python versions. It does not change the SDK's
-process policy or claim coverage of production's fork context. Timeout limits
+process policy or claim coverage of production's fork context. The native
+recipe starts a fresh interpreter; a process that fixed its context earlier
+is rejected before collection rather than having that context forcibly replaced.
+Timeout limits
 use the installed pytest-timeout marker directly, so worker startup cannot
 replace a test body with a compatibility decorator.
 
