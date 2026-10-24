@@ -1312,6 +1312,10 @@ class SourceBindingIndex:
                 if statement.name == name:
                     status = "bound"
                 continue
+            if _TYPE_ALIAS_TYPES and isinstance(statement, _TYPE_ALIAS_TYPES):
+                if statement.name.id == name:
+                    status = "bound"
+                continue
             if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
                 if isinstance(statement, ast.AnnAssign) and statement.value is None:
                     continue
