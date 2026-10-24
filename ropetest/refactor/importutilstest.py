@@ -1,6 +1,8 @@
 import unittest
 from textwrap import dedent
 
+import pytest
+
 from rope.base.prefs import (
     DEFAULT_IMPORT_STYLE,
     ImportPrefs,
@@ -1812,7 +1814,7 @@ class ImportUtilsTest(unittest.TestCase):
         pymod = self.project.get_pymodule(self.mod)
         self.assertEqual(expected, self.import_tools.organize_imports(pymod))
 
-    @testutils.time_limit(60)
+    @pytest.mark.timeout(60)
     def test_organizing_imports_all_star_no_infinite_loop(self):
         code = expected = dedent("""\
             from package import name_one, name_two

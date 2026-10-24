@@ -3,6 +3,9 @@
 - Resolve class-owned PEP 695 aliases from other lazy aliases in the same class,
   including forward declarations and names shadowing module aliases. Conditional
   declarations retain their ambiguous source identity.
+- Resolve opaque annotation references through their captured source contexts
+  when refactoring checks request them, avoiding duplicate binding resolution
+  while constructing the source index.
 
 # Release 1.15.0+dc.5
 

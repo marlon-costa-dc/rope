@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import pathlib
 from subprocess import check_call
@@ -7,6 +8,11 @@ import pytest
 
 from rope.base import resources
 from ropetest import testutils
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionstart(session):
+    multiprocessing.set_start_method("spawn")
 
 
 @pytest.fixture(scope="session")

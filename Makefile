@@ -2,6 +2,8 @@ VENV := $(shell dirname "$(CURDIR)")/.rope-venvs/$(shell basename "$(CURDIR)")
 PYTHON := $(VENV)/bin/python
 UV ?= uv
 BOOTSTRAP_PYTHON ?= 3.13
+TEST_PROFILE ?=
+TEST_WORKERS ?= 2
 export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
@@ -26,7 +28,31 @@ setup:
 	$(UV) pip install --python "$(PYTHON)" -e '$(CURDIR)[dev]'
 
 test:
-	"$(PYTHON)" -m pytest --cov -v -ra -o cache_dir="$(VENV)/pytest-cache"
+	@set -- --cov -v -ra -o cache_dir="$(VENV)/pytest-cache" \
+		--numprocesses="$(TEST_WORKERS)" --dist=loadscope --max-worker-restart=0; \
+	if [ -n "$(TEST_PROFILE)" ]; then \
+		"$(PYTHON)" -c 'import cProfile, pstats, runpy, sys; exec("\n\
+profiler = cProfile.Profile()\n\
+profile_path = sys.argv.pop(1)\n\
+original = None\n\
+try:\n\
+    profiler.runcall(runpy.run_module, \"pytest\", run_name=\"__main__\", alter_sys=True)\n\
+except BaseException as error:\n\
+    original = error\n\
+    raise\n\
+finally:\n\
+    try:\n\
+        profiler.dump_stats(profile_path)\n\
+        with open(profile_path + \".txt\", \"w\", encoding=\"utf-8\") as report:\n\
+            pstats.Stats(profile_path, stream=report).sort_stats(\"cumulative\").print_stats()\n\
+    except BaseException as publication:\n\
+        if original is None or (isinstance(original, SystemExit) and original.code in (None, 0)):\n\
+            raise\n\
+        original.add_note(f\"Profile publication failed: {publication!r}\")\n\
+")' "$(TEST_PROFILE)" "$$@"; \
+	else \
+		"$(PYTHON)" -m pytest "$$@"; \
+	fi
 
 test-file:
 	test -n "$(FILE)"
