@@ -304,6 +304,48 @@ class PyCoreTest(unittest.TestCase):
         """)
         self._assert_mro_matches_python(code, ["K1", "K2", "K3", "Z"])
 
+    def test_mro_matches_python_for_builtin_bases(self):
+        code = dedent("""\
+            class Base(dict):
+                pass
+            class Mixin(object):
+                pass
+            class Derived(Mixin, Base):
+                pass
+            class Flag(Mixin, int):
+                pass
+            class Failure(Mixin, KeyError):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Base", "Derived", "Flag", "Failure"])
+
+    def test_builtin_ancestors_contribute_only_their_own_attributes(self):
+        code = dedent("""\
+            class Base(object):
+                def __init__(self):
+                    pass
+                def __init_subclass__(cls):
+                    pass
+            class Mixin(object):
+                pass
+            class Derived(Mixin, Base):
+                pass
+            class Mapping(dict, Base):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        mapping = mod["Mapping"].get_object()
+        self.assertEqual(base["__init__"].get_object(), derived["__init__"].get_object())
+        self.assertEqual(
+            base["__init_subclass__"].get_object(),
+            mapping["__init_subclass__"].get_object(),
+        )
+        self.assertNotEqual(
+            base["__init__"].get_object(), mapping["__init__"].get_object()
+        )
+
     def test_mro_contains_object_only_when_declared(self):
         code = dedent("""\
             class Base:

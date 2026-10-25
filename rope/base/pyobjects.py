@@ -148,15 +148,25 @@ class AbstractClass(PyObject):
 
         The order is the C3 linearization Python uses for ``__mro__``,
         starting with this class.  An `UnresolvedBase` keeps its place
-        in the order and contributes no ancestors.  Like the declared
-        bases, the order contains ``object`` only when a class in the
-        hierarchy names it, and builtin classes contribute no ancestors.
+        in the order and contributes no ancestors.  Builtin classes
+        contribute their runtime ``__mro__``; a class whose hierarchy
+        names neither ``object`` nor a builtin class does not end with
+        ``object``.
 
         Raises `rope.base.exceptions.InconsistentHierarchyError` when
         Python would refuse to create the class.
 
         """
         return linearize(self, self.get_bases())
+
+    def _get_own_attributes(self):
+        """Return the attributes this class defines itself
+
+        These are the attributes the method resolution order selects
+        from this class.
+
+        """
+        return self.get_attributes()
 
 
 class UnresolvedBase(PyObject):
@@ -175,6 +185,9 @@ class UnresolvedBase(PyObject):
 
     def get_mro(self):
         return [self]
+
+    def _get_own_attributes(self):
+        return {}
 
 
 def linearize(cls, bases):

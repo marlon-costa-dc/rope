@@ -248,11 +248,11 @@ class PyClass(pyobjects.PyClass):
     def _create_concluded_attributes(self):
         result = {}
         for ancestor in reversed(self.get_mro()[1:]):
-            if isinstance(ancestor, pyobjects.PyDefinedObject):
-                result.update(ancestor._get_structural_attributes())
-            else:
-                result.update(ancestor.get_attributes())
+            result.update(ancestor._get_own_attributes())
         return result
+
+    def _get_own_attributes(self):
+        return self._get_structural_attributes()
 
     def _get_bases(self):
         result = []

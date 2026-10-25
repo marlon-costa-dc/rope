@@ -5,6 +5,11 @@
 - Resolve class attributes in C3 method resolution order instead of a
   depth-first walk of the bases, so diamond hierarchies inherit the member
   Python's `__mro__` selects. `AbstractClass.get_mro()` exposes that order.
+- Model builtin classes with their runtime bases and `__mro__`, so `object`
+  sorts last and a builtin ancestor contributes only the attributes it
+  defines itself.
+- Select inherited docstring and assignment type hints along the same
+  method resolution order instead of a breadth-first walk.
 - Keep bases rope cannot evaluate to a class as `UnresolvedBase` markers in
   `AbstractClass.get_bases()` and in the method resolution order instead of
   dropping them; `get_superclasses()` still returns only the classes.
