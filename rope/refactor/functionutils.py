@@ -2,7 +2,7 @@ import ast
 from typing import List, Tuple
 
 from rope.base import exceptions, pyobjects, worder
-from rope.base.builtins import Lambda
+from rope.base.builtins import Lambda, bound_receiver
 from rope.base.codeanalyze import SourceLinesAdapter
 
 
@@ -149,7 +149,10 @@ class CallInfo:
     def _is_method_call(primary, pyname):
         return (
             primary is not None
-            and isinstance(primary.get_object().get_type(), pyobjects.AbstractClass)
+            and isinstance(
+                bound_receiver(primary.get_object()).get_type(),
+                pyobjects.PyClass,
+            )
             and CallInfo._is_method(pyname)
         )
 

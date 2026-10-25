@@ -90,6 +90,10 @@ def create_arguments(primary, pyfunction, call_node, scope, ignore_instance=Fals
     result = Arguments(args, scope, pyfunction)
     if ignore_instance or not isinstance(called, ast.Attribute):
         return result
+    if primary is not None:
+        bound = rope.base.builtins.bound_receiver(primary.get_object())
+        if bound is not primary.get_object():
+            primary = rope.base.pynames.UnboundName(bound)
     if isinstance(pyfunction, rope.base.pyobjects.PyFunction) and primary is not None:
         kind = pyfunction.get_kind()
         receiver = primary.get_object()
@@ -158,11 +162,15 @@ class MixedArguments:
 def _is_method_call(primary, pyfunction):
     if primary is None:
         return False
-    # The receiver is any class instance, including ``super(cls, obj)``.
-    if not isinstance(
-        primary.get_object().get_type(), rope.base.pyobjects.AbstractClass
+    pyobject = primary.get_object()
+    if (
+        isinstance(pyobject.get_type(), rope.base.pyobjects.PyClass)
+        and isinstance(pyfunction, rope.base.pyobjects.PyFunction)
+        and isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
     ):
-        return False
-    if isinstance(pyfunction, rope.base.pyobjects.PyFunction):
-        return isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
-    return isinstance(pyfunction, rope.base.builtins.BuiltinFunction)
+        return True
+    if isinstance(
+        pyobject.get_type(), rope.base.pyobjects.AbstractClass
+    ) and isinstance(pyfunction, rope.base.builtins.BuiltinFunction):
+        return True
+    return False

@@ -1,8 +1,8 @@
 # **Upcoming release**
 
 - Infer `super(cls, obj)` along the method resolution order of `cls` past
-  `cls` itself instead of as an instance of its first base, and treat calls
-  through it as bound method calls.
+  `cls` itself instead of as an instance of its first base. Methods and
+  classmethods called through it bind the real receiver.
 
 # Release 1.15.0+dc.7
 
