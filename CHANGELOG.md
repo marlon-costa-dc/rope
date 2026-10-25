@@ -6,6 +6,9 @@
 - Resolve opaque annotation references through their captured source contexts
   when refactoring checks request them, avoiding duplicate binding resolution
   while constructing the source index.
+- Add `match_filter` and `import_filter` to `Restructure`: callables consulted
+  for every match found in a module and for the imports added to a changed
+  module, so clients select both without overriding private methods.
 
 # Release 1.15.0+dc.5
 
