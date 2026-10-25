@@ -1,3 +1,4 @@
+import typing
 import unittest
 from textwrap import dedent
 
@@ -218,6 +219,15 @@ class RestructureTest(unittest.TestCase):
         )
         self.assertEqual([], refactoring.get_changes().changes)
         self.assertEqual("a = 1\n", self.mod.read())
+
+    def test_hook_annotations_resolve_at_runtime(self):
+        hints = typing.get_type_hints(restructure.Restructure.__init__)
+        self.assertEqual(
+            typing.Optional[restructure.MatchFilter], hints["match_filter"]
+        )
+        self.assertEqual(
+            typing.Optional[restructure.ImportFilter], hints["import_filter"]
+        )
 
     def test_import_filter_selects_added_imports(self):
         self.mod.write("a = 2\n")

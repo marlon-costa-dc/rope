@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from rope.base import ast, builtins, change, codeanalyze, libutils, taskhandle
+from rope.base.pyobjectsdef import PyModule
+from rope.base.resources import File
 from rope.refactor import patchedast, similarfinder, sourceutils
 from rope.refactor.importutils import module_imports
 
-if TYPE_CHECKING:
-    from rope.base.pyobjectsdef import PyModule
-    from rope.base.resources import File
-
-    MatchFilter = Callable[[PyModule, similarfinder.Match], bool]
-    ImportFilter = Callable[[File, List[str]], Sequence[str]]
+MatchFilter = Callable[[PyModule, similarfinder.Match], bool]
+ImportFilter = Callable[[File, List[str]], Sequence[str]]
 
 
 class Restructure:
