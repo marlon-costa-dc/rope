@@ -1241,10 +1241,33 @@ def _super_function(args):
         # pyclass = passed_self.get_type()
         pyclass = passed_class
         if isinstance(pyclass, pyobjects.AbstractClass):
-            supers = pyclass.get_superclasses()
-            if supers:
-                return pyobjects.PyObject(supers[0])
+            ancestors = pyclass.get_mro()[1:]
+            if ancestors:
+                return pyobjects.PyObject(_SuperClass(pyclass, ancestors))
         return passed_self
+
+
+class _SuperClass(pyobjects.AbstractClass):
+    """The type of ``super(cls, obj)``
+
+    Attribute lookups follow the method resolution order of `cls` past
+    `cls` itself, as Python's ``super`` does.
+
+    """
+
+    def __init__(self, pyclass, ancestors):
+        super().__init__()
+        self.pyclass = pyclass
+        self.ancestors = ancestors
+
+    def get_name(self):
+        return "super"
+
+    def get_attributes(self):
+        result = {}
+        for ancestor in reversed(self.ancestors):
+            result.update(ancestor._get_own_attributes())
+        return result
 
 
 def _zip_function(args):
