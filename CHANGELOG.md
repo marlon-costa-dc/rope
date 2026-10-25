@@ -1,11 +1,16 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.6
+
 - Resolve class-owned PEP 695 aliases from other lazy aliases in the same class,
   including forward declarations and names shadowing module aliases. Conditional
   declarations retain their ambiguous source identity.
 - Resolve opaque annotation references through their captured source contexts
   when refactoring checks request them, avoiding duplicate binding resolution
   while constructing the source index.
+- Add `match_filter` and `import_filter` to `Restructure`: callables consulted
+  for every match found in a module and for the imports added to a changed
+  module, so clients select both without overriding private methods.
 
 # Release 1.15.0+dc.5
 
