@@ -179,7 +179,9 @@ class PyClass(pyobjects.PyClass):
         rope.base.pyobjects.AbstractClass.__init__(self)
         rope.base.pyobjects.PyDefinedObject.__init__(self, pycore, ast_node, parent)
         self.parent = parent
-        self._superclasses = self.get_module()._get_concluded_data()
+        self._bases = self.get_module()._get_concluded_data()
+        self._mro = self.get_module()._get_concluded_data()
+        self._linearizing = False
         self._receiver_attributes_collected = False
 
     def _create_structural_attributes(self):
@@ -188,10 +190,33 @@ class PyClass(pyobjects.PyClass):
         attributes = super()._create_structural_attributes()
         return externaldata.add_class_data(self, attributes)
 
+    def get_bases(self):
+        if self._bases.get() is None:
+            self._bases.set(self._get_bases())
+        return self._bases.get()
+
     def get_superclasses(self):
-        if self._superclasses.get() is None:
-            self._superclasses.set(self._get_bases())
-        return self._superclasses.get()
+        return [
+            base
+            for base in self.get_bases()
+            if not isinstance(base, pyobjects.UnresolvedBase)
+        ]
+
+    def get_mro(self):
+        if self._mro.get() is None:
+            # Evaluating the bases may look up attributes of this class;
+            # only the linearization of the ancestors can reach it again.
+            bases = self.get_bases()
+            if self._linearizing:
+                raise exceptions.InconsistentHierarchyError(
+                    "Cyclic class inheritance: %s" % self.get_name()
+                )
+            self._linearizing = True
+            try:
+                self._mro.set(pyobjects.linearize(self, bases))
+            finally:
+                self._linearizing = False
+        return self._mro.get()
 
     def get_name(self):
         return self.get_ast().name
@@ -222,20 +247,23 @@ class PyClass(pyobjects.PyClass):
 
     def _create_concluded_attributes(self):
         result = {}
-        for base in reversed(self.get_superclasses()):
-            result.update(base.get_attributes())
+        for ancestor in reversed(self.get_mro()[1:]):
+            if isinstance(ancestor, pyobjects.PyDefinedObject):
+                result.update(ancestor._get_structural_attributes())
+            else:
+                result.update(ancestor.get_attributes())
         return result
 
     def _get_bases(self):
         result = []
-        for base_name in self.ast_node.bases:
-            base = rope.base.evaluate.eval_node(self.parent.get_scope(), base_name)
-            if (
-                base is not None
-                and base.get_object().get_type()
-                == rope.base.pyobjects.get_base_type("Type")
-            ):
+        for base_node in self.ast_node.bases:
+            base = rope.base.evaluate.eval_node(self.parent.get_scope(), base_node)
+            if base is None:
+                result.append(pyobjects.UnresolvedBase(base_node))
+            elif base.get_object().get_type() == pyobjects.get_base_type("Type"):
                 result.append(base.get_object())
+            else:
+                result.append(pyobjects.UnresolvedBase(base_node, base.get_object()))
         return result
 
     def _create_scope(self):

@@ -7,7 +7,7 @@ from rope.base.builtins import BuiltinClass, File
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
 from rope.base.pynamesdef import AssignedName
-from rope.base.pyobjects import AbstractFunction, get_base_type
+from rope.base.pyobjects import AbstractFunction, UnresolvedBase, get_base_type
 from ropetest import testutils
 
 
@@ -255,6 +255,165 @@ class PyCoreTest(unittest.TestCase):
         mod = libutils.get_string_module(self.project, code)
         derived = mod["Derived"].get_object()
         self.assertTrue("f" in derived)
+
+    def _assert_mro_matches_python(self, code, names):
+        namespace = {}
+        exec(code, namespace)
+        mod = libutils.get_string_module(self.project, code)
+        for name in names:
+            with self.subTest(name=name):
+                expected = [cls.__name__ for cls in namespace[name].__mro__]
+                actual = [cls.get_name() for cls in mod[name].get_object().get_mro()]
+                self.assertEqual(expected, actual)
+
+    def test_mro_of_diamond_inheritance(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(A):
+                pass
+            class C(A):
+                pass
+            class D(B, C):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["A", "B", "C", "D"])
+
+    def test_mro_matches_python_for_nested_hierarchies(self):
+        code = dedent("""\
+            class O(object):
+                pass
+            class A(O):
+                pass
+            class B(O):
+                pass
+            class C(O):
+                pass
+            class D(O):
+                pass
+            class E(O):
+                pass
+            class K1(A, B, C):
+                pass
+            class K2(D, B, E):
+                pass
+            class K3(D, A):
+                pass
+            class Z(K1, K2, K3):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["K1", "K2", "K3", "Z"])
+
+    def test_mro_contains_object_only_when_declared(self):
+        code = dedent("""\
+            class Base:
+                pass
+            class Derived(Base):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual(
+            ["Derived", "Base"], [cls.get_name() for cls in derived.get_mro()]
+        )
+
+    def test_diamond_attributes_follow_the_mro(self):
+        code = dedent("""\
+            class A(object):
+                def method(self):
+                    pass
+            class B(A):
+                pass
+            class C(A):
+                def method(self):
+                    pass
+            class D(B, C):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        c = mod["C"].get_object()
+        d = mod["D"].get_object()
+        self.assertEqual(c["method"].get_object(), d["method"].get_object())
+
+    def test_unresolved_base_keeps_its_place(self):
+        code = dedent("""\
+            class Base(object):
+                pass
+            class Other(object):
+                pass
+            class Derived(Base, NotFound, Other):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        other = mod["Other"].get_object()
+        derived = mod["Derived"].get_object()
+        first, unresolved, last = derived.get_bases()
+        self.assertEqual(base, first)
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual("NotFound", unresolved.node.id)
+        self.assertIsNone(unresolved.pyobject)
+        self.assertEqual(other, last)
+        self.assertEqual([base, other], derived.get_superclasses())
+        self.assertEqual(
+            [derived, base, unresolved, other, derived.get_mro()[-1]],
+            derived.get_mro(),
+        )
+        self.assertEqual("object", derived.get_mro()[-1].get_name())
+
+    def test_base_evaluating_to_a_non_class_is_unresolved(self):
+        code = dedent("""\
+            value = 1
+            class Derived(value):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        (unresolved,) = derived.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual(mod["value"].get_object(), unresolved.pyobject)
+        self.assertEqual([], derived.get_superclasses())
+        self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_inconsistent_mro(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(object):
+                pass
+            class X(A, B):
+                pass
+            class Y(B, A):
+                pass
+            class Z(X, Y):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        z = mod["Z"].get_object()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            z.get_mro()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            z.get_attributes()
+
+    def test_duplicate_base_class(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(A, A):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            mod["B"].get_object().get_mro()
+
+    def test_cyclic_inheritance(self):
+        mod1 = testutils.create_module(self.project, "mod1")
+        mod2 = testutils.create_module(self.project, "mod2")
+        mod1.write("from mod2 import B\nclass A(B):\n    pass\n")
+        mod2.write("from mod1 import A\nclass B(A):\n    pass\n")
+        a = self.project.get_module("mod1")["A"].get_object()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            a.get_mro()
 
     def test_module_creation(self):
         new_module = testutils.create_module(self.project, "module")

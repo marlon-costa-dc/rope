@@ -1,5 +1,16 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.7
+
+- Resolve class attributes in C3 method resolution order instead of a
+  depth-first walk of the bases, so diamond hierarchies inherit the member
+  Python's `__mro__` selects. `AbstractClass.get_mro()` exposes that order.
+- Keep bases rope cannot evaluate to a class as `UnresolvedBase` markers in
+  `AbstractClass.get_bases()` and in the method resolution order instead of
+  dropping them; `get_superclasses()` still returns only the classes.
+- Raise `InconsistentHierarchyError` for cyclic, repeated, and unmergeable
+  bases, which Python refuses to create.
+
 # Release 1.15.0+dc.6
 
 - Resolve class-owned PEP 695 aliases from other lazy aliases in the same class,
