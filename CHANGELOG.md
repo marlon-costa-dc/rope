@@ -1,5 +1,7 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.6
+
 - Resolve class-owned PEP 695 aliases from other lazy aliases in the same class,
   including forward declarations and names shadowing module aliases. Conditional
   declarations retain their ambiguous source identity.
