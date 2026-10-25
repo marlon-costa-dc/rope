@@ -407,6 +407,51 @@ class BuiltinTypesTest(unittest.TestCase):
         a_var = pymod["a_var"].get_object()
         self.assertEqual(c_class, a_var.get_type())
 
+    def test_super_follows_the_method_resolution_order(self):
+        self.mod.write(dedent("""\
+            class C1(object):
+                pass
+            class C2(object):
+                pass
+            class Base(object):
+                def a_f(self):
+                    return C1()
+            class Left(Base):
+                pass
+            class Right(Base):
+                def a_f(self):
+                    return C2()
+            class Derived(Left, Right):
+                def b_f(self):
+                    return super(Derived, self).a_f()
+            a_var = Derived().b_f()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        c2_class = pymod["C2"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(c2_class, a_var.get_type())
+
+    def test_super_skips_the_class_itself(self):
+        self.mod.write(dedent("""\
+            class C1(object):
+                pass
+            class C2(object):
+                pass
+            class Base(object):
+                def a_f(self):
+                    return C1()
+            class Derived(Base):
+                def a_f(self):
+                    return C2()
+                def b_f(self):
+                    return super(Derived, self).a_f()
+            a_var = Derived().b_f()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        c1_class = pymod["C1"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(c1_class, a_var.get_type())
+
     def test_file_builtin_type(self):
         self.mod.write(dedent("""\
             for line in open("file.txt"):

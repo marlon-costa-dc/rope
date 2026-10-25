@@ -158,15 +158,11 @@ class MixedArguments:
 def _is_method_call(primary, pyfunction):
     if primary is None:
         return False
-    pyobject = primary.get_object()
-    if (
-        isinstance(pyobject.get_type(), rope.base.pyobjects.PyClass)
-        and isinstance(pyfunction, rope.base.pyobjects.PyFunction)
-        and isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
+    # The receiver is any class instance, including ``super(cls, obj)``.
+    if not isinstance(
+        primary.get_object().get_type(), rope.base.pyobjects.AbstractClass
     ):
-        return True
-    if isinstance(
-        pyobject.get_type(), rope.base.pyobjects.AbstractClass
-    ) and isinstance(pyfunction, rope.base.builtins.BuiltinFunction):
-        return True
-    return False
+        return False
+    if isinstance(pyfunction, rope.base.pyobjects.PyFunction):
+        return isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
+    return isinstance(pyfunction, rope.base.builtins.BuiltinFunction)

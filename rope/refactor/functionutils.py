@@ -149,7 +149,7 @@ class CallInfo:
     def _is_method_call(primary, pyname):
         return (
             primary is not None
-            and isinstance(primary.get_object().get_type(), pyobjects.PyClass)
+            and isinstance(primary.get_object().get_type(), pyobjects.AbstractClass)
             and CallInfo._is_method(pyname)
         )
 

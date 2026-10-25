@@ -1,5 +1,9 @@
 # **Upcoming release**
 
+- Infer `super(cls, obj)` along the method resolution order of `cls` past
+  `cls` itself instead of as an instance of its first base, and treat calls
+  through it as bound method calls.
+
 # Release 1.15.0+dc.7
 
 - Resolve class attributes in C3 method resolution order instead of a
