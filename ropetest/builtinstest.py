@@ -450,6 +450,38 @@ class BuiltinTypesTest(unittest.TestCase):
         a_var = pymod["a_var"].get_object()
         self.assertEqual(c2_class, a_var.get_type())
 
+    def test_super_binds_the_receiver(self):
+        self.mod.write(dedent("""\
+            class Base(object):
+                def get_self(self):
+                    return self
+            class Derived(Base):
+                def get(self):
+                    return super(Derived, self).get_self()
+            a_var = Derived().get()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        derived = pymod["Derived"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(derived, a_var.get_type())
+
+    def test_super_classmethod_binds_the_receiver_class(self):
+        self.mod.write(dedent("""\
+            class Base(object):
+                @classmethod
+                def make(cls):
+                    return cls()
+            class Derived(Base):
+                @classmethod
+                def build(cls):
+                    return super(Derived, cls).make()
+            a_var = Derived.build()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        derived = pymod["Derived"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(derived, a_var.get_type())
+
     def test_super_skips_the_class_itself(self):
         self.mod.write(dedent("""\
             class C1(object):

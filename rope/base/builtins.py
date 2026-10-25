@@ -1243,22 +1243,24 @@ def _super_function(args):
         if isinstance(pyclass, pyobjects.AbstractClass):
             ancestors = pyclass.get_mro()[1:]
             if ancestors:
-                return pyobjects.PyObject(_SuperClass(pyclass, ancestors))
+                return pyobjects.PyObject(SuperType(pyclass, ancestors, passed_self))
         return passed_self
 
 
-class _SuperClass(pyobjects.AbstractClass):
-    """The type of ``super(cls, obj)``
+class SuperType(pyobjects.AbstractClass):
+    """The type of ``super(cls, receiver)``
 
     Attribute lookups follow the method resolution order of `cls` past
-    `cls` itself, as Python's ``super`` does.
+    `cls` itself, as Python's ``super`` does.  Methods reached through it
+    bind `receiver`, see `bound_receiver()`.
 
     """
 
-    def __init__(self, pyclass, ancestors):
+    def __init__(self, pyclass, ancestors, receiver):
         super().__init__()
         self.pyclass = pyclass
         self.ancestors = ancestors
+        self.receiver = receiver
 
     def get_name(self):
         return "super"
@@ -1268,6 +1270,18 @@ class _SuperClass(pyobjects.AbstractClass):
         for ancestor in reversed(self.ancestors):
             result.update(ancestor._get_own_attributes())
         return result
+
+
+def bound_receiver(pyobject):
+    """Return the object a method called on `pyobject` binds
+
+    A method reached through ``super(cls, receiver)`` binds `receiver`;
+    every other object binds itself.
+
+    """
+    if isinstance(pyobject.get_type(), SuperType):
+        return pyobject.get_type().receiver
+    return pyobject
 
 
 def _zip_function(args):
