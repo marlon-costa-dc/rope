@@ -1,11 +1,32 @@
 # **Upcoming release**
 
+# Release 1.15.0+dc.7
+
+- Resolve class attributes in C3 method resolution order instead of a
+  depth-first walk of the bases, so diamond hierarchies inherit the member
+  Python's `__mro__` selects. `AbstractClass.get_mro()` exposes that order.
+- Model builtin classes with their runtime bases and `__mro__`, so `object`
+  sorts last and a builtin ancestor contributes only the attributes it
+  defines itself.
+- Select inherited docstring and assignment type hints along the same
+  method resolution order instead of a breadth-first walk.
+- Keep bases rope cannot evaluate to a class as `UnresolvedBase` markers in
+  `AbstractClass.get_bases()` and in the method resolution order instead of
+  dropping them; `get_superclasses()` still returns only the classes.
+- Raise `InconsistentHierarchyError` for cyclic, repeated, and unmergeable
+  bases, which Python refuses to create.
+
+# Release 1.15.0+dc.6
+
 - Resolve class-owned PEP 695 aliases from other lazy aliases in the same class,
   including forward declarations and names shadowing module aliases. Conditional
   declarations retain their ambiguous source identity.
 - Resolve opaque annotation references through their captured source contexts
   when refactoring checks request them, avoiding duplicate binding resolution
   while constructing the source index.
+- Add `match_filter` and `import_filter` to `Restructure`: callables consulted
+  for every match found in a module and for the imports added to a changed
+  module, so clients select both without overriding private methods.
 
 # Release 1.15.0+dc.5
 

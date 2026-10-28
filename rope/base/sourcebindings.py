@@ -1045,6 +1045,17 @@ class SourceBindingIndex:
                 self.fragments[position] = fragment
         return context
 
+    def absolute_import_roots(self):
+        """Return absolute import roots from the existing declaration index."""
+        roots = set()
+        for fragment in self.fragments:
+            node = fragment.context.source_node
+            if isinstance(node, ast.Import):
+                roots.update(alias.name.partition(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                roots.add(node.module.partition(".")[0])
+        return frozenset(roots)
+
     def context_at(self, offset):
         matched = [item for item in self.fragments if item.start <= offset < item.end]
         if matched:

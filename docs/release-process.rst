@@ -32,6 +32,8 @@ Run ``make setup fmt check test build`` on the release candidate. The native
 ``build`` target invokes ``artifact-check`` to verify typed markers and exercise
 the installed wheel outside the checkout. After merging and creating the signed,
 annotated version tag, create the GitHub Release with both validated artifacts.
+The artifact check prints the SHA-256 of each built distribution so a development
+candidate can be reviewed by content identity before installation or publication.
 The release workflow downloads those published assets and runs the same
 ``make artifact-check`` against them; a locally rebuilt wheel is not a substitute
 for that published-artifact receipt.

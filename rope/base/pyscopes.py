@@ -1,6 +1,4 @@
-import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import ast, codeanalyze, exceptions, pynames, utils
-from rope.refactor import patchedast
 
 
 class Scope:
@@ -155,6 +153,12 @@ class GlobalScope(Scope):
     @property
     @utils.saveit
     def _region_source(self):
+        # Deferred import: rope.refactor's package init pulls the analysis
+        # stack, which reaches evaluate; evaluate subclasses this module's
+        # TemporaryScope at import time, so a module-level import here is
+        # circular when pyscopes loads first.
+        from rope.refactor import patchedast
+
         return patchedast._Source(self._get_source())
 
     def _get_source(self):
@@ -183,6 +187,11 @@ class GlobalScope(Scope):
 
     @property
     def builtin_names(self):
+        # Deferred import: builtins imports evaluate, whose SourceValueScope
+        # subclasses this module's TemporaryScope at import time; a module-level
+        # import here re-enters a half-initialized pyscopes (circular).
+        import rope.base.builtins  # Use full qualification for clarity.
+
         return rope.base.builtins.builtins.get_attributes()
 
 

@@ -133,6 +133,102 @@ class AbstractClass(PyObject):
     def get_superclasses(self):
         return []
 
+    def get_bases(self):
+        """Return the declared bases in declaration order
+
+        Each item is either a class or an `UnresolvedBase` standing
+        for a base expression rope could not evaluate to a class.
+        `get_superclasses()` returns only the classes.
+
+        """
+        return self.get_superclasses()
+
+    def get_mro(self):
+        """Return the method resolution order of this class
+
+        The order is the C3 linearization Python uses for ``__mro__``,
+        starting with this class.  An `UnresolvedBase` keeps its place
+        in the order and contributes no ancestors.  Builtin classes
+        contribute their runtime ``__mro__``; a class whose hierarchy
+        names neither ``object`` nor a builtin class does not end with
+        ``object``.
+
+        Raises `rope.base.exceptions.InconsistentHierarchyError` when
+        Python would refuse to create the class.
+
+        """
+        return linearize(self, self.get_bases())
+
+    def _get_own_attributes(self):
+        """Return the attributes this class defines itself
+
+        These are the attributes the method resolution order selects
+        from this class.
+
+        """
+        return self.get_attributes()
+
+
+class UnresolvedBase(PyObject):
+    """A class base that rope could not evaluate to a class
+
+    `node` is the base expression in the class statement.  `pyobject`
+    is what that expression evaluated to, or `None` when it did not
+    evaluate at all.
+
+    """
+
+    def __init__(self, node, pyobject=None):
+        super().__init__(get_base_type("Unknown"))
+        self.node = node
+        self.pyobject = pyobject
+
+    def get_mro(self):
+        return [self]
+
+    def _get_own_attributes(self):
+        return {}
+
+
+def linearize(cls, bases):
+    """Return the C3 linearization of `cls` declared with `bases`
+
+    Raises `rope.base.exceptions.InconsistentHierarchyError` for repeated
+    bases and for bases whose orders cannot be merged.
+
+    """
+    for index, base in enumerate(bases):
+        if any(base is previous for previous in bases[:index]):
+            raise exceptions.InconsistentHierarchyError(
+                f"Duplicate base class in {_class_name(cls)}: {_class_name(base)}"
+            )
+    sequences = [list(base.get_mro()) for base in bases]
+    sequences.append(list(bases))
+    result = [cls]
+    while True:
+        sequences = [sequence for sequence in sequences if sequence]
+        if not sequences:
+            return result
+        for sequence in sequences:
+            head = sequence[0]
+            if not any(head is item for other in sequences for item in other[1:]):
+                break
+        else:
+            raise exceptions.InconsistentHierarchyError(
+                "Cannot create a consistent method resolution order "
+                f"for {_class_name(cls)}"
+            )
+        result.append(head)
+        for sequence in sequences:
+            if sequence[0] is head:
+                del sequence[0]
+
+
+def _class_name(pyobject):
+    if isinstance(pyobject, UnresolvedBase):
+        return "<unresolved base>"
+    return pyobject.get_name()
+
 
 class AbstractFunction(PyObject):
     def __init__(self):

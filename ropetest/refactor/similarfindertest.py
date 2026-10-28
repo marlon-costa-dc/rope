@@ -213,6 +213,29 @@ class SimilarFinderTest(unittest.TestCase):
         result = list(finder.get_matches("b = ${a}"))
         self.assertEqual("a", result[0].get_ast("a").id)
 
+    def test_expression_capture_region(self):
+        source = 'value = "é" + module.member\n'
+        finder = self._create_finder(source)
+        match = next(finder.get_matches('"é" + ${value}'))
+        start = source.index("module.member")
+        self.assertEqual(
+            (start, start + len("module.member")), match.get_capture_region("value")
+        )
+
+    def test_statement_capture_region(self):
+        source = "before = 0\nvalue = (first,\n         second)\n"
+        finder = self._create_finder(source)
+        match = next(finder.get_matches("value = ${value}"))
+        start = source.index("(first")
+        end = source.index(")") + 1
+        self.assertEqual((start, end), match.get_capture_region("value"))
+
+    def test_missing_capture_region(self):
+        finder = self._create_finder("value = 1\n")
+        match = next(finder.get_matches("value = ${value}"))
+        with self.assertRaisesRegex(ValueError, "missing"):
+            match.get_capture_region("missing")
+
     def test_matching_multiple_patterns(self):
         source = "c = a + b\n"
         finder = self._create_finder(source)

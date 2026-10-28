@@ -89,8 +89,51 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
         result.update(self.initial)
         return result
 
+    @utils.saveit
+    def get_superclasses(self):
+        if not inspect.isclass(self.builtin):
+            return []
+        return [_runtime_class(base) for base in self.builtin.__bases__]
+
+    @utils.saveit
+    def get_mro(self):
+        if not inspect.isclass(self.builtin):
+            return [self]
+        return [self] + [_runtime_class(cls) for cls in self.builtin.__mro__[1:]]
+
+    def _get_own_attributes(self):
+        if not inspect.isclass(self.builtin):
+            return self.get_attributes()
+        own = vars(self.builtin)
+        return {
+            name: pyname
+            for name, pyname in self.get_attributes().items()
+            if name in own or name in self.initial
+        }
+
     def get_module(self):
         return builtins
+
+
+_runtime_classes = {}
+
+
+def _runtime_class(cls):
+    """Return the rope class standing for the runtime class `cls`
+
+    A class of the ``builtins`` module is the object the builtins module
+    exposes, so it is the same object a source class names as a base.
+
+    """
+    if cls.__module__ == "builtins":
+        pyname = builtins.get_attributes().get(cls.__name__)
+        if pyname is not None:
+            pyobject = pyname.get_object()
+            if isinstance(pyobject, BuiltinClass) and pyobject.builtin is cls:
+                return pyobject
+    if cls not in _runtime_classes:
+        _runtime_classes[cls] = BuiltinClass(cls, {})
+    return _runtime_classes[cls]
 
 
 class BuiltinFunction(_BuiltinElement, pyobjects.AbstractFunction):

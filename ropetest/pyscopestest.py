@@ -27,6 +27,34 @@ class PyCoreScopesTest(unittest.TestCase):
         sample_func = scope["sample_func"].get_object()
         self.assertEqual(get_base_type("Function"), sample_func.get_type())
 
+    def test_indexed_absolute_import_roots_preserve_all_declarations(self):
+        source = dedent('''\
+            import outer.first as replaced, second
+            replaced = None
+            from absolute.child import *
+            from .relative import ignored
+            if False:
+                from guarded.child import value
+            class Owner:
+                import class_scope.child
+                def method(self):
+                    import function_scope.child as local
+                    from ..relative import hidden
+            text = "import not_a_declaration"
+        ''')
+        module = libutils.get_string_module(self.project, source)
+        index = module.get_source_binding_index()
+        expected = frozenset(
+            {"outer", "second", "absolute", "guarded", "class_scope", "function_scope"}
+        )
+        self.assertEqual(expected, index.absolute_import_roots())
+        self.assertIs(index, module.get_source_binding_index())
+        self.assertEqual(expected, index.absolute_import_roots())
+
+    def test_indexed_absolute_import_roots_empty_module(self):
+        module = libutils.get_string_module(self.project, "value = 1\n")
+        self.assertEqual(frozenset(), module.get_source_binding_index().absolute_import_roots())
+
     def test_simple_function_scope(self):
         code = dedent("""\
             def sample_func():

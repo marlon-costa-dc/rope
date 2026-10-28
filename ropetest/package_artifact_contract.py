@@ -1,6 +1,7 @@
 """Verify built markers and the installed wheel's closed filesystem contract."""
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -59,6 +60,8 @@ def main():
     release = version("rope")
     wheel = Path("dist") / f"rope-{release}-py3-none-any.whl"
     sdist = Path("dist") / f"rope-{release}.tar.gz"
+    for artifact in (wheel, sdist):
+        print(f"SHA256 {artifact} {hashlib.sha256(artifact.read_bytes()).hexdigest()}", flush=True)
     with zipfile.ZipFile(wheel) as artifact:
         assert artifact.read("rope/py.typed") == b""
     with tarfile.open(sdist) as artifact:
