@@ -24,6 +24,34 @@ def alias_project(tmp_path):
         project.close()
 
 
+def test_installed_native_capture_region(alias_project):
+    source = 'prefix = "é"\nvalue = (first,\n         second)\n'
+    resource = alias_project.root.create_file("captures.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    match = next(similarfinder.SimilarFinder(module).get_matches("value = ${value}"))
+    start, end = match.get_capture_region("value")
+    assert source[start:end] == "(first,\n         second)"
+    with pytest.raises(ValueError, match="missing"):
+        match.get_capture_region("missing")
+
+
+def test_installed_native_import_roots(alias_project):
+    source = (
+        "import outer.child as overwritten, second\n"
+        "overwritten = None\n"
+        "from .relative import ignored\n"
+        "if False:\n    from guarded.child import *\n"
+        "def nested():\n    import nested_package.child\n"
+    )
+    resource = alias_project.root.create_file("imports.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    assert module.get_source_binding_index().absolute_import_roots() == frozenset(
+        {"outer", "second", "guarded", "nested_package"}
+    )
+
+
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("owner", ["module", "function", "class"])
 @pytest.mark.parametrize("bindings", ["alias", "ordinary-first", "alias-first", "repeated"])

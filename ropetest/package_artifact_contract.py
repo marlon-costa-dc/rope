@@ -9,6 +9,7 @@ import sys
 import sysconfig
 import tarfile
 import tempfile
+import tomllib
 import venv
 import zipfile
 from importlib.metadata import version
@@ -57,7 +58,9 @@ def main():
             parser.error("installed contract requires its version and contract path")
         installed_contract(arguments.expected_version, arguments.contract)
         return
-    release = version("rope")
+    source_root = Path(__file__).resolve().parents[1]
+    with (source_root / "pyproject.toml").open("rb") as manifest:
+        release = tomllib.load(manifest)["project"]["version"]
     wheel = Path("dist") / f"rope-{release}-py3-none-any.whl"
     sdist = Path("dist") / f"rope-{release}.tar.gz"
     for artifact in (wheel, sdist):
@@ -70,7 +73,6 @@ def main():
         with marker:
             assert marker.read() == b""
     print(f"Verified rope/py.typed in {wheel} and {sdist}")
-    source_root = Path(__file__).resolve().parents[1]
     environment = Path(sys.prefix).resolve()
     if environment == Path(sys.base_prefix).resolve() or environment.is_relative_to(source_root):
         raise RuntimeError("artifact validation requires an exclusive environment outside the checkout")

@@ -34,6 +34,8 @@ the installed wheel outside the checkout. After merging and creating the signed,
 annotated version tag, create the GitHub Release with both validated artifacts.
 The artifact check prints the SHA-256 of each built distribution so a development
 candidate can be reviewed by content identity before installation or publication.
+The selected artifact version comes from the producer's ``pyproject.toml``,
+never from a previously installed distribution in the build environment.
 The release workflow downloads those published assets and runs the same
 ``make artifact-check`` against them; a locally rebuilt wheel is not a substitute
 for that published-artifact receipt.
