@@ -38,6 +38,10 @@ an empty tuple.  Cyclic references raise ``ValueError``.  It uses the module's
 existing parse without evaluating authored code or resolving class ancestry.
 A supplied scope must belong to that same indexed module; another module's
 scope raises ``ValueError`` instead of mixing its declarations with local names.
+With ``class_metadata=True``, an absent module declaration may be read from a
+single directly declared class.  Module declarations still take precedence,
+including empty or unsupported values.  This mode does not resolve class scopes
+or superclasses and cannot be combined with an explicit scope.
 
 
 Making A Project

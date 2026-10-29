@@ -97,6 +97,36 @@ class PyCoreScopesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another source module"):
             local.get_source_binding_index().assignment_string_sequence("names", scope)
 
+    def test_indexed_assignment_sequence_class_metadata_precedence(self):
+        cases = (
+            ("class Owner:\n    names = ('class',)\n", ("class",)),
+            ("names = []\nclass Owner:\n    names = ('class',)\n", ()),
+            ("names = 1\nclass Owner:\n    names = ('class',)\n", ()),
+            ("class First: pass\nclass Second:\n    names = ('class',)\n", None),
+            ("class Owner: pass\n", None),
+            ("class Owner:\n    names = names\n", ()),
+            ("if True:\n    class Owner:\n        names = ('guarded',)\n", None),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                module = libutils.get_string_module(self.project, source)
+                self.assertEqual(
+                    expected,
+                    module.get_source_binding_index().assignment_string_sequence(
+                        "names", class_metadata=True
+                    ),
+                )
+
+    def test_indexed_assignment_sequence_same_name_in_module_and_class(self):
+        module = libutils.get_string_module(
+            self.project, "names = ('module',)\nclass Owner:\n    names = names\n"
+        )
+        scope = module["Owner"].get_object().get_scope()
+        self.assertEqual(
+            ("module",),
+            module.get_source_binding_index().assignment_string_sequence("names", scope),
+        )
+
     def test_simple_function_scope(self):
         code = dedent("""\
             def sample_func():

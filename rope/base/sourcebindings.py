@@ -1056,8 +1056,10 @@ class SourceBindingIndex:
                 roots.add(node.module.partition(".")[0])
         return frozenset(roots)
 
-    def assignment_string_sequence(self, name, scope=None):
+    def assignment_string_sequence(self, name, scope=None, *, class_metadata=False):
         """Read a direct string-sequence declaration from the existing parse."""
+        if scope is not None and class_metadata:
+            raise ValueError("Select either an explicit scope or class metadata")
         if scope is not None and not isinstance(
             scope, (pyscopes.GlobalScope, pyscopes.ClassScope)
         ):
@@ -1067,8 +1069,8 @@ class SourceBindingIndex:
         module_body = self.pymodule.get_ast().body
         body = module_body if scope is None else scope.pyobject.get_ast().body
         visited = set()
-        while name not in visited:
-            visited.add(name)
+        declared = False
+        while (id(body), name) not in visited:
             for statement in body:
                 if isinstance(statement, ast.Assign):
                     targets = statement.targets
@@ -1083,7 +1085,17 @@ class SourceBindingIndex:
                     value = statement.value
                     break
             else:
-                return None if len(visited) == 1 else ()
+                if class_metadata and not declared:
+                    class_metadata = False
+                    classes = [
+                        node for node in module_body if isinstance(node, ast.ClassDef)
+                    ]
+                    if len(classes) == 1:
+                        body = classes[0].body
+                        continue
+                return () if declared else None
+            visited.add((id(body), name))
+            declared = True
             if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
                 if all(
                     isinstance(item, ast.Constant) and isinstance(item.value, str)

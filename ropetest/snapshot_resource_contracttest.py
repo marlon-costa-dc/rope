@@ -60,6 +60,7 @@ def test_installed_native_assignment_string_sequence(alias_project):
     assert index.assignment_string_sequence("names") is None
     scope = module["Owner"].get_object().get_scope()
     assert index.assignment_string_sequence("names", scope) == ("first",)
+    assert index.assignment_string_sequence("names", class_metadata=True) == ("first",)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
