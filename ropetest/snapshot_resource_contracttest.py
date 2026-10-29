@@ -36,6 +36,27 @@ def test_installed_native_capture_region(alias_project):
         match.get_capture_region("missing")
 
 
+def test_installed_mro_retains_unresolved_imported_base(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write("declared = 1\n")
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(
+        "from provider import missing\n"
+        "class Base(object):\n    member = 1\n"
+        "class Derived(Base, missing):\n    pass\n"
+    )
+    module = alias_project.get_pymodule(resource)
+    base = module["Base"].get_object()
+    derived = module["Derived"].get_object()
+    resolved, unresolved = derived.get_bases()
+    assert resolved is base
+    assert isinstance(unresolved, pyobjects.UnresolvedBase)
+    assert unresolved.pyobject is module["missing"].get_object()
+    assert derived.get_superclasses() == [base]
+    assert derived.get_mro() == [derived, *base.get_mro(), unresolved]
+    assert derived["member"] is base["member"]
+
+
 def test_installed_native_import_roots(alias_project):
     source = (
         "import outer.child as overwritten, second\n"

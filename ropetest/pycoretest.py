@@ -417,6 +417,29 @@ class PyCoreTest(unittest.TestCase):
         self.assertEqual([], derived.get_superclasses())
         self.assertEqual([derived, unresolved], derived.get_mro())
 
+    def test_imported_missing_base_preserves_resolved_ancestors(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write("def function():\n    pass\n")
+        code = dedent("""\
+            from provider import missing
+            class Base(object):
+                pass
+            class Derived(Base, missing):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        mro = derived.get_mro()
+        resolved, unresolved = derived.get_bases()
+        self.assertIs(base, resolved)
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual([base], derived.get_superclasses())
+        self.assertEqual(
+            [derived, *base.get_mro(), unresolved],
+            mro,
+        )
+
     def test_inconsistent_mro(self):
         code = dedent("""\
             class A(object):
