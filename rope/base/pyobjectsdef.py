@@ -285,6 +285,19 @@ class PyClass(pyobjects.PyClass):
             self._mro.set(mro)
         return self._mro.get()
 
+    def invalidate_bases(self):
+        """Drop the cached bases and MRO so the next read recomputes them.
+
+        A first evaluation can observe construction transients of the lazy
+        source index — including transients of foreign modules still under
+        construction, whose completion this class's caches never see.
+        The evaluation's own side effects complete those modules after its
+        stack unwinds; consumers that must read a settled hierarchy
+        invalidate and re-ask.
+        """
+        self._bases.set(None)
+        self._mro.set(None)
+
     def get_name(self):
         return self.get_ast().name
 
