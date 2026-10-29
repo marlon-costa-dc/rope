@@ -323,12 +323,14 @@ class ObjectInferTest(unittest.TestCase):
 
     def test_handling_generator_functions_for_strs(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             def f():
                 yield ""
             for s in f():
                 a_var = s
-        """))
+        """)
+        )
         pymod = self.project.get_pymodule(mod)
         a_var = pymod["a_var"].get_object()
         self.assertTrue(isinstance(a_var.get_type(), rope.base.builtins.Str))

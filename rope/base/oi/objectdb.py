@@ -1,3 +1,6 @@
+from collections import UserDict
+
+
 class ObjectDB:
     def __init__(self, db, validation):
         self.db = db
@@ -89,10 +92,7 @@ class ObjectDB:
         scope_count = 0
         for file_dict in self.files.values():
             scope_count += len(file_dict)
-        return "ObjectDB holds {} file and {} scope infos".format(
-            len(self.files),
-            scope_count,
-        )
+        return f"ObjectDB holds {len(self.files)} file and {scope_count} scope infos"
 
 
 class _NullScopeInfo:
@@ -117,12 +117,12 @@ class _NullScopeInfo:
             raise NotImplementedError()
 
 
-class FileInfo(dict):
+class FileInfo(UserDict):
     def create_scope(self, key):
         pass
 
 
-class FileDict(dict):
+class FileDict(UserDict):
     def create(self, key):
         pass
 

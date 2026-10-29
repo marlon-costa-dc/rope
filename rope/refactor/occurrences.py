@@ -39,7 +39,7 @@ import contextlib
 import io
 import re
 import tokenize
-from typing import Iterator
+from collections.abc import Iterator
 
 from rope.base import (
     ast,
@@ -120,6 +120,10 @@ def create_finder(
         filters.append(NoImportsFilter())
     if not keywords:
         filters.append(NoKeywordsFilter())
+    from rope.base.sourcebindings import SourceValueName
+
+    while isinstance(instance, SourceValueName):
+        instance = instance.source_pyname
     if isinstance(instance, pynames.ParameterName):
         for pyobject in instance.get_objects():
             try:

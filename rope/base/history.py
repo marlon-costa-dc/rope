@@ -148,8 +148,12 @@ class History:
             data = []
             to_data = change.ChangeToData()
             self._remove_extra_items()
-            data.append([to_data(change_) for change_ in self.undo_list])
-            data.append([to_data(change_) for change_ in self.redo_list])
+            data.extend(
+                (
+                    [to_data(change_) for change_ in self.undo_list],
+                    [to_data(change_) for change_ in self.redo_list],
+                )
+            )
             self.project.data_files.write_data("history", data)
 
     def get_file_undo_list(self, resource):

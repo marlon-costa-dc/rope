@@ -1,5 +1,3 @@
-from typing import List, Union
-
 from rope.base import ast, exceptions, pynames, pynamesdef, utils
 from rope.refactor.importutils import actions, importinfo
 
@@ -31,8 +29,8 @@ class ModuleImports:
 
     def _get_all_star_list(self, pymodule):
         def _resolve_name(
-            name: Union[pynamesdef.AssignedName, pynames.ImportedName],
-        ) -> List:
+            name: pynamesdef.AssignedName | pynames.ImportedName,
+        ) -> list:
             while isinstance(name, pynames.ImportedName):
                 try:
                     name = name.imported_module.get_object().get_attribute(
@@ -64,8 +62,7 @@ class ModuleImports:
                 while stack:
                     el = stack.pop()
                     if isinstance(el, ast.IfExp):
-                        stack.append(el.body)
-                        stack.append(el.orelse)
+                        stack.extend((el.body, el.orelse))
                     elif isinstance(el, ast.Starred):
                         assignments.append(el.value)
                     else:
@@ -96,8 +93,7 @@ class ModuleImports:
                         assignment.ast_node for assignment in _resolve_name(name)
                     )
             elif isinstance(assignment, ast.BinOp):
-                assignments.append(assignment.left)
-                assignments.append(assignment.right)
+                assignments.extend((assignment.left, assignment.right))
         return result
 
     def remove_unused_imports(self):
@@ -247,8 +243,7 @@ class ModuleImports:
             for added_import in added_imports:
                 if added_import.accept(visitor):
                     import_stmt.empty_import()
-            else:
-                added_imports.append(import_stmt)
+            added_imports.append(import_stmt)
 
     def force_single_imports(self):
         """force a single import per statement"""
@@ -290,9 +285,9 @@ class ModuleImports:
 
     def sort_imports(self):
         if self.project.prefs.get("sort_imports_alphabetically"):
-            sort_kwargs = dict(key=self._get_import_name)
+            sort_kwargs = {"key": self._get_import_name}
         else:
-            sort_kwargs = dict(key=self._key_imports)
+            sort_kwargs = {"key": self._key_imports}
 
         # IDEA: Sort from import list
         visitor = actions.SortingVisitor(self.project, self._current_folder())
@@ -332,10 +327,7 @@ class ModuleImports:
     def _get_import_name(self, import_stmt):
         import_info = import_stmt.import_info
         if hasattr(import_info, "module_name"):
-            return "{}.{}".format(
-                import_info.module_name,
-                import_info.names_and_aliases[0][0],
-            )
+            return f"{import_info.module_name}.{import_info.names_and_aliases[0][0]}"
         else:
             return import_info.names_and_aliases[0][0]
 

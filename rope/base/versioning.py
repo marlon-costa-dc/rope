@@ -1,18 +1,16 @@
-import dataclasses
 import hashlib
 import importlib.util
 import json
-from typing import Dict
 
 import rope.base.project
 
 
-def get_version_hash_data(project: rope.base.project.Project) -> Dict[str, str]:
-    version_hash_data = dict(
-        version_data=f"{rope.VERSION}",
-        prefs_data=_get_prefs_data(project),
-        schema_file_content=_get_file_content("rope.contrib.autoimport.models"),
-    )
+def get_version_hash_data(project: rope.base.project.Project) -> dict[str, str]:
+    version_hash_data = {
+        "version_data": f"{rope.VERSION}",
+        "prefs_data": _get_prefs_data(project),
+        "schema_file_content": _get_file_content("rope.contrib.autoimport.models"),
+    }
     return version_hash_data
 
 

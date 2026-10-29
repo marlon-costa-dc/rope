@@ -22,10 +22,12 @@ class FindErrorsTest(unittest.TestCase):
         self.assertEqual(1, result[0].lineno)
 
     def test_defined_later(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             print(var)
             var = 1
-        """))
+        """)
+        )
         result = finderrors.find_errors(self.project, self.mod)
         self.assertEqual(1, len(result))
         self.assertEqual(1, result[0].lineno)

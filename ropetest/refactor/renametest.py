@@ -1,8 +1,6 @@
-import sys
 import unittest
 from textwrap import dedent
 
-import rope.base.codeanalyze
 import rope.refactor.occurrences
 from rope.base import exceptions
 from rope.refactor import rename
@@ -249,9 +247,7 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case [1, *_] as old_name:
                     print(old_name)
         """)
-        refactored = self._local_rename(
-            code, code.rindex("old_name") + 1, "new_name"
-        )
+        refactored = self._local_rename(code, code.rindex("old_name") + 1, "new_name")
         self.assertEqual(
             dedent("""\
                 match value:
@@ -268,9 +264,7 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case [1, *old_name] if old_name:
                     print(old_name)
         """)
-        refactored = self._local_rename(
-            code, code.index("old_name") + 1, "new_name"
-        )
+        refactored = self._local_rename(code, code.index("old_name") + 1, "new_name")
         self.assertEqual(
             dedent("""\
                 match value:
@@ -287,9 +281,7 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case {"key": item, **old_name}:
                     print(old_name)
         """)
-        refactored = self._local_rename(
-            code, code.index("old_name") + 1, "new_name"
-        )
+        refactored = self._local_rename(code, code.index("old_name") + 1, "new_name")
         self.assertEqual(
             dedent("""\
                 match value:
@@ -402,14 +394,18 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_rename_functions_parameters_and_occurrences_in_other_modules(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func(a_param):
                 print(a_param)
-        """))
-        mod2.write(dedent("""\
+        """)
+        )
+        mod2.write(
+            dedent("""\
             from mod1 import a_func
             a_func(a_param=10)
-        """))
+        """)
+        )
         self._rename(mod1, mod1.read().index("a_param") + 1, "new_param")
         self.assertEqual(
             dedent("""\
@@ -497,14 +493,14 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         self.assertEqual(expected, refactored)
 
     def test_renaming_occurrence_in_f_string_with_reused_quotes(self):
-        code = dedent('''\
+        code = dedent("""\
             a_var = {"key": 20}
             a_string=f"{a_var['key']} and {a_var['key']:>2}"
-        ''')
-        expected = dedent('''\
+        """)
+        expected = dedent("""\
             new_var = {"key": 20}
             a_string=f"{new_var['key']} and {new_var['key']:>2}"
-        ''')
+        """)
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 
@@ -539,7 +535,7 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                     print(f'{obj.new_var}')
                     return obj.new_var
         """)
-        refactored = self._local_rename(code, code.index('abc'), "new_var")
+        refactored = self._local_rename(code, code.index("abc"), "new_var")
         self.assertEqual(expected, refactored)
 
     def test_not_renaming_string_contents_in_f_string(self):
@@ -686,16 +682,20 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_functions_across_modules(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
             a_func()
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1
             mod1.a_func()
-        """))
+        """)
+        )
         self._rename(mod1, len(mod1.read()) - 5, "new_func")
         self.assertEqual(
             dedent("""\
@@ -715,16 +715,20 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_functions_across_modules_from_import(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
             a_func()
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             from mod1 import a_func
             a_func()
-        """))
+        """)
+        )
         self._rename(mod1, len(mod1.read()) - 5, "new_func")
         self.assertEqual(
             dedent("""\
@@ -744,16 +748,20 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_functions_from_another_module(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
             a_func()
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1
             mod1.a_func()
-        """))
+        """)
+        )
         self._rename(mod2, len(mod2.read()) - 5, "new_func")
         self.assertEqual(
             dedent("""\
@@ -821,13 +829,15 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_conditional_external_import_from_another_module(self):
         compat = testutils.create_module(self.project, "compat")
-        compat.write(dedent("""\
+        compat.write(
+            dedent("""\
             import sys
             if sys.version_info[0] >= 3:
                 from builtins import map, zip
             else:
                 zip = lambda *args: None
-        """))
+        """)
+        )
         mod = testutils.create_module(self.project, "mod")
         mod.write("from compat import zip\nresult = list(zip([1], [2]))\n")
         self._rename(mod, mod.read().rindex("zip"), "pairs")
@@ -878,16 +888,20 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_applying_all_changes_together(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             import mod2
             mod2.a_func()
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             def a_func():
                 pass
             a_func()
-        """))
+        """)
+        )
         self._rename(mod2, len(mod2.read()) - 5, "new_func")
         self.assertEqual(
             dedent("""\
@@ -907,10 +921,12 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_modules(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
         mod2.write("from mod1 import a_func\n")
         self._rename(mod2, mod2.read().index("mod1") + 1, "newmod")
@@ -921,15 +937,19 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_modules_aliased(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1 as m
             m.a_func()
-        """))
+        """)
+        )
         self._rename(mod1, None, "newmod")
         self.assertTrue(
             not mod1.exists() and self.project.find_module("newmod") is not None
@@ -939,10 +959,12 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_renaming_packages(self):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2", pkg)
         mod2.write("from pkg.mod1 import a_func\n")
         self._rename(mod2, 6, "newpkg")
@@ -952,20 +974,26 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_module_dependencies(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             class AClass(object):
                 pass
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1
             a_var = mod1.AClass()
-        """))
+        """)
+        )
         self.project.get_pymodule(mod2).get_attributes()["mod1"]
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def AClass():
                 return 0
-        """))
+        """)
+        )
 
         self._rename(mod2, len(mod2.read()) - 3, "a_func")
         self.assertEqual(
@@ -985,16 +1013,20 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_class_attributes(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             class AClass(object):
                 def __init__(self):
                     self.an_attr = 10
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1
             a_var = mod1.AClass()
-            another_var = a_var.an_attr"""))
+            another_var = a_var.an_attr""")
+        )
 
         self._rename(mod1, mod1.read().index("an_attr"), "attr")
         self.assertEqual(
@@ -1015,17 +1047,21 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_class_attributes2(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             class AClass(object):
                 def __init__(self):
                     an_attr = 10
                     self.an_attr = 10
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import mod1
             a_var = mod1.AClass()
-            another_var = a_var.an_attr"""))
+            another_var = a_var.an_attr""")
+        )
 
         self._rename(mod1, mod1.read().rindex("an_attr"), "attr")
         self.assertEqual(
@@ -1047,11 +1083,13 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_undoing_refactorings(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
             a_func()
-        """))
+        """)
+        )
         self._rename(mod1, len(mod1.read()) - 5, "new_func")
         self.project.history.undo()
         self.assertEqual(
@@ -1065,10 +1103,12 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_undoing_renaming_modules(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2 = testutils.create_module(self.project, "mod2")
         mod2.write("from mod1 import a_func\n")
         self._rename(mod2, 6, "newmod")
@@ -1596,14 +1636,18 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_resources_parameter(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def f():
                 pass
-        """))
-        mod2.write(dedent("""\
+        """)
+        )
+        mod2.write(
+            dedent("""\
             import mod1
             mod1.f()
-        """))
+        """)
+        )
         self._rename(mod1, mod1.read().rindex("f"), "g", resources=[mod1])
         self.assertEqual(
             dedent("""\
@@ -1623,14 +1667,18 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
     def test_resources_parameter_not_changing_defining_module(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def f():
                 pass
-        """))
-        mod2.write(dedent("""\
+        """)
+        )
+        mod2.write(
+            dedent("""\
             import mod1
             mod1.f()
-        """))
+        """)
+        )
         self._rename(mod1, mod1.read().rindex("f"), "g", resources=[mod2])
         self.assertEqual(
             dedent("""\
@@ -1654,8 +1702,6 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
             with open("1.txt") as f:
                 print(f)
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         mod1 = testutils.create_module(self.project, "mod1")
         mod1.write(code)
         self._rename(mod1, code.rindex("f"), "file")
@@ -1684,9 +1730,11 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         mod1 = testutils.create_module(self.project, "utils", pkg)
 
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import json.utils as stdlib_json_utils
-        """))
+        """)
+        )
         self._rename(pkg, None, "new_json")
         self.assertTrue(
             not mod1.exists() and self.project.find_module("new_json.utils") is not None
@@ -1698,9 +1746,11 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         mod1 = testutils.create_module(self.project, "utils", pkg)
 
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             import json.utils.a as stdlib_json_utils
-        """))
+        """)
+        )
         self._rename(pkg, None, "new_json")
         self.assertTrue(
             not mod1.exists() and self.project.find_module("new_json.utils") is not None
@@ -1708,7 +1758,10 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         self.assertEqual("import new_json.utils.a as stdlib_json_utils\n", mod2.read())
 
     def test_rename_refuses_renaming_to_python_keyword(self):
-        with self.assertRaises(exceptions.RefactoringError, msg="Invalid refactoring target name. 'class' is a Python keyword."):
+        with self.assertRaises(
+            exceptions.RefactoringError,
+            msg="Invalid refactoring target name. 'class' is a Python keyword.",
+        ):
             self._local_rename("a_var = 20\n", 2, "class")
 
 
@@ -1794,14 +1847,16 @@ class RenameRefactoringWithSuperclassTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_methods_in_subclasses(self):
         mod = testutils.create_module(self.project, "mod1")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class A(object):
                 def a_method(self):
                     pass
             class B(A):
                 def a_method(self):
                     pass
-        """))
+        """)
+        )
 
         self._rename(
             mod, mod.read().rindex("a_method") + 1, "new_method", in_hierarchy=True
@@ -1820,7 +1875,8 @@ class RenameRefactoringWithSuperclassTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_methods_in_sibling_classes(self):
         mod = testutils.create_module(self.project, "mod1")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class A(object):
                 def a_method(self):
                     pass
@@ -1830,7 +1886,8 @@ class RenameRefactoringWithSuperclassTest(RenameTestMixin, unittest.TestCase):
             class C(A):
                 def a_method(self):
                     pass
-        """))
+        """)
+        )
 
         self._rename(
             mod, mod.read().rindex("a_method") + 1, "new_method", in_hierarchy=True
@@ -1852,14 +1909,16 @@ class RenameRefactoringWithSuperclassTest(RenameTestMixin, unittest.TestCase):
 
     def test_not_renaming_methods_in_hierarchies(self):
         mod = testutils.create_module(self.project, "mod1")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class A(object):
                 def a_method(self):
                     pass
             class B(A):
                 def a_method(self):
                     pass
-        """))
+        """)
+        )
 
         self._rename(
             mod, mod.read().rindex("a_method") + 1, "new_method", in_hierarchy=False
@@ -1887,10 +1946,12 @@ class ChangeOccurrencesTest(unittest.TestCase):
         super().tearDown()
 
     def test_simple_case(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             a_var = 1
             print(a_var)
-        """))
+        """)
+        )
         changer = rename.ChangeOccurrences(
             self.project, self.mod, self.mod.read().index("a_var")
         )
@@ -1904,12 +1965,14 @@ class ChangeOccurrencesTest(unittest.TestCase):
         )
 
     def test_only_performing_inside_scopes(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             a_var = 1
             new_var = 2
             def f():
                 print(a_var)
-        """))
+        """)
+        )
         changer = rename.ChangeOccurrences(
             self.project, self.mod, self.mod.read().rindex("a_var")
         )
@@ -1925,14 +1988,16 @@ class ChangeOccurrencesTest(unittest.TestCase):
         )
 
     def test_only_performing_on_calls(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             def f1():
                 pass
             def f2():
                 pass
             g = f1
             a = f1()
-        """))
+        """)
+        )
         changer = rename.ChangeOccurrences(
             self.project, self.mod, self.mod.read().rindex("f1")
         )
@@ -1950,11 +2015,13 @@ class ChangeOccurrencesTest(unittest.TestCase):
         )
 
     def test_only_performing_on_reads(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             a = 1
             b = 2
             print(a)
-        """))
+        """)
+        )
         changer = rename.ChangeOccurrences(
             self.project, self.mod, self.mod.read().rindex("a")
         )
@@ -1987,7 +2054,8 @@ class ImplicitInterfacesTest(unittest.TestCase):
 
     def test_performing_rename_on_parameters(self):
         self.mod1.write("def f(arg):\n    arg.run()\n")
-        self.mod2.write(dedent("""\
+        self.mod2.write(
+            dedent("""\
             import mod1
 
 
@@ -1999,7 +2067,8 @@ class ImplicitInterfacesTest(unittest.TestCase):
                     pass
             mod1.f(A())
             mod1.f(B())
-        """))
+        """)
+        )
         self.pycore.analyze_module(self.mod2)
         self._rename(self.mod1, self.mod1.read().index("run"), "newrun")
         self.assertEqual("def f(arg):\n    arg.newrun()\n", self.mod1.read())

@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Protocol, Tuple
 
 
 class ImportStatement:
@@ -30,7 +29,7 @@ class ImportStatement:
         if (
             not self.readonly
             and new_import is not None
-            and not new_import == self._import_info
+            and new_import != self._import_info
         ):
             self._is_changed = True
             self._import_info = new_import
@@ -66,10 +65,10 @@ class ImportStatement:
 
 
 class ImportInfo(ABC):
-    names_and_aliases: List[Tuple[str, Optional[str]]]
+    names_and_aliases: list[tuple[str, str | None]]
 
     @abstractmethod
-    def get_imported_primaries(self, context) -> List[str]: ...
+    def get_imported_primaries(self, context) -> list[str]: ...
 
     def get_imported_names(self, context):
         return [
@@ -91,10 +90,7 @@ class ImportInfo(ABC):
     def _are_name_and_alias_lists_equal(self, list1, list2):
         if len(list1) != len(list2):
             return False
-        for pair1, pair2 in zip(list1, list2):
-            if pair1 != pair2:
-                return False
-        return True
+        return all(pair1 == pair2 for pair1, pair2 in zip(list1, list2))
 
     def __eq__(self, obj):
         return (
@@ -113,11 +109,11 @@ class ImportInfo(ABC):
 class NormalImport(ImportInfo):
     def __init__(
         self,
-        names_and_aliases: List[Tuple[str, Optional[str]]],
+        names_and_aliases: list[tuple[str, str | None]],
     ) -> None:
         self.names_and_aliases = names_and_aliases
 
-    def get_imported_primaries(self, context) -> List[str]:
+    def get_imported_primaries(self, context) -> list[str]:
         result = []
         for name, alias in self.names_and_aliases:
             if alias:
@@ -147,13 +143,13 @@ class FromImport(ImportInfo):
         self,
         module_name: str,
         level: int,
-        names_and_aliases: List[Tuple[str, Optional[str]]],
+        names_and_aliases: list[tuple[str, str | None]],
     ):
         self.module_name = module_name
         self.level = level
         self.names_and_aliases = names_and_aliases
 
-    def get_imported_primaries(self, context) -> List[str]:
+    def get_imported_primaries(self, context) -> list[str]:
         if self.names_and_aliases[0][0] == "*":
             module = self.get_imported_module(context)
             return [name for name in module if not name.startswith("_")]
@@ -212,7 +208,7 @@ class EmptyImport(ImportInfo):
     def is_empty(self):
         return True
 
-    def get_imported_primaries(self, context) -> List[str]:
+    def get_imported_primaries(self, context) -> list[str]:
         return []
 
     def get_import_statement(self) -> str:

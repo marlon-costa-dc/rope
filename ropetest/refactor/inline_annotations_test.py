@@ -45,7 +45,11 @@ def deferred_prefix(request):
 
 @pytest.mark.parametrize("remove", [True, False])
 def test_refuses_changing_annotation_name_binding(project, deferred_prefix, remove):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         original = int
         target = original
         def func(x: target):
@@ -53,18 +57,25 @@ def test_refuses_changing_annotation_name_binding(project, deferred_prefix, remo
         original = str
         import typing
         print(typing.get_type_hints(func)["x"] is int)
-    '''))
+    """),
+    )
     before = source.read()
     output = execute(project, source)
     assert output == "True\n"
     with pytest.raises(RefactoringError, match="deferred annotation"):
-        create_inline(project, source, before.index("target") + 1).get_changes(remove=remove)
+        create_inline(project, source, before.index("target") + 1).get_changes(
+            remove=remove
+        )
     assert source.read() == before
     assert execute(project, source) == output
 
 
 def test_refuses_moving_side_effect_into_annotation(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         events = []
         def make():
             events.append("called")
@@ -76,7 +87,8 @@ def test_refuses_moving_side_effect_into_annotation(project, deferred_prefix):
         import typing
         print(typing.get_type_hints(func)["return"] is int)
         print(events)
-    '''))
+    """),
+    )
     before = source.read()
     output = execute(project, source)
     assert output == "['called']\nTrue\n['called']\n"
@@ -86,46 +98,85 @@ def test_refuses_moving_side_effect_into_annotation(project, deferred_prefix):
     assert execute(project, source) == output
 
 
-@pytest.mark.parametrize("definition,owner,key", [
-    (dedent("""\
+@pytest.mark.parametrize(
+    "definition,owner,key",
+    [
+        (
+            dedent("""\
         async def func(x: target):
             pass
-    """), "func", "x"),
-    (dedent("""\
+    """),
+            "func",
+            "x",
+        ),
+        (
+            dedent("""\
         def func(x: target, /):
             pass
-    """), "func", "x"),
-    (dedent("""\
+    """),
+            "func",
+            "x",
+        ),
+        (
+            dedent("""\
         def func(*, x: target):
             pass
-    """), "func", "x"),
-    (dedent("""\
+    """),
+            "func",
+            "x",
+        ),
+        (
+            dedent("""\
         def func(*x: target):
             pass
-    """), "func", "x"),
-    (dedent("""\
+    """),
+            "func",
+            "x",
+        ),
+        (
+            dedent("""\
         def func(**x: target):
             pass
-    """), "func", "x"),
-    (dedent("""\
+    """),
+            "func",
+            "x",
+        ),
+        (
+            dedent("""\
         def func() -> target:
             pass
-    """), "func", "return"),
-    (dedent("""\
+    """),
+            "func",
+            "return",
+        ),
+        (
+            dedent("""\
         class Owner:
             x: target
-    """), "Owner", "x"),
-    (dedent("""\
+    """),
+            "Owner",
+            "x",
+        ),
+        (
+            dedent("""\
         x: target
         import sys
-    """), "sys.modules[__name__]", "x"),
-    (dedent("""\
+    """),
+            "sys.modules[__name__]",
+            "x",
+        ),
+        (
+            dedent("""\
         def 函数(x: (
             list[target]
         )):
             pass
-    """), "函数", "x"),
-])
+    """),
+            "函数",
+            "x",
+        ),
+    ],
+)
 def test_refuses_annotation_kinds(project, deferred_prefix, definition, owner, key):
     comparison = "list[int]" if "list[target]" in definition else "int"
     code = deferred_prefix + "original = int\ntarget = original\n" + definition
@@ -151,21 +202,28 @@ def test_cross_module_annotation_is_refused(project, deferred_prefix, qualified)
     before = {source: source.read(), entry: entry.read()}
     assert execute(project, entry) == "True\n"
     with pytest.raises(RefactoringError, match="deferred annotation"):
-        create_inline(project, entry, code.index("target", code.index("def func")) + 1).get_changes(only_current=True, remove=False)
+        create_inline(
+            project, entry, code.index("target", code.index("def func")) + 1
+        ).get_changes(only_current=True, remove=False)
     assert {r: r.read() for r in before} == before
     assert execute(project, entry) == "True\n"
 
 
 @pytest.mark.parametrize("remove", [False, True])
 def test_only_current_eager_reference(project, deferred_prefix, remove):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         target = int
         def func(x: target):
             pass
         result = target
         import typing
         print(result is typing.get_type_hints(func)["x"])
-    '''))
+    """),
+    )
     before = source.read()
     output = execute(project, source)
     inline = create_inline(project, source, before.rindex("target") + 1)
@@ -183,7 +241,10 @@ def test_only_current_eager_reference(project, deferred_prefix, remove):
 def test_eager_annotations_allow_inline(project):
     if sys.version_info >= (3, 14):
         pytest.skip("default annotations are deferred on Python 3.14+")
-    source = module(project, "source", '''\
+    source = module(
+        project,
+        "source",
+        """\
         original = int
         target = original
         def func(x: target):
@@ -191,30 +252,46 @@ def test_eager_annotations_allow_inline(project):
         original = str
         import typing
         print(typing.get_type_hints(func)["x"] is int)
-    ''')
+    """,
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "target" not in source.read()
     assert execute(project, source) == before == "True\n"
 
 
 def test_function_default_is_eager(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         original = int
         target = original
         def func(x: str = target):
             return x
         original = str
         print(func() is int)
-    '''))
+    """),
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "x: str = original" in source.read()
     assert execute(project, source) == before == "True\n"
 
 
-def test_shadowed_function_annotation_checks_runtime_namespace(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+def test_shadowed_function_annotation_checks_runtime_namespace(
+    project, deferred_prefix
+):
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         target = int
         def func(target: str):
             def inner(x: target):
@@ -223,7 +300,8 @@ def test_shadowed_function_annotation_checks_runtime_namespace(project, deferred
         result = target
         import typing
         print(result is int, typing.get_type_hints(func(str))["x"] is int)
-    '''))
+    """),
+    )
     before = execute(project, source)
     inline = create_inline(project, source, source.read().index("target") + 1)
     if deferred_prefix:
@@ -240,20 +318,30 @@ def test_shadowed_function_annotation_checks_runtime_namespace(project, deferred
 
 
 def test_local_variable_annotation_is_not_evaluated(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         target = int
         def func():
             x: target = 1
             return x
         print(func())
-    '''))
+    """),
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "target = int" not in source.read()
     assert execute(project, source) == before == "1\n"
 
 
-@pytest.mark.parametrize("annotation", ["holder.x: target = 1", "holder[0]: target = 1", "(result): target = 1"])
+@pytest.mark.parametrize(
+    "annotation",
+    ["holder.x: target = 1", "holder[0]: target = 1", "(result): target = 1"],
+)
 def test_non_simple_annotation_is_not_deferred(project, deferred_prefix, annotation):
     if annotation.startswith("(result)"):
         setup, access = "", "result"
@@ -261,9 +349,19 @@ def test_non_simple_annotation_is_not_deferred(project, deferred_prefix, annotat
         setup, access = "holder = [0]\n", "holder[0]"
     else:
         setup, access = "class Holder: pass\nholder = Holder()\n", "holder.x"
-    source = module(project, "source", deferred_prefix + "target = int\n" + setup + annotation + f"\nprint({access})\n")
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + "target = int\n"
+        + setup
+        + annotation
+        + f"\nprint({access})\n",
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "target = int" not in source.read()
     assert execute(project, source) == before == "1\n"
 
@@ -271,7 +369,10 @@ def test_non_simple_annotation_is_not_deferred(project, deferred_prefix, annotat
 def test_nested_eager_function_annotation_allows_inline(project):
     if sys.version_info >= (3, 14):
         pytest.skip("default annotations are deferred on Python 3.14+")
-    source = module(project, "source", '''\
+    source = module(
+        project,
+        "source",
+        """\
         def outer():
             original = int
             target = original
@@ -281,15 +382,22 @@ def test_nested_eager_function_annotation_allows_inline(project):
             return inner
         import typing
         print(typing.get_type_hints(outer())["x"] is int)
-    ''')
+    """,
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "target" not in source.read()
     assert execute(project, source) == before == "True\n"
 
 
 def test_class_annotation_within_function_is_still_deferred(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         original = int
         target = original
         def factory():
@@ -299,7 +407,8 @@ def test_class_annotation_within_function_is_still_deferred(project, deferred_pr
         original = str
         import typing
         print(typing.get_type_hints(factory())["x"] is int)
-    '''))
+    """),
+    )
     before = source.read()
     assert execute(project, source) == "True\n"
     with pytest.raises(RefactoringError, match="deferred annotation"):
@@ -308,7 +417,11 @@ def test_class_annotation_within_function_is_still_deferred(project, deferred_pr
 
 
 def test_class_shadowed_annotation_checks_runtime_namespace(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         target = int
         class Owner:
             target = str
@@ -316,7 +429,8 @@ def test_class_shadowed_annotation_checks_runtime_namespace(project, deferred_pr
         result = target
         import typing
         print(result is int, typing.get_type_hints(Owner)["x"] is str)
-    '''))
+    """),
+    )
     before = execute(project, source)
     inline = create_inline(project, source, source.read().index("target") + 1)
     if deferred_prefix:
@@ -333,24 +447,39 @@ def test_class_shadowed_annotation_checks_runtime_namespace(project, deferred_pr
 
 
 def test_resources_sequence_is_preserved(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + "target = int\nresult = target\nprint(result is int)\n")
+    source = module(
+        project,
+        "source",
+        deferred_prefix + "target = int\nresult = target\nprint(result is int)\n",
+    )
     before = execute(project, source)
     resources = (source,)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes(resources=resources))
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes(
+            resources=resources
+        )
+    )
     assert "target" not in source.read()
     assert execute(project, source) == before == "True\n"
 
 
 def test_function_body_shadowing_still_allows_inline(project, deferred_prefix):
-    source = module(project, "source", deferred_prefix + dedent('''\
+    source = module(
+        project,
+        "source",
+        deferred_prefix
+        + dedent("""\
         target = int
         def func(target: str):
             return target
         result = target
         print(result is int, func(str) is str)
-    '''))
+    """),
+    )
     before = execute(project, source)
-    project.do(create_inline(project, source, source.read().index("target") + 1).get_changes())
+    project.do(
+        create_inline(project, source, source.read().index("target") + 1).get_changes()
+    )
     assert "result = int" in source.read()
     assert "return target" in source.read()
     assert execute(project, source) == before == "True True\n"
@@ -358,16 +487,26 @@ def test_function_body_shadowing_still_allows_inline(project, deferred_prefix):
 
 @pytest.mark.parametrize("remove", [False, True])
 @pytest.mark.parametrize("only_current", [False, True])
-def test_only_current_checks_annotation_in_third_module(project, deferred_prefix, remove, only_current):
+def test_only_current_checks_annotation_in_third_module(
+    project, deferred_prefix, remove, only_current
+):
     source = module(project, "source", "target = int\n")
-    annotated = module(project, "annotated", deferred_prefix + "import source\ndef func(x: source.target):\n    pass\n")
-    entry = module(project, "entry", '''\
+    annotated = module(
+        project,
+        "annotated",
+        deferred_prefix + "import source\ndef func(x: source.target):\n    pass\n",
+    )
+    entry = module(
+        project,
+        "entry",
+        """\
         import source
         import annotated
         result = source.target
         import typing
         print(result is typing.get_type_hints(annotated.func)["x"])
-    ''')
+    """,
+    )
     before = {r: r.read() for r in (source, annotated, entry)}
     output = execute(project, entry)
     inline = create_inline(project, entry, entry.read().rindex("target") + 1)
@@ -376,7 +515,11 @@ def test_only_current_checks_annotation_in_third_module(project, deferred_prefix
             inline.get_changes(only_current=only_current, resources=[entry, source])
         assert {r: r.read() for r in before} == before
     else:
-        project.do(inline.get_changes(only_current=only_current, remove=False, resources=[entry, source]))
+        project.do(
+            inline.get_changes(
+                only_current=only_current, remove=False, resources=[entry, source]
+            )
+        )
         assert "result = int" in entry.read()
         assert source.read() == before[source]
         assert annotated.read() == before[annotated]
@@ -385,7 +528,10 @@ def test_only_current_checks_annotation_in_third_module(project, deferred_prefix
 
 def test_future_import_alias_preserves_runtime_global_binding(project):
     source = module(project, "source", "target = int\n")
-    entry = module(project, "entry", '''\
+    entry = module(
+        project,
+        "entry",
+        """\
         from __future__ import annotations
         from source import target as Alias
         class Owner:
@@ -393,7 +539,8 @@ def test_future_import_alias_preserves_runtime_global_binding(project):
             x: Alias
         import typing
         print(typing.get_type_hints(Owner)["x"] is int)
-    ''')
+    """,
+    )
     before = {source: source.read(), entry: entry.read()}
     assert execute(project, entry) == "True\n"
     with pytest.raises(RefactoringError, match="deferred annotation"):
@@ -404,7 +551,10 @@ def test_future_import_alias_preserves_runtime_global_binding(project):
 
 def test_future_qualified_annotation_preserves_runtime_global_binding(project):
     source = module(project, "source", "target = int\n")
-    entry = module(project, "entry", '''\
+    entry = module(
+        project,
+        "entry",
+        """\
         from __future__ import annotations
         import source
         class Holder:
@@ -415,7 +565,8 @@ def test_future_qualified_annotation_preserves_runtime_global_binding(project):
         result = source.target
         import typing
         print(result is typing.get_type_hints(Owner)["x"])
-    ''')
+    """,
+    )
     before = {source: source.read(), entry: entry.read()}
     assert execute(project, entry) == "True\n"
     with pytest.raises(RefactoringError, match="deferred annotation"):

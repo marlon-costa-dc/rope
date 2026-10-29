@@ -133,9 +133,8 @@ class FilteredResourceObserver:
                     changes.add_removed(file, new_file)
         if self._is_parent_changed(resource):
             changes.add_changed(resource.parent)
-        if new_resource is not None:
-            if self._is_parent_changed(new_resource):
-                changes.add_changed(new_resource.parent)
+        if new_resource is not None and self._is_parent_changed(new_resource):
+            changes.add_changed(new_resource.parent)
 
     def _is_parent_changed(self, child):
         return child.parent in self.resources
@@ -212,9 +211,8 @@ class FilteredResourceObserver:
             all_moved.add(resource)
         if resource.is_folder():
             for file in self.resources:
-                if resource.contains(file):
-                    if not file.exists():
-                        all_moved.add(file)
+                if resource.contains(file) and not file.exists():
+                    all_moved.add(file)
         moved = set(all_moved)
         for folder in [file for file in all_moved if file.is_folder()]:
             if folder in moved:

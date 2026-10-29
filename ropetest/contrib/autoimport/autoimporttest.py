@@ -76,13 +76,15 @@ def test_autoimport_memory_parameter_is_true(
 
 
 def test_autoimport_omitted_memory_parameter_is_deprecated(project: Project):
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"The default value for `AutoImport\(memory\)` argument will change",
+    with (
+        pytest.warns(
+            DeprecationWarning,
+            match=r"The default value for `AutoImport\(memory\)` argument will change",
+        ),
+        AutoImport(project) as ai,
     ):
-        with AutoImport(project) as ai:
-            assert ai.memory is True
-            assert is_in_memory_database(ai.connection)
+        assert ai.memory is True
+        assert is_in_memory_database(ai.connection)
 
 
 def test_autoimport_memory_parameter_is_false(
@@ -100,13 +102,17 @@ def test_init_py(
     mod1: File,
 ):
     mod1_init = pkg1.get_child("__init__.py")
-    mod1_init.write(dedent("""\
+    mod1_init.write(
+        dedent("""\
         def foo():
             pass
-    """))
-    mod1.write(dedent("""\
+    """)
+    )
+    mod1.write(
+        dedent("""\
         foo
-    """))
+    """)
+    )
     autoimport.generate_cache([mod1_init])
     results = autoimport.search("foo", True)
     assert [("from pkg1 import foo", "foo")] == results
@@ -159,10 +165,14 @@ def test_multithread_connections_closed_on_close(project: Project):
     assert ai._closed
     assert len(ai._connections) == 0
     for conn in all_conns:
-        with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
+        with pytest.raises(
+            sqlite3.ProgrammingError, match="Cannot operate on a closed database"
+        ):
             conn.execute("SELECT 1")
 
-    with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
+    with pytest.raises(
+        exceptions.RopeError, match="AutoImport instance has been closed"
+    ):
         _ = ai.connection
 
 
@@ -176,7 +186,9 @@ def test_close_thread_connection(project: Project):
             assert worker_conn in ai._connections
             ai.close_thread_connection()
             assert worker_conn not in ai._connections
-            with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
+            with pytest.raises(
+                sqlite3.ProgrammingError, match="Cannot operate on a closed database"
+            ):
                 worker_conn.execute("SELECT 1")
             new_conn = ai.connection
             assert new_conn is not worker_conn
@@ -192,7 +204,9 @@ def test_close_idempotent(project: Project):
     ai.close()
     assert ai._closed
     ai.close()
-    with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
+    with pytest.raises(
+        sqlite3.ProgrammingError, match="Cannot operate on a closed database"
+    ):
         conn.execute("SELECT 1")
 
 
@@ -200,10 +214,14 @@ def test_register_connection_after_close(project: Project):
     ai = AutoImport(project, memory=True)
     ai.close()
     conn = AutoImport.create_database_connection(memory=True)
-    with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
+    with pytest.raises(
+        exceptions.RopeError, match="AutoImport instance has been closed"
+    ):
         ai._register_connection(conn)
     assert conn not in ai._connections
-    with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
+    with pytest.raises(
+        sqlite3.ProgrammingError, match="Cannot operate on a closed database"
+    ):
         conn.execute("SELECT 1")
 
 
@@ -211,7 +229,9 @@ def test_connection_setter_after_close(project: Project):
     ai = AutoImport(project, memory=True)
     ai.close()
     with closing(AutoImport.create_database_connection(memory=True)) as conn:
-        with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
+        with pytest.raises(
+            exceptions.RopeError, match="AutoImport instance has been closed"
+        ):
             ai.connection = conn
 
 
@@ -255,24 +275,24 @@ def test_resource_to_module_skips_non_package_folders(
 @contextmanager
 def assert_database_is_reset(conn):
     conn.execute("ALTER TABLE names ADD COLUMN deprecated_column")
-    names_ddl, = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
+    (names_ddl,) = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
     assert "deprecated_column" in names_ddl
 
     yield
 
-    names_ddl, = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
+    (names_ddl,) = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
     assert "deprecated_column" not in names_ddl, "Database did not get reset"
 
 
 @contextmanager
 def assert_database_is_preserved(conn):
     conn.execute("ALTER TABLE names ADD COLUMN deprecated_column")
-    names_ddl, = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
+    (names_ddl,) = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
     assert "deprecated_column" in names_ddl
 
     yield
 
-    names_ddl, = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
+    (names_ddl,) = [ddl for ddl in conn.iterdump() if "CREATE TABLE names" in ddl]
     assert "deprecated_column" in names_ddl, "Database was reset unexpectedly"
 
 
@@ -285,32 +305,55 @@ def test_setup_db_metadata_table_is_missing(autoimport):
 
 def test_setup_db_metadata_table_is_outdated(autoimport):
     conn = autoimport.connection
-    data = ("outdated", "", "2020-01-01T00:00:00")  # (version_hash, hash_data, created_at)
+    data = (
+        "outdated",
+        "",
+        "2020-01-01T00:00:00",
+    )  # (version_hash, hash_data, created_at)
     autoimport._execute(models.Metadata.objects.insert_into(), data)
 
-    with assert_database_is_reset(conn), \
-            patch("rope.base.versioning.calculate_version_hash", return_value="up-to-date-value"):
+    with (
+        assert_database_is_reset(conn),
+        patch(
+            "rope.base.versioning.calculate_version_hash",
+            return_value="up-to-date-value",
+        ),
+    ):
         autoimport._setup_db()
 
-    with assert_database_is_preserved(conn), \
-            patch("rope.base.versioning.calculate_version_hash", return_value="up-to-date-value"):
+    with (
+        assert_database_is_preserved(conn),
+        patch(
+            "rope.base.versioning.calculate_version_hash",
+            return_value="up-to-date-value",
+        ),
+    ):
         autoimport._setup_db()
 
 
 def test_setup_db_metadata_table_is_current(autoimport):
     conn = autoimport.connection
-    data = ("up-to-date-value", "", "2020-01-01T00:00:00")  # (version_hash, hash_data, created_at)
+    data = (
+        "up-to-date-value",
+        "",
+        "2020-01-01T00:00:00",
+    )  # (version_hash, hash_data, created_at)
     autoimport._execute(models.Metadata.objects.delete_from())
     autoimport._execute(models.Metadata.objects.insert_into(), data)
 
-    with assert_database_is_preserved(conn), \
-            patch("rope.base.versioning.calculate_version_hash", return_value="up-to-date-value"):
+    with (
+        assert_database_is_preserved(conn),
+        patch(
+            "rope.base.versioning.calculate_version_hash",
+            return_value="up-to-date-value",
+        ),
+    ):
         autoimport._setup_db()
 
 
 class TestQueryUsesIndexes:
     def explain(self, autoimport, query):
-        explanation = list(autoimport._execute(query.explain(), ("abc",)))[0][-1]
+        explanation = next(iter(autoimport._execute(query.explain(), ("abc",))))[-1]
         # the explanation text varies, on some sqlite version
         explanation = explanation.replace("TABLE ", "")
         return explanation
@@ -340,5 +383,5 @@ class TestQueryUsesIndexes:
         query = models.Name.search_submodule_like.select_star()
         assert (
             self.explain(autoimport, query)
-            == "SCAN names" # FIXME: avoid full table scan
+            == "SCAN names"  # FIXME: avoid full table scan
         )

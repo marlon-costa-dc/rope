@@ -28,10 +28,12 @@ class MultiProjectRefactoringTest(unittest.TestCase):
 
     def test_rename(self):
         self.mod1.write("var = 1\n")
-        self.mod2.write(dedent("""\
+        self.mod2.write(
+            dedent("""\
             import mod1
             myvar = mod1.var
-        """))
+        """)
+        )
         refactoring = multiproject.MultiProjectRefactoring(
             rename.Rename, [self.project2]
         )
@@ -47,14 +49,18 @@ class MultiProjectRefactoringTest(unittest.TestCase):
         )
 
     def test_move(self):
-        self.mod1.write(dedent("""\
+        self.mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
-        self.mod2.write(dedent("""\
+        """)
+        )
+        self.mod2.write(
+            dedent("""\
             import mod1
             myvar = mod1.a_func()
-        """))
+        """)
+        )
         refactoring = multiproject.MultiProjectRefactoring(
             move.create_move, [self.project2]
         )
@@ -79,10 +85,12 @@ class MultiProjectRefactoringTest(unittest.TestCase):
     def test_rename_from_the_project_not_containing_the_change(self):
         self.project2.get_prefs().add("python_path", self.project1.address)
         self.mod1.write("var = 1\n")
-        self.mod2.write(dedent("""\
+        self.mod2.write(
+            dedent("""\
             import mod1
             myvar = mod1.var
-        """))
+        """)
+        )
         refactoring = multiproject.MultiProjectRefactoring(
             rename.Rename, [self.project1]
         )

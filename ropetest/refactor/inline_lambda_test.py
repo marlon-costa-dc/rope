@@ -153,9 +153,7 @@ def test_covers_parameter_kinds(project, expression):
     )
     before = source.read()
     assert execute(project, source) == "True\n"
-    project.do(
-        create_inline(project, source, before.index("target") + 1).get_changes()
-    )
+    project.do(create_inline(project, source, before.index("target") + 1).get_changes())
     assert "target = 42" not in source.read()
     assert expression in source.read()
     assert execute(project, source) == "True\n"

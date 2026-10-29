@@ -90,20 +90,44 @@ def create_arguments(primary, pyfunction, call_node, scope, ignore_instance=Fals
     result = Arguments(args, scope, pyfunction)
     if ignore_instance or not isinstance(called, ast.Attribute):
         return result
-    if isinstance(pyfunction, rope.base.pyobjects.PyFunction) and primary is not None:
+    return bind_method(primary, pyfunction, result, scope)
+
+
+def bind_method(primary, pyfunction, args, scope, owner=None):
+    """Bind an attribute or special method through the native descriptor kind.
+
+    ``owner`` is the class supplying a special-method descriptor. Ordinary
+    attribute calls derive the receiving class from ``primary`` instead.
+    """
+    from rope.base.sourcebindings import SourceLambdaFunction
+
+    if primary is None:
+        return args
+    if isinstance(pyfunction, SourceLambdaFunction):
+        if pyfunction.bound_receiver is not None:
+            return args
+        kind = pyfunction.descriptor_kind
+    elif isinstance(pyfunction, rope.base.pyobjects.PyFunction):
         kind = pyfunction.get_kind()
+    else:
+        kind = None
+    if kind is not None:
+        if kind == "staticmethod":
+            return args
         receiver = primary.get_object()
         if kind == "classmethod":
-            if not isinstance(receiver, rope.base.pyobjects.AbstractClass):
+            if owner is not None:
+                receiver = owner
+            elif not isinstance(receiver, rope.base.pyobjects.AbstractClass):
                 receiver = receiver.get_type()
-            return MixedArguments(
-                rope.base.pynames.UnboundName(receiver), result, scope
-            )
-        if kind == "method" and _is_method_call(primary, pyfunction):
-            return MixedArguments(primary, result, scope)
-    elif _is_method_call(primary, pyfunction):
-        args.insert(0, called.value)
-    return result
+            return MixedArguments(rope.base.pynames.UnboundName(receiver), args, scope)
+        if owner is not None or (
+            kind == "method" and _is_method_call(primary, pyfunction)
+        ):
+            return MixedArguments(primary, args, scope)
+    elif owner is not None or _is_method_call(primary, pyfunction):
+        return MixedArguments(primary, args, scope)
+    return args
 
 
 class ObjectArguments:
@@ -165,8 +189,7 @@ def _is_method_call(primary, pyfunction):
         and isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
     ):
         return True
-    if isinstance(
-        pyobject.get_type(), rope.base.pyobjects.AbstractClass
-    ) and isinstance(pyfunction, rope.base.builtins.BuiltinFunction):
-        return True
-    return False
+    return bool(
+        isinstance(pyobject.get_type(), rope.base.pyobjects.AbstractClass)
+        and isinstance(pyfunction, rope.base.builtins.BuiltinFunction)
+    )

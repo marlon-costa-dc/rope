@@ -18,7 +18,6 @@
 
 import re
 import sys
-from typing import List
 
 import rope.base.builtins  # Use fully qualified names for clarity.
 from rope.base import (
@@ -143,7 +142,7 @@ class InlineMethod(_Inliner):
         `only_current` is `True`, the the current occurrence will be
         inlined, only.
         """
-        changes = ChangeSet("Inline method <%s>" % self.name)
+        changes = ChangeSet(f"Inline method <{self.name}>")
         if resources is None:
             resources = self.project.get_python_files()
         if only_current:
@@ -291,7 +290,7 @@ class InlineVariable(_Inliner):
             self._check_deferred_annotation_references(resource, remove, only_current)
         if remove and self.resource in resources:
             self._check_initializer_removal(resources, only_current)
-        changes = ChangeSet("Inline variable <%s>" % self.name)
+        changes = ChangeSet(f"Inline variable <{self.name}>")
         jobset = task_handle.create_jobset("Calculating changes", len(resources))
 
         for resource in resources:
@@ -700,7 +699,7 @@ class InlineParameter(_Inliner):
         return "parameter"
 
 
-def _join_lines(lines: List[str]) -> str:
+def _join_lines(lines: list[str]) -> str:
     return "\n".join(lines)
 
 
@@ -872,7 +871,7 @@ class _DefinitionGenerator:
         if not hasattr(cls, "_return_pattern"):
 
             def named_pattern(name, list_):
-                return "(?P<%s>" % name + "|".join(list_) + ")"
+                return f"(?P<{name}>" + "|".join(list_) + ")"
 
             comment_pattern = named_pattern("comment", [r"#[^\n]*"])
             string_pattern = named_pattern("string", [codeanalyze.get_string_pattern()])

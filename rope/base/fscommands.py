@@ -126,8 +126,6 @@ class MercurialCommands(FileSystemCommands):
 
     def _import_mercurial(self):
         import mercurial.commands  # type: ignore
-        import mercurial.hg  # type: ignore
-        import mercurial.ui  # type: ignore
 
         return mercurial
 
@@ -278,8 +276,7 @@ def read_str_coding(source):
     for line in source.split(newline, 2)[:2]:
         if re.match(CODING_LINE_PATTERN, line):
             return _find_coding(line)
-    else:
-        return
+    return
 
 
 def _find_coding(text):

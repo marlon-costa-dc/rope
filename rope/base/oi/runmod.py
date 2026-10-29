@@ -112,12 +112,13 @@ def __rope_start_everything():
             #    return False
             # return not frame.f_back or
             #    not self._is_code_inside_project(frame.f_back.f_code)
-            if not self._is_code_inside_project(frame.f_code) and (
-                not frame.f_back
-                or not self._is_code_inside_project(frame.f_back.f_code)
-            ):
-                return False
-            return True
+            return not (
+                not self._is_code_inside_project(frame.f_code)
+                and (
+                    not frame.f_back
+                    or not self._is_code_inside_project(frame.f_back.f_code)
+                )
+            )
 
         def _is_code_inside_project(self, code):
             source = self._path(code.co_filename)
@@ -159,7 +160,7 @@ def __rope_start_everything():
                 if len(object_) > 0:
                     # @todo - fix it properly, why is __locals__ being
                     # duplicated ?
-                    keys = [key for key in object_.keys() if key != "__locals__"][0]
+                    keys = next(key for key in object_ if key != "__locals__")
                     values = object_[keys]
                 return (
                     "builtin",

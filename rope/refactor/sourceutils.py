@@ -52,9 +52,13 @@ def add_methods(pymodule, class_scope, methods_sources):
         + get_indent(pymodule.pycore.project),
     )
     result = []
-    result.append(source_code[:insertion_offset])
-    result.append(indented_methods)
-    result.append(source_code[insertion_offset:])
+    result.extend(
+        (
+            source_code[:insertion_offset],
+            indented_methods,
+            source_code[insertion_offset:],
+        )
+    )
     return "".join(result)
 
 

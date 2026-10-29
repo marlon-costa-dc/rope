@@ -27,9 +27,11 @@ def test_public_package_and_module_resources(tmp_path):
         assert package_resource.has_child("__init__.py")
         assert not package_resource.get_child("__init__.py").is_folder()
         assert not module_resource.is_folder()
-        assert project.get_folder("initializer_directory").get_child(
-            "__init__.py"
-        ).is_folder()
+        assert (
+            project.get_folder("initializer_directory")
+            .get_child("__init__.py")
+            .is_folder()
+        )
         assert not project.get_folder("missing_initializer").has_child("__init__.py")
         assert project.find_module("absent_module") is None
         with pytest.raises(ResourceNotFoundError):

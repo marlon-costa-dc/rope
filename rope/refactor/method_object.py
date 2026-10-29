@@ -86,7 +86,7 @@ class MethodObject:
             new_name = arg
             if arg == "self":
                 new_name = "host"
-            header += ", %s" % new_name
+            header += f", {new_name}"
             body += indents * 2 + f"self.{arg} = {new_name}\n"
         header += "):"
         return f"{header}\n{body}\n"

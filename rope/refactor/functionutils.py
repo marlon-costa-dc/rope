@@ -1,5 +1,4 @@
 import ast
-from typing import List, Tuple
 
 from rope.base import exceptions, pyobjects, worder
 from rope.base.builtins import Lambda
@@ -256,7 +255,7 @@ class _FunctionDefParser(_BaseFunctionParser):
         self.ast = ast.parse(_modified_call).body[0]
         assert isinstance(self.ast, ast.FunctionDef)
 
-    def get_parameters(self) -> Tuple[List[str], List[Tuple[str, str]]]:
+    def get_parameters(self) -> tuple[list[str], list[tuple[str, str]]]:
         # FIXME: the weird parsing here is because we're replicating what
         # _FunctionParser originally did, which was designed before the
         # existence of posonlyargs and kwonlyargs, we'll want to rewrite this
@@ -298,7 +297,7 @@ class _FunctionCallParser(_BaseFunctionParser):
         self.ast = ast.parse(call).body[0].value
         assert isinstance(self.ast, ast.Call)
 
-    def get_parameters(self) -> Tuple[List[str], List[Tuple[str, str]]]:
+    def get_parameters(self) -> tuple[list[str], list[tuple[str, str]]]:
         args = []
         for arg in self.ast.args:
             arg_value = self._get_source_range(arg)

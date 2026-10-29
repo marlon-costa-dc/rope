@@ -1,7 +1,6 @@
 import re
 from contextlib import contextmanager
 from itertools import chain
-from typing import Dict
 
 from rope.base import ast, codeanalyze
 from rope.base.change import ChangeContents, ChangeSet
@@ -35,7 +34,7 @@ from rope.refactor import patchedast, similarfinder, sourceutils, suites, usefun
 # There are a few more helper functions and classes used by above
 # classes.
 class _ExtractRefactoring:
-    kind_prefixes: Dict[str, str] = {}
+    kind_prefixes: dict[str, str] = {}
 
     def __init__(self, project, resource, start_offset, end_offset, variable=False):
         self.project = project
@@ -483,7 +482,7 @@ class _ExceptionalConditionChecker:
         try:
             extracted = info.extracted
             if info.one_line:
-                extracted = "(%s)" % extracted
+                extracted = f"({extracted})"
             if _UnmatchedBreakOrContinueFinder.has_errors(extracted):
                 raise RefactoringError(
                     "A break/continue without having a matching for/while loop."
@@ -508,7 +507,6 @@ class _ExceptionalConditionChecker:
     def multi_line_conditions(self, info):
         node = _parse_text(info.source[info.region[0] : info.region[1]])
         count = usefunction._return_count(node)
-        extracted = info.extracted
         if count > 1:
             raise RefactoringError(
                 "Extracted piece can have only one return statement."
@@ -577,9 +575,9 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
 
     def get_definition(self):
         if self.info.global_ or self.info.class_to_define_before is not None:
-            return "\n%s\n" % self._get_function_definition()
+            return f"\n{self._get_function_definition()}\n"
         else:
-            return "\n%s" % self._get_function_definition()
+            return f"\n{self._get_function_definition()}"
 
     def get_replacement_pattern(self):
         variables = []
@@ -597,7 +595,7 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
     def _get_body(self):
         result = sourceutils.fix_indentation(self.info.extracted, 0)
         if self.info.one_line:
-            result = "(%s)" % result
+            result = f"({result})"
         return result
 
     def _find_temps(self):
@@ -630,7 +628,7 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
 
         result = []
         self._append_decorators(result)
-        result.append("def %s:\n" % self._get_function_signature(args))
+        result.append(f"def {self._get_function_signature(args)}:\n")
         unindented_body = self._get_unindented_function_body(returns)
         indents = sourceutils.get_indent(self.info.project)
         function_body = sourceutils.indent_lines(unindented_body, indents)
@@ -663,7 +661,7 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
             if self_name in args:
                 args.remove(self_name)
             args.insert(0, self_name)
-        return prefix + self.info.new_name + "(%s)" % self._get_comma_form(args)
+        return prefix + self.info.new_name + f"({self._get_comma_form(args)})"
 
     def _extracting_method(self):
         return not self._extracting_staticmethod() and (
@@ -685,11 +683,7 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
             return param_names[0]
 
     def _get_function_call(self, args):
-        return "{prefix}{name}({args})".format(
-            prefix=self._get_function_call_prefix(args),
-            name=self.info.new_name,
-            args=self._get_comma_form(args),
-        )
+        return f"{self._get_function_call_prefix(args)}{self.info.new_name}({self._get_comma_form(args)})"
 
     def _get_function_call_prefix(self, args):
         prefix = ""
@@ -763,7 +757,7 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
         unindented_body = self._insert_globals(unindented_body)
         unindented_body = self._insert_nonlocals(unindented_body)
         if returns:
-            unindented_body += "\nreturn %s" % self._get_comma_form(returns)
+            unindented_body += f"\nreturn {self._get_comma_form(returns)}"
         return unindented_body
 
     def _get_single_expression_function_body(self):
@@ -823,7 +817,7 @@ class _ExtractVariableParts:
         return self.info.new_name + " = " + extracted + "\n"
 
     def get_body_pattern(self):
-        return "(%s)" % self.info.extracted.strip()
+        return f"({self.info.extracted.strip()})"
 
     def get_replacement_pattern(self):
         return self.info.new_name
@@ -851,13 +845,11 @@ class _FunctionInformationCollector(ast.RopeNodeVisitor):
         self.loop_depth = 0
 
     def _read_variable(self, name, lineno):
-        if self.start <= lineno <= self.end:
-            if name not in self.written:
-                if not self.conditional or name not in self.maybe_written:
-                    self.read.add(name)
-        if self.end < lineno:
-            if name not in self.postwritten:
-                self.postread.add(name)
+        if self.start <= lineno <= self.end and name not in self.written:
+            if not self.conditional or name not in self.maybe_written:
+                self.read.add(name)
+        if self.end < lineno and name not in self.postwritten:
+            self.postread.add(name)
 
     def _written_variable(self, name, lineno):
         if self.start <= lineno <= self.end:

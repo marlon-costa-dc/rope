@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING, Optional, Union
 
 import rope.base.utils as base_utils
 from rope.base import evaluate
@@ -14,12 +13,10 @@ def get_super_func(pyfunc):
     if not isinstance(pyfunc.parent, PyClass):
         return
 
-    for cls in get_mro(pyfunc.parent)[1:]:
-        try:
-            superfunc = cls.get_attribute(pyfunc.get_name()).get_object()
-        except AttributeNotFoundError:
-            pass
-        else:
+    for cls in _source_ancestors(pyfunc.parent):
+        attributes = cls._get_own_attributes()
+        if pyfunc.get_name() in attributes:
+            superfunc = attributes[pyfunc.get_name()].get_object()
             if isinstance(superfunc, PyFunction):
                 return superfunc
 
@@ -34,9 +31,10 @@ def get_super_assignment(pyname):
     except TypeError:
         return
     else:
-        for super_pyclass in get_mro(pyclass)[1:]:
-            if attr_name in super_pyclass:
-                return super_pyclass[attr_name]
+        for super_pyclass in _source_ancestors(pyclass):
+            attributes = super_pyclass._get_own_attributes()
+            if attr_name in attributes:
+                return attributes[attr_name]
 
 
 def get_class_with_attr_name(pyname):
@@ -69,20 +67,15 @@ def get_lineno_for_node(assign_node):
     return 1
 
 
-def get_mro(pyclass):
-    # FIXME: to use real mro() result
-    class_list = [pyclass]
-    for cls in class_list:
-        for super_cls in cls.get_superclasses():
-            if isinstance(super_cls, PyClass) and super_cls not in class_list:
-                class_list.append(super_cls)
-    return class_list
+def _source_ancestors(pyclass):
+    """Return the ancestors with source, in method resolution order"""
+    return [cls for cls in pyclass.get_mro()[1:] if isinstance(cls, PyClass)]
 
 
 def resolve_type(
     type_name: str,
-    pyobject: Union[PyDefinedObject, PyObject],
-) -> Optional[Union[PyDefinedObject, PyObject]]:
+    pyobject: PyDefinedObject | PyObject,
+) -> PyDefinedObject | PyObject | None:
     """
     Find proper type object from its name.
     """
@@ -91,7 +84,7 @@ def resolve_type(
     else:
         deprecated_aliases = {"collections": "_collections_abc"}
     ret_type = None
-    logging.debug("Looking for %s", type_name)
+    logging.debug(f"Looking for {type_name}")
     if "." not in type_name:
         try:
             # XXX: this looks incorrect? It doesn't seem like it would work
@@ -112,16 +105,14 @@ def resolve_type(
             if mod_name in deprecated_aliases:
                 try:
                     logging.debug(
-                        "Looking for %s in %s", attr_name, deprecated_aliases[mod_name]
+                        f"Looking for {attr_name} in {deprecated_aliases[mod_name]}"
                     )
                     mod = mod_finder._find_module(
                         deprecated_aliases[mod_name]
                     ).get_object()
                     ret_type = mod.get_attribute(attr_name).get_object()
                 except AttributeNotFoundError:
-                    logging.exception(
-                        "Cannot resolve type %s in %s", attr_name, dir(mod)
-                    )
+                    logging.exception(f"Cannot resolve type {attr_name} in {dir(mod)}")
     logging.debug("ret_type = %s", ret_type)
     return ret_type
 
@@ -151,10 +142,7 @@ class ParametrizeType:
         return pyobject
 
     def _get_type_factory(self, pyobject):
-        type_str = "{}.{}".format(
-            pyobject.get_module().get_name(),
-            pyobject.get_name(),
-        )
+        type_str = f"{pyobject.get_module().get_name()}.{pyobject.get_name()}"
         if type_str in self._supported_mapping:
             return base_utils.resolve(self._supported_mapping[type_str])
 

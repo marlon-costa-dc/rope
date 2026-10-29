@@ -24,10 +24,139 @@ def alias_project(tmp_path):
         project.close()
 
 
+def test_installed_native_capture_region(alias_project):
+    source = 'prefix = "é"\nvalue = (first,\n         second)\n'
+    resource = alias_project.root.create_file("captures.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    match = next(similarfinder.SimilarFinder(module).get_matches("value = ${value}"))
+    start, end = match.get_capture_region("value")
+    assert source[start:end] == "(first,\n         second)"
+    with pytest.raises(ValueError, match="missing"):
+        match.get_capture_region("missing")
+
+
+def test_installed_mro_retains_unresolved_imported_base(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write("declared = 1\n")
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(
+        dedent("""\
+        from provider import missing
+        class Base(object):
+            member = 1
+        class Derived(Base, missing):
+            pass
+    """)
+    )
+    module = alias_project.get_pymodule(resource)
+    base = module["Base"].get_object()
+    derived = module["Derived"].get_object()
+    resolved, unresolved = derived.get_bases()
+    assert resolved is base
+    assert isinstance(unresolved, pyobjects.UnresolvedBase)
+    assert unresolved.pyobject is module["missing"].get_object()
+    assert derived.get_superclasses() == [base]
+    assert derived.get_mro() == [derived, *base.get_mro(), unresolved]
+    assert derived["member"] is base["member"]
+
+
+def test_installed_class_header_retains_previous_import_binding(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write(
+        dedent("""\
+        class Foo:
+            member = 1
+    """)
+    )
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(
+        dedent("""\
+        from provider import Foo
+        class Foo(Foo):
+            pass
+    """)
+    )
+    imported = alias_project.get_pymodule(provider)["Foo"].get_object()
+    derived = alias_project.get_pymodule(resource)["Foo"].get_object()
+    assert derived.get_mro() == [derived, imported]
+    assert derived["member"] is imported["member"]
+
+
+def test_installed_class_subscription_retains_hook_result(alias_project):
+    resource = alias_project.root.create_file("subscription.py")
+    source = dedent("""\
+        class Other:
+            pass
+        class Base:
+            def __class_getitem__(cls, item):
+                return Other
+        class Derived(Base[int]):
+            pass
+    """)
+    resource.write(source)
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["Derived"].__bases__ == (namespace["Other"],)
+    module = alias_project.get_pymodule(resource)
+    assert module["Derived"].get_object().get_bases() == [module["Other"].get_object()]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+def test_installed_pep695_bound_generic_preserves_ancestry(alias_project):
+    resource = alias_project.root.create_file("generic.py")
+    source = dedent("""\
+        class Identity:
+            pass
+        class Ownership[Resource: Identity]:
+            pass
+        class Leaf(Ownership[Identity]):
+            pass
+    """)
+    resource.write(source)
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["Ownership"] in namespace["Leaf"].__mro__
+    assert namespace["Ownership"].__type_params__[0].__bound__ is namespace["Identity"]
+    module = alias_project.get_pymodule(resource)
+    assert module["Ownership"].get_object() in module["Leaf"].get_object().get_mro()
+
+
+def test_installed_native_import_roots(alias_project):
+    source = (
+        "import outer.child as overwritten, second\n"
+        "overwritten = None\n"
+        "from .relative import ignored\n"
+        "if False:\n    from guarded.child import *\n"
+        "def nested():\n    import nested_package.child\n"
+    )
+    resource = alias_project.root.create_file("imports.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    assert module.get_source_binding_index().absolute_import_roots() == frozenset(
+        {"outer", "second", "guarded", "nested_package"}
+    )
+
+
+def test_installed_native_assignment_string_sequence(alias_project):
+    resource = alias_project.root.create_file("metadata.py")
+    resource.write("shared = ('first',)\nclass Owner:\n    names = tuple(shared)\n")
+    module = alias_project.get_pymodule(resource)
+    index = module.get_source_binding_index()
+    assert index.assignment_string_sequence("names") is None
+    scope = module["Owner"].get_object().get_scope()
+    assert index.assignment_string_sequence("names", scope) == ("first",)
+    assert index.assignment_string_sequence("names", class_metadata=True) == ("first",)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("owner", ["module", "function", "class"])
-@pytest.mark.parametrize("bindings", ["alias", "ordinary-first", "alias-first", "repeated"])
-def test_type_alias_definition_location_preserves_first_binding(alias_project, owner, bindings):
+@pytest.mark.parametrize(
+    "bindings", ["alias", "ordinary-first", "alias-first", "repeated"]
+)
+def test_type_alias_definition_location_preserves_first_binding(
+    alias_project, owner, bindings
+):
     declaration = "type Bag[T] = (\n    SequenceOf[T]\n)\n"
     body = "ordinary = 0\n\n"
     if bindings == "ordinary-first":
@@ -38,7 +167,9 @@ def test_type_alias_definition_location_preserves_first_binding(alias_project, o
     elif bindings == "repeated":
         body += "type Bag[U] = SequenceOf[U]\n"
     body += "reference = Bag\n"
-    header = {"module": "", "function": "def factory():\n", "class": "class Owner:\n"}[owner]
+    header = {"module": "", "function": "def factory():\n", "class": "class Owner:\n"}[
+        owner
+    ]
     source = "from collections.abc import Sequence as SequenceOf\n" + header
     source += indent(body, "    ") if header else body
     resource = alias_project.root.create_file("declarations.py")
@@ -46,14 +177,20 @@ def test_type_alias_definition_location_preserves_first_binding(alias_project, o
     module = alias_project.get_pymodule(resource)
     scope = module.get_scope()
     if owner != "module":
-        scope = module["factory" if owner == "function" else "Owner"].get_object().get_scope()
+        scope = (
+            module["factory" if owner == "function" else "Owner"]
+            .get_object()
+            .get_scope()
+        )
     alias = scope["Bag"]
-    first_line = source[:source.index("Bag")].count("\n") + 1
-    ordinary_line = source[:source.index("ordinary =")].count("\n") + 1
+    first_line = source[: source.index("Bag")].count("\n") + 1
+    ordinary_line = source[: source.index("ordinary =")].count("\n") + 1
     assert alias.get_definition_location() == (module, first_line)
     assert scope["ordinary"].get_definition_location() == (module, ordinary_line)
     if bindings in {"ordinary-first", "alias-first"}:
-        assert alias.get_object().get_type() is scope["ordinary"].get_object().get_type()
+        assert (
+            alias.get_object().get_type() is scope["ordinary"].get_object().get_type()
+        )
     else:
         assert alias.get_object() is pyobjects.get_unknown()
     assert alias.get_definition_location() == (module, first_line)
@@ -61,23 +198,38 @@ def test_type_alias_definition_location_preserves_first_binding(alias_project, o
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("owner", ["module", "function", "class"])
-def test_type_alias_location_does_not_evaluate_or_substitute_lazy_value(alias_project, owner):
+def test_type_alias_location_does_not_evaluate_or_substitute_lazy_value(
+    alias_project, owner
+):
     source = "events = []\ndef resolve():\n    events.append('value')\n    raise RuntimeError('lazy value')\n"
     declaration = "type Bag[T] = resolve()\n"
     if owner == "module":
         source += declaration + "selected = Bag\n"
     elif owner == "class":
-        source += "class Owner:\n" + indent(declaration, "    ") + "selected = Owner.Bag\n"
+        source += (
+            "class Owner:\n" + indent(declaration, "    ") + "selected = Owner.Bag\n"
+        )
     else:
-        source += "def factory():\n" + indent(declaration + "return Bag\n", "    ") + "selected = factory()\n"
+        source += (
+            "def factory():\n"
+            + indent(declaration + "return Bag\n", "    ")
+            + "selected = factory()\n"
+        )
     resource = alias_project.root.create_file("lazy.py")
     resource.write(source)
     module = alias_project.get_pymodule(resource)
     scope = module.get_scope()
     if owner != "module":
-        scope = module["factory" if owner == "function" else "Owner"].get_object().get_scope()
+        scope = (
+            module["factory" if owner == "function" else "Owner"]
+            .get_object()
+            .get_scope()
+        )
     alias = scope["Bag"]
-    assert alias.get_definition_location() == (module, source[:source.index("type Bag")].count("\n") + 1)
+    assert alias.get_definition_location() == (
+        module,
+        source[: source.index("type Bag")].count("\n") + 1,
+    )
     assert alias.get_object() is pyobjects.get_unknown()
     namespace = {}
     exec(compile(source, resource.real_path, "exec"), namespace)
@@ -107,12 +259,17 @@ def test_method_type_alias_is_local_not_an_instance_attribute(alias_project, met
 
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
-@pytest.mark.parametrize("imports,reference", [
-    ("from supplier import Bag", "Bag"),
-    ("from supplier import Bag as Alias", "Alias"),
-    ("import supplier", "supplier.Bag"),
-])
-def test_imported_type_alias_location_and_native_rename(alias_project, imports, reference):
+@pytest.mark.parametrize(
+    "imports,reference",
+    [
+        ("from supplier import Bag", "Bag"),
+        ("from supplier import Bag as Alias", "Alias"),
+        ("import supplier", "supplier.Bag"),
+    ],
+)
+def test_imported_type_alias_location_and_native_rename(
+    alias_project, imports, reference
+):
     supplier = alias_project.root.create_file("supplier.py")
     source = "from collections.abc import Sequence\n\ntype Bag[T] = Sequence[T]\n"
     supplier.write(source)
@@ -124,7 +281,9 @@ def test_imported_type_alias_location_and_native_rename(alias_project, imports, 
     offset = client_source.rindex(reference.rsplit(".", 1)[-1]) + 1
     binding = evaluate.eval_location(consumer, offset)
     assert binding.get_definition_location() == (producer, 3)
-    alias_project.do(rename.Rename(alias_project, supplier, source.index("Bag")).get_changes("Crate"))
+    alias_project.do(
+        rename.Rename(alias_project, supplier, source.index("Bag")).get_changes("Crate")
+    )
     assert supplier.read() == source.replace("Bag", "Crate")
     assert client.read() == client_source.replace("Bag", "Crate")
 
@@ -320,8 +479,10 @@ def test_local_and_external_snapshot_resources_ignore_changed_disk(tmp_path):
         holder = name.get_object().get_module()
         assert holder.get_resource().project is outside
         assert project.find_module("late") is None
-        assert project.get_resource("src/consumer.py").read().startswith(
-            "from provider import Original"
+        assert (
+            project.get_resource("src/consumer.py")
+            .read()
+            .startswith("from provider import Original")
         )
         assert project.get_folder("src").get_children() == [
             project.get_file("src/consumer.py")
@@ -368,9 +529,7 @@ def test_native_relative_namespace_and_stub_resources_use_captured_inputs(tmp_pa
         "local = Local\nexternal = External\n",
         encoding="utf-8",
     )
-    (namespace / "owner.py").write_text(
-        "class External:\n    pass\n", encoding="utf-8"
-    )
+    (namespace / "owner.py").write_text("class External:\n    pass\n", encoding="utf-8")
     (local / "schema.pyi").write_text(
         "class Schema:\n    value: str\n", encoding="utf-8"
     )
@@ -402,7 +561,10 @@ def test_native_relative_namespace_and_stub_resources_use_captured_inputs(tmp_pa
         assert external_owner.get_module().get_resource().project is outside
         assert project.find_module("namespace").is_folder()
         stub = project.get_resource("src/schema.pyi")
-        assert project.get_pymodule(stub).get_attribute("Schema").get_object().get_name() == "Schema"
+        assert (
+            project.get_pymodule(stub).get_attribute("Schema").get_object().get_name()
+            == "Schema"
+        )
         # This port preserves Rope's existing module election: .pyi is an
         # explicitly supplied resource, not an extra module-name fallback.
         assert project.find_module("schema") is None

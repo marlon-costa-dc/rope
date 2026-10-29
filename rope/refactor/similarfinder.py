@@ -29,7 +29,7 @@ class SimilarFinder:
                 pymodule.source_code, pymodule.get_ast(), self._does_match
             )
         except MismatchedTokenError:
-            print("in file %s" % pymodule.resource.path)
+            print(f"in file {pymodule.resource.path}")
             raise
         self.pymodule = pymodule
         if wildcards is None:
@@ -184,9 +184,8 @@ class _ASTMatcher:
                     self.matches.append(StatementMatch(current_stmts, mapping))
 
     def _match_nodes(self, expected, node, mapping):
-        if isinstance(expected, ast.Name):
-            if self.ropevar.is_var(expected.id):
-                return self._match_wildcard(expected, node, mapping)
+        if isinstance(expected, ast.Name) and self.ropevar.is_var(expected.id):
+            return self._match_wildcard(expected, node, mapping)
         if not isinstance(expected, ast.AST):
             return expected == node
         if expected.__class__ != node.__class__:
@@ -248,6 +247,12 @@ class Match:
     def get_ast(self, name):
         """Return the ast node that has matched rope variables"""
         return self.mapping.get(name, None)
+
+    def get_capture_region(self, name):
+        """Return the captured variable's half-open source character range."""
+        if name not in self.mapping:
+            raise ValueError(f"Match has no captured variable: {name}")
+        return patchedast.node_region(self.mapping[name])
 
 
 class ExpressionMatch(Match):
@@ -381,9 +386,9 @@ def make_pattern(code, variables):
 
     finder = RawSimilarFinder(code, does_match=does_match)
     for variable in variables:
-        for match in finder.get_matches("${%s}" % variable):
+        for match in finder.get_matches(f"${{{variable}}}"):
             start, end = match.get_region()
-            collector.add_change(start, end, "${%s}" % variable)
+            collector.add_change(start, end, f"${{{variable}}}")
     result = collector.get_changed()
     return result if result is not None else code
 

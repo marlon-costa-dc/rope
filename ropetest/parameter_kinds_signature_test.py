@@ -74,7 +74,9 @@ def test_signature_writers_refuse_new_kinds_atomically(project, parameters, api)
     if api == "get_changes":
         refused([resource, other], operations[api])
     else:
-        with pytest.warns(DeprecationWarning, match=rf"^{api} is deprecated$") as recorded:
+        with pytest.warns(
+            DeprecationWarning, match=rf"^{api} is deprecated$"
+        ) as recorded:
             refused([resource, other], operations[api])
         assert len(recorded) == 1
 
@@ -82,18 +84,15 @@ def test_signature_writers_refuse_new_kinds_atomically(project, parameters, api)
 @pytest.mark.parametrize("kind", ["posonly", "kwonly"])
 def test_signature_hierarchy_checks_actual_override(project, kind):
     parameters = "self, value, /" if kind == "posonly" else "self, *, value"
-    source = (
-        dedent("""\
+    source = dedent("""\
         class Base:
             def f(self, value):
                 return value
-    """)
-        + dedent(f"""\
+    """) + dedent(f"""\
         class Child(Base):
             def f({parameters}):
                 return value + 1
     """)
-    )
     source += (
         "print(Child().f(value=3))\n" if kind == "kwonly" else "print(Child().f(3))\n"
     )

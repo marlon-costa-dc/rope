@@ -27,6 +27,118 @@ class PyCoreScopesTest(unittest.TestCase):
         sample_func = scope["sample_func"].get_object()
         self.assertEqual(get_base_type("Function"), sample_func.get_type())
 
+    def test_indexed_absolute_import_roots_preserve_all_declarations(self):
+        source = dedent("""\
+            import outer.first as replaced, second
+            replaced = None
+            from absolute.child import *
+            from .relative import ignored
+            if False:
+                from guarded.child import value
+            class Owner:
+                import class_scope.child
+                def method(self):
+                    import function_scope.child as local
+                    from ..relative import hidden
+            text = "import not_a_declaration"
+        """)
+        module = libutils.get_string_module(self.project, source)
+        index = module.get_source_binding_index()
+        expected = frozenset(
+            {"outer", "second", "absolute", "guarded", "class_scope", "function_scope"}
+        )
+        self.assertEqual(expected, index.absolute_import_roots())
+        self.assertIs(index, module.get_source_binding_index())
+        self.assertEqual(expected, index.absolute_import_roots())
+
+    def test_indexed_absolute_import_roots_empty_module(self):
+        module = libutils.get_string_module(self.project, "value = 1\n")
+        self.assertEqual(
+            frozenset(), module.get_source_binding_index().absolute_import_roots()
+        )
+
+    def test_indexed_assignment_string_sequences(self):
+        cases = (
+            ("value = 1\n", None),
+            ("names: tuple[str, ...]\n", ()),
+            ("names = ('first',)\nnames = ('second',)\n", ("first",)),
+            ("alias = names = ['one', 'two']\n", ("one", "two")),
+            ("names: tuple[str, ...] = ('é',)\n", ("é",)),
+            ("shared = ('one',)\nnames = tuple(shared)\n", ("one",)),
+            ("names = []\n", ()),
+            ("names = ['one', 2]\n", ()),
+            ("names = [*other]\n", ()),
+            ("if False:\n    names = ('guarded',)\n", None),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                module = libutils.get_string_module(self.project, source)
+                self.assertEqual(
+                    expected,
+                    module.get_source_binding_index().assignment_string_sequence(
+                        "names"
+                    ),
+                )
+
+    def test_indexed_assignment_sequence_class_scope_and_module_reference(self):
+        module = libutils.get_string_module(
+            self.project, "shared = ('value',)\nclass Owner:\n    names = shared\n"
+        )
+        index = module.get_source_binding_index()
+        self.assertIsNone(index.assignment_string_sequence("names"))
+        owner_scope = module["Owner"].get_object().get_scope()
+        self.assertEqual(
+            ("value",), index.assignment_string_sequence("names", owner_scope)
+        )
+
+    def test_indexed_assignment_sequence_cycles_fail(self):
+        module = libutils.get_string_module(
+            self.project, "names = other\nother = names\n"
+        )
+        with self.assertRaisesRegex(ValueError, "Cyclic"):
+            module.get_source_binding_index().assignment_string_sequence("names")
+
+    def test_indexed_assignment_sequence_rejects_foreign_scope(self):
+        local = libutils.get_string_module(self.project, "names = ('local',)\n")
+        foreign = libutils.get_string_module(
+            self.project, "class Owner:\n    names = ('foreign',)\n"
+        )
+        scope = foreign["Owner"].get_object().get_scope()
+        with self.assertRaisesRegex(ValueError, "another source module"):
+            local.get_source_binding_index().assignment_string_sequence("names", scope)
+
+    def test_indexed_assignment_sequence_class_metadata_precedence(self):
+        cases = (
+            ("class Owner:\n    names = ('class',)\n", ("class",)),
+            ("names = []\nclass Owner:\n    names = ('class',)\n", ()),
+            ("names = 1\nclass Owner:\n    names = ('class',)\n", ()),
+            ("class First: pass\nclass Second:\n    names = ('class',)\n", None),
+            ("class Owner: pass\n", None),
+            ("class Owner:\n    names = names\n", ()),
+            ("if True:\n    class Owner:\n        names = ('guarded',)\n", None),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                module = libutils.get_string_module(self.project, source)
+                self.assertEqual(
+                    expected,
+                    module.get_source_binding_index().assignment_string_sequence(
+                        "names", class_metadata=True
+                    ),
+                )
+
+    def test_indexed_assignment_sequence_same_name_in_module_and_class(self):
+        module = libutils.get_string_module(
+            self.project, "names = ('module',)\nclass Owner:\n    names = names\n"
+        )
+        scope = module["Owner"].get_object().get_scope()
+        self.assertEqual(
+            ("module",),
+            module.get_source_binding_index().assignment_string_sequence(
+                "names", scope
+            ),
+        )
+
     def test_simple_function_scope(self):
         code = dedent("""\
             def sample_func():
@@ -59,11 +171,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_defined_names())),
+            sorted(scope.get_defined_names()),
             ["a_var"],
         )
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
 
@@ -72,7 +184,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
 
@@ -81,7 +193,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
 
@@ -90,7 +202,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
 
@@ -99,7 +211,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
 
@@ -109,7 +221,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_defined_names())),
+            sorted(scope.get_defined_names()),
             ["a_var", "values"],
         )
 
@@ -127,9 +239,7 @@ class PyCoreScopesTest(unittest.TestCase):
         function_scope = scope.get_scopes()[0]
         defined_names = set(function_scope.get_names())
 
-        self.assertLessEqual(
-            {"item", "remaining", "rest", "whole"}, defined_names
-        )
+        self.assertLessEqual({"item", "remaining", "rest", "whole"}, defined_names)
         self.assertNotIn("_", defined_names)
 
     @testutils.only_for_versions_higher("3.8")
@@ -144,11 +254,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["a_var", "b_var", "f_var"],
         )
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names()),
             ["i_var", "j_var"],
         )
 
@@ -163,11 +273,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_defined_names()),
             ["b_var", "c_var"],
         )
         self.assertEqual(
-            list(sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names())),
+            sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names()),
             ["e_var"],
         )
 
@@ -615,8 +725,7 @@ class PyCoreScopesTest(unittest.TestCase):
                         "    # @ is not the decorator marker\n"
                         "    decorate\n"
                         ")\n"
-                        "@other\n"
-                        + definition
+                        "@other\n" + definition
                     ).replace("\n", newline)
                     module = libutils.get_string_module(self.project, code)
                     self.assertEqual(code, module.source_code)
@@ -638,7 +747,7 @@ class PyCoreScopesTest(unittest.TestCase):
     def test_scope_regions_use_the_decoded_resource_source(self):
         for index, newline in enumerate(("\n", "\r\n", "\r")):
             with self.subTest(newline=newline):
-                resource = testutils.create_module(self.project, "regions_%s" % index)
+                resource = testutils.create_module(self.project, f"regions_{index}")
                 resource.write(
                     "@(\n    decorate\n)\ndef sample():\n    return 'π'\n".replace(
                         "\n", newline
@@ -701,8 +810,7 @@ class PyCoreScopesTest(unittest.TestCase):
         for prefix in ("\f\n", "# leading\vcomment\n"):
             with self.subTest(prefix=prefix):
                 code = (
-                    prefix
-                    + "@(\n"
+                    prefix + "@(\n"
                     "    # @ is not the decorator marker\n"
                     "    decorate\n"
                     ")\n"

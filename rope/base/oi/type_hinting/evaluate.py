@@ -31,10 +31,10 @@ class SymbolBase:
         self.third = None  # used by tree nodes
 
     def nud(self, parser):
-        raise SyntaxError("Syntax error (%r)." % self.name)
+        raise SyntaxError(f"Syntax error ({self.name!r}).")
 
     def led(self, left, parser):
-        raise SyntaxError("Unknown operator (%r)." % self.name)
+        raise SyntaxError(f"Unknown operator ({self.name!r}).")
 
     def evaluate(self, pyobject):
         raise NotImplementedError(self.name, self)
@@ -48,6 +48,7 @@ class SymbolBase:
 
 
 class SymbolTable:
+    @staticmethod
     def multi(func):
         def _inner(self, names, *a, **kw):
             for name in names.split():
@@ -134,8 +135,6 @@ class SymbolTable:
             self.first = left
             return self
 
-    multi = staticmethod(multi)  # Just for code checker
-
 
 symbol_table = SymbolTable()
 
@@ -153,7 +152,7 @@ class Lexer:
             | ([a-zA-Z](?:\w|\.)*)  # name
         )
         """,
-        re.U | re.S | re.X,
+        re.UNICODE | re.DOTALL | re.VERBOSE,
     )
 
     def __init__(self, symbol_table):
@@ -170,9 +169,7 @@ class Lexer:
                 s.value = value
             else:
                 raise SyntaxError(
-                    "Unknown operator ({}). Possible operators are {!r}".format(
-                        value, list(self.symbol_table)
-                    )
+                    f"Unknown operator ({value}). Possible operators are {list(self.symbol_table)!r}"
                 )
 
             yield s
@@ -268,7 +265,7 @@ def led(self, left, parser):
     self.first = left
     self.second = []
     if parser.token.name != "]":
-        while 1:
+        while True:
             if parser.token.name == "]":
                 break
             self.second.append(parser.expression())
@@ -291,7 +288,7 @@ def evaluate(self, pyobject):
 def nud(self, parser):
     self.second = []
     if parser.token.name != ")":
-        while 1:
+        while True:
             self.second.append(parser.expression())
             if parser.token.name != ",":
                 break
@@ -308,7 +305,7 @@ def led(self, left, parser):
     self.first = left
     self.second = []
     if parser.token.name != ")":
-        while 1:
+        while True:
             self.second.append(parser.expression())
             if parser.token.name != ",":
                 break

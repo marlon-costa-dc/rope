@@ -60,7 +60,7 @@ class RelativeToAbsoluteVisitor(ImportInfoVisitor):
     def visitFromImport(self, import_stmt, import_info):
         resource = import_info.get_imported_resource(self.context)
         if resource is None:
-            return None
+            return
         absolute_name = libutils.modname(resource)
         if import_info.module_name != absolute_name:
             import_stmt.import_info = importinfo.FromImport(
@@ -295,7 +295,7 @@ class SortingVisitor(ImportInfoVisitor):
 
     def visitNormalImport(self, import_stmt, import_info):
         if import_info.names_and_aliases:
-            name, alias = import_info.names_and_aliases[0]
+            name, _alias = import_info.names_and_aliases[0]
             resource = self.project.find_module(name, folder=self.folder)
             self._check_imported_resource(import_stmt, resource, name)
 

@@ -8,7 +8,7 @@ class ModuleToPackage:
         self.resource = resource
 
     def get_changes(self):
-        changes = ChangeSet("Transform <%s> module to package" % self.resource.path)
+        changes = ChangeSet(f"Transform <{self.resource.path}> module to package")
         new_content = self._transform_relatives_to_absolute(self.resource)
         if new_content is not None:
             changes.add_change(ChangeContents(self.resource, new_content))
@@ -18,7 +18,7 @@ class ModuleToPackage:
         parent_path = parent.path + "/"
         if not parent.path:
             parent_path = ""
-        new_path = parent_path + "%s/__init__.py" % name
+        new_path = parent_path + f"{name}/__init__.py"
         if self.resource.project == self.project:
             changes.add_change(MoveResource(self.resource, new_path))
         return changes

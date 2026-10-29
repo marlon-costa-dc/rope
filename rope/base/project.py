@@ -6,11 +6,9 @@ import os
 import sys
 import warnings
 from contextlib import ExitStack
-from typing import Optional, Union
 
 import rope.base.fscommands  # Use full qualification for clarity.
-import rope.base.resourceobserver as resourceobserver
-from rope.base import exceptions, history, pycore, taskhandle, utils
+from rope.base import exceptions, history, pycore, resourceobserver, taskhandle, utils
 from rope.base.exceptions import ModuleNotFoundError
 
 # At present rope.base.prefs starts with `# type:ignore`.
@@ -49,7 +47,7 @@ class _Project:
         path = self._get_resource_path(resource_name)
         if not self.fscommands.exists(path):
             raise exceptions.ResourceNotFoundError(
-                "Resource <%s> does not exist" % resource_name
+                f"Resource <{resource_name}> does not exist"
             )
         elif self.fscommands.isfile(path):
             return File(self, resource_name)
@@ -66,7 +64,7 @@ class _Project:
             return pymod
         module = self.find_module(name, folder)
         if module is None:
-            raise ModuleNotFoundError("Module %s not found" % name)
+            raise ModuleNotFoundError(f"Module {name} not found")
         return self.pycore.resource_to_pyobject(module)
 
     def get_python_path_folders(self):
@@ -143,10 +141,10 @@ class _Project:
     def get_relative_module(self, name, folder, level):
         module = self.find_relative_module(name, folder, level)
         if module is None:
-            raise ModuleNotFoundError("Module %s not found" % name)
+            raise ModuleNotFoundError(f"Module {name} not found")
         return self.pycore.resource_to_pyobject(module)
 
-    def find_module(self, modname, folder=None) -> Optional[Union[File, Folder]]:
+    def find_module(self, modname, folder=None) -> File | Folder | None:
         """Returns a resource corresponding to the given module
 
         returns None if it can not be found
@@ -234,7 +232,7 @@ class Project(_Project):
         if not filesystem.exists(self._address):
             filesystem.create_folder(self._address)
         elif not filesystem.isdir(self._address):
-            raise exceptions.RopeError("Project root exists and" " is not a directory")
+            raise exceptions.RopeError("Project root exists and is not a directory")
         if fscommands is None:
             fscommands = rope.base.fscommands.create_fscommands(self._address)
         super().__init__(fscommands, external_project=external_project)
@@ -263,10 +261,8 @@ class Project(_Project):
             self._custom_source_folders.append(folder)
 
     def __repr__(self):
-        return '<{}.{} "{}">'.format(
-            self.__class__.__module__,
-            self.__class__.__name__,
-            self.address,
+        return (
+            f'<{self.__class__.__module__}.{self.__class__.__name__} "{self.address}">'
         )
 
     def get_files(self):

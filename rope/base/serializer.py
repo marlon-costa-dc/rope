@@ -113,7 +113,7 @@ def _js2py(o, references, version):
         return o
     elif isinstance(o, list):
         if version == 1:
-            return list(_js2py(item, references, version) for item in o)
+            return [_js2py(item, references, version) for item in o]
         elif version == 2:
             return tuple(_js2py(item, references, version) for item in o)
         raise ValueError(f"Unexpected version {version}")
@@ -127,8 +127,8 @@ def _js2py(o, references, version):
             elif o["$"] == "l":
                 assert version == 2
                 data = o["items"]
-                return list(_js2py(item, references, version) for item in data)
-            raise TypeError(f'Unrecognized object of type: {o["$"]} {o}')
+                return [_js2py(item, references, version) for item in data]
+            raise TypeError(f"Unrecognized object of type: {o['$']} {o}")
         else:
             for refid, jsvalue in o.items():
                 assert isinstance(refid, str)

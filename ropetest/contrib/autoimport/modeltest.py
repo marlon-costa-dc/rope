@@ -68,9 +68,7 @@ class TestPackageModel(CreateTableTestMixin):
     model_class = models.Package
 
     def test_objects(self):
-        assert (
-            models.Package.objects.select_star()._query == "SELECT * FROM packages"
-        )
+        assert models.Package.objects.select_star()._query == "SELECT * FROM packages"
 
     def test_delete_by_package_name(self):
         assert (

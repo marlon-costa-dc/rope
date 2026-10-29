@@ -6,8 +6,6 @@ import rope.base.pyobjects
 from rope.base import exceptions, utils
 
 if typing.TYPE_CHECKING:
-    from typing import Union
-
     from rope.base import pyobjectsdef
 
 
@@ -56,7 +54,14 @@ class AssignmentValue:
     """An assigned expression"""
 
     def __init__(
-        self, ast_node, levels=None, evaluation="", assign_type=False, type_hint=None
+        self,
+        ast_node,
+        levels=None,
+        evaluation="",
+        assign_type=False,
+        type_hint=None,
+        *,
+        branch_context=None,
     ):
         """The `level` is `None` for simple assignments and is
         a list of numbers for tuple assignments for example in::
@@ -75,6 +80,7 @@ class AssignmentValue:
         self.evaluation = evaluation
         self.assign_type = assign_type
         self.type_hint = type_hint
+        self.branch_context = branch_context
 
     def get_lineno(self):
         return self.ast_node.lineno
@@ -107,17 +113,14 @@ class ParameterName(PyName):
 class ImportedModule(PyName):
     def __init__(
         self,
-        importing_module: Union[
-            pyobjectsdef.PyModule,
-            pyobjectsdef.PyPackage,
-        ],
+        importing_module: pyobjectsdef.PyModule | pyobjectsdef.PyPackage,
         module_name=None,
         level=0,
         resource=None,
     ):
-        assert (
-            module_name is not None or resource is not None
-        ), "At least one of module_name or resource must be set"
+        assert module_name is not None or resource is not None, (
+            "At least one of module_name or resource must be set"
+        )
         self.importing_module = importing_module
         self.module_name = module_name
         self.level = level

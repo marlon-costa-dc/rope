@@ -1,13 +1,19 @@
 import sys
+import typing
 import unittest
 from textwrap import dedent
 
 from rope.base import exceptions, libutils
-from rope.base.builtins import BuiltinClass, File
+from rope.base.builtins import BuiltinClass, File, builtins
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
 from rope.base.pynamesdef import AssignedName
-from rope.base.pyobjects import AbstractFunction, get_base_type
+from rope.base.pyobjects import (
+    AbstractFunction,
+    UnresolvedBase,
+    get_base_type,
+    get_unknown,
+)
 from ropetest import testutils
 
 
@@ -44,20 +50,24 @@ class PyCoreTest(unittest.TestCase):
 
     def test_simple_class(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class SampleClass(object):
                 pass
-        """))
+        """)
+        )
         mod_element = self.project.get_module("mod")
         result = mod_element["SampleClass"].get_object()
         self.assertEqual(get_base_type("Type"), result.get_type())
 
     def test_simple_function(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             def sample_function():
                 pass
-        """))
+        """)
+        )
         mod_element = self.project.get_module("mod")
         result = mod_element["sample_function"].get_object()
         self.assertEqual(get_base_type("Function"), result.get_type())
@@ -93,21 +103,25 @@ class PyCoreTest(unittest.TestCase):
 
     def test_class_variables(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class SampleClass(object):
                 var = 10
-        """))
+        """)
+        )
         mod_element = self.project.get_module("mod")
         sample_class = mod_element["SampleClass"].get_object()
         var = sample_class["var"]  # noqa
 
     def test_class_attributes_set_in_init(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(dedent("""\
+        mod.write(
+            dedent("""\
             class C(object):
                 def __init__(self):
                     self.var = 20
-        """))
+        """)
+        )
         mod_element = self.project.get_module("mod")
         sample_class = mod_element["C"].get_object()
         var = sample_class["var"]  # noqa
@@ -255,6 +269,917 @@ class PyCoreTest(unittest.TestCase):
         mod = libutils.get_string_module(self.project, code)
         derived = mod["Derived"].get_object()
         self.assertTrue("f" in derived)
+
+    def _assert_mro_matches_python(self, code, names):
+        namespace = {}
+        exec(code, namespace)
+        mod = libutils.get_string_module(self.project, code)
+        for name in names:
+            with self.subTest(name=name):
+                expected = [cls.__name__ for cls in namespace[name].__mro__]
+                actual = [cls.get_name() for cls in mod[name].get_object().get_mro()]
+                self.assertEqual(expected, actual)
+
+    def test_mro_of_diamond_inheritance(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(A):
+                pass
+            class C(A):
+                pass
+            class D(B, C):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["A", "B", "C", "D"])
+
+    def test_mro_matches_python_for_nested_hierarchies(self):
+        code = dedent("""\
+            class O(object):
+                pass
+            class A(O):
+                pass
+            class B(O):
+                pass
+            class C(O):
+                pass
+            class D(O):
+                pass
+            class E(O):
+                pass
+            class K1(A, B, C):
+                pass
+            class K2(D, B, E):
+                pass
+            class K3(D, A):
+                pass
+            class Z(K1, K2, K3):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["K1", "K2", "K3", "Z"])
+
+    def test_mro_matches_python_for_builtin_bases(self):
+        code = dedent("""\
+            class Base(dict):
+                pass
+            class Mixin(object):
+                pass
+            class Derived(Mixin, Base):
+                pass
+            class Flag(Mixin, int):
+                pass
+            class Failure(Mixin, KeyError):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Base", "Derived", "Flag", "Failure"])
+
+    def test_builtin_ancestors_contribute_only_their_own_attributes(self):
+        code = dedent("""\
+            class Base(object):
+                def __init__(self):
+                    pass
+                def __init_subclass__(cls):
+                    pass
+            class Mixin(object):
+                pass
+            class Derived(Mixin, Base):
+                pass
+            class Mapping(dict, Base):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        mapping = mod["Mapping"].get_object()
+        self.assertEqual(
+            base["__init__"].get_object(), derived["__init__"].get_object()
+        )
+        self.assertEqual(
+            base["__init_subclass__"].get_object(),
+            mapping["__init_subclass__"].get_object(),
+        )
+        self.assertNotEqual(
+            base["__init__"].get_object(), mapping["__init__"].get_object()
+        )
+
+    def test_subscripted_class_base_calls_implicit_class_getitem(self):
+        code = dedent("""\
+            class Base:
+                def __class_getitem__(cls, item):
+                    return cls
+            class Derived(Base[int]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Base"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, base], derived.get_mro())
+
+    def test_type_of_class_uses_its_metaclass_without_changing_kind(self):
+        code = dedent("""\
+            class Meta(type):
+                pass
+            class Base(metaclass=Meta):
+                pass
+            selected = type(Base)
+            instance_type = type(Base())
+            meta_type = type(Meta)
+            created = Meta("Created", (), {})
+            created_type = type(created)
+            dynamic = type("Dynamic", (), {})
+            dynamic_type = type(dynamic)
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertIs(namespace["selected"], namespace["Meta"])
+        self.assertIs(namespace["instance_type"], namespace["Base"])
+        self.assertIs(namespace["meta_type"], type)
+        self.assertIs(namespace["created_type"], namespace["Meta"])
+        self.assertIs(namespace["dynamic_type"], type)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        meta = mod["Meta"].get_object()
+        self.assertIs(mod["selected"].get_object(), meta)
+        self.assertIs(mod["instance_type"].get_object(), base)
+        self.assertIs(mod["meta_type"].get_object(), builtins["type"].get_object())
+        self.assertIs(mod["created_type"].get_object(), meta)
+        self.assertIs(mod["dynamic_type"].get_object(), builtins["type"].get_object())
+        self.assertIs(base.get_type(), get_base_type("Type"))
+        self.assertIs(meta.get_type(), get_base_type("Type"))
+
+    def test_type_of_class_preserves_unresolved_metaclass_witness(self):
+        code = dedent("""\
+            from builtins import missing
+            class Base(missing):
+                pass
+            selected = type(Base)
+        """)
+        with self.assertRaises(ImportError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        (unresolved,) = base.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertIs(mod["selected"].get_object(), unresolved)
+
+    def test_type_of_builtin_instances_returns_the_canonical_class(self):
+        code = dedent("""\
+            number_type = type(1)
+            text_type = type("value")
+            list_type = type([1])
+            dict_type = type({"key": 1})
+            tuple_type = type((1, 2))
+        """)
+        namespace = {}
+        exec(code, namespace)
+        mod = libutils.get_string_module(self.project, code)
+        for name, expected in (
+            ("number_type", int),
+            ("text_type", str),
+            ("list_type", list),
+            ("dict_type", dict),
+            ("tuple_type", tuple),
+        ):
+            with self.subTest(name=name):
+                self.assertIs(namespace[name], expected)
+                self.assertIs(
+                    mod[name].get_object(), builtins[expected.__name__].get_object()
+                )
+
+    def test_subscripted_class_base_uses_class_getitem_result(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Base:
+                def __class_getitem__(cls, item):
+                    return Other
+            class Derived(Base[int]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        other = mod["Other"].get_object()
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, other], derived.get_mro())
+
+    def test_subscripted_class_base_prefers_metaclass_getitem(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Meta(type):
+                def __getitem__(cls, item):
+                    return Other
+            class Base(metaclass=Meta):
+                def __class_getitem__(cls, item):
+                    return cls
+            class Derived(Base[int]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        other = mod["Other"].get_object()
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, other], derived.get_mro())
+
+    def test_subscripted_class_metaclass_classmethod_receives_metaclass(self):
+        code = dedent("""\
+            class Meta(type):
+                @classmethod
+                def __getitem__(cls, item):
+                    return cls
+            class Base(metaclass=Meta):
+                pass
+            class Derived(Base[int]):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Derived"])
+
+    def test_subscripted_class_retains_unresolved_metaclass_base(self):
+        code = dedent("""\
+            from builtins import missing
+            class Base(missing):
+                def __class_getitem__(cls, item):
+                    return cls
+            selected = Base[int]
+        """)
+        with self.assertRaises(ImportError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        (unresolved,) = base.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertIs(base.get_metaclass(), unresolved)
+        self.assertIs(mod["selected"].get_object(), unresolved)
+
+    def test_subscripted_class_does_not_guess_an_unknown_explicit_metaclass(self):
+        code = dedent("""\
+            from builtins import missing
+            class Base(metaclass=missing):
+                def __class_getitem__(cls, item):
+                    return cls
+            selected = Base[int]
+        """)
+        with self.assertRaises(ImportError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        unresolved = mod["Base"].get_object().get_metaclass()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual("missing", unresolved.node.id)
+        self.assertIs(mod["selected"].get_object(), unresolved)
+
+    def test_subscripted_class_static_hook_receives_only_the_key(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Base:
+                @staticmethod
+                def __class_getitem__(item):
+                    return item
+            class Derived(Base[Other]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        other = mod["Other"].get_object()
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, other], derived.get_mro())
+
+    def test_subscripted_class_static_lambda_receives_only_the_key(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Base:
+                __class_getitem__ = staticmethod(lambda item: item)
+            class Derived(Base[Other]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    def test_subscripted_metaclass_class_lambda_receives_its_metaclass(self):
+        code = dedent("""\
+            class Meta(type):
+                __getitem__ = classmethod(lambda cls, item: cls)
+            class Base(metaclass=Meta):
+                pass
+            class Derived(Base[int]):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Derived"])
+
+    def test_subscripted_typing_generic_base_preserves_native_ancestor(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            class Foo(Generic[T]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Generic"],), namespace["Foo"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        generic = self.project.get_module("typing")["Generic"].get_object()
+        foo = mod["Foo"].get_object()
+        self.assertIn(generic, foo.get_mro())
+
+    def test_generic_alias_omits_generic_before_direct_protocol(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, Protocol, TypeVar
+            T = TypeVar("T")
+            class Derived(Generic[T], Protocol):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Derived"])
+
+    def test_typing_protocol_specialization_preserves_native_ancestor(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Protocol, TypeVar
+            T = TypeVar("T")
+            class Derived(Protocol[T]):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Derived"])
+
+    def test_typing_protocol_rejects_nonvariable_parameter(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Protocol
+            class Derived(Protocol[int]):
+                pass
+        """)
+        with self.assertRaises(TypeError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(TypeError):
+            mod["Derived"].get_object().get_mro()
+
+    def test_unpacked_typevartuple_preserves_generic_and_protocol_parameters(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        available = all(name in typing.__dict__ for name in ("Unpack", "TypeVarTuple"))
+        for family in ("Generic", "Protocol"):
+            with self.subTest(family=family):
+                code = dedent(f"""\
+                    from typing import {family}, TypeVarTuple, Unpack
+                    Ts = TypeVarTuple("Ts")
+                    inner = Unpack[Ts]
+                    alias = {family}[inner]
+                    class Derived(alias):
+                        pass
+                """)
+                namespace = {}
+                if available:
+                    exec(code, namespace)
+                    self.assertIs(namespace["inner"].__args__[0], namespace["Ts"])
+                    mod = libutils.get_string_module(self.project, code)
+                    derived = mod["Derived"].get_object()
+                    self.assertEqual(
+                        [cls.__name__ for cls in namespace["Derived"].__mro__],
+                        [cls.get_name() for cls in derived.get_mro()],
+                    )
+                    inner = mod["inner"].get_object()
+                    variable = (
+                        inner["__args__"]
+                        .get_object()
+                        .get_type()
+                        .get_holding_objects()[0]
+                    )
+                    self.assertIs(variable, mod["Ts"].get_object())
+                    self.assertIs(mod["alias"].get_object().arguments[0], inner)
+                else:
+                    with self.assertRaises(ImportError):
+                        exec(code, namespace)
+                    mod = libutils.get_string_module(self.project, code)
+                    for name in ("Unpack", "TypeVarTuple"):
+                        if name not in typing.__dict__:
+                            self.assertIs(mod[name].get_object(), get_unknown())
+                    with self.assertRaises(TypeError):
+                        mod["Derived"].get_object().get_mro()
+
+    def test_raw_typevartuple_is_not_a_generic_or_protocol_parameter(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        for family in ("Generic", "Protocol"):
+            with self.subTest(family=family):
+                code = dedent(f"""\
+                    from typing import {family}, TypeVarTuple
+                    Ts = TypeVarTuple("Ts")
+                    class Derived({family}[Ts]):
+                        pass
+                """)
+                if "TypeVarTuple" in typing.__dict__:
+                    with self.assertRaises(TypeError):
+                        exec(code, {})
+                else:
+                    with self.assertRaises(ImportError):
+                        exec(code, {})
+                mod = libutils.get_string_module(self.project, code)
+                with self.assertRaises(TypeError):
+                    mod["Derived"].get_object().get_mro()
+
+    def test_named_typing_module_does_not_replace_its_declared_class_hook(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Generic:
+                def __class_getitem__(cls, item):
+                    return Other
+            class Derived(Generic[int]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        resource = testutils.create_module(self.project, "typing")
+        resource.write(code)
+        mod = self.project.get_pymodule(resource)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    def test_generic_alias_omits_generic_before_later_typing_alias(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            class Base(Generic[T]):
+                pass
+            class Derived(Generic[T], Base[T]):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Base", "Derived"])
+
+    def test_generic_alias_keeps_generic_before_builtin_alias(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            class Derived(Generic[T], list[T]):
+                pass
+        """)
+        self._assert_mro_matches_python(code, ["Derived"])
+
+    def test_generic_alias_rejects_repeated_parameters(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            class Derived(Generic[T, T]):
+                pass
+        """)
+        with self.assertRaises(TypeError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(TypeError):
+            mod["Derived"].get_object().get_mro()
+
+    def test_generic_alias_keeps_all_declared_parameters(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            U = TypeVar("U")
+            V = TypeVar("V")
+            W = TypeVar("W")
+            X = TypeVar("X")
+            alias = Generic[T, U, V, W, X]
+            class Derived(alias):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual(5, len(namespace["alias"].__args__))
+        mod = libutils.get_string_module(self.project, code)
+        alias = mod["alias"].get_object()
+        self.assertEqual(5, len(alias.arguments))
+        for name, argument in zip(("T", "U", "V", "W", "X"), alias.arguments):
+            self.assertIs(mod[name].get_object(), argument)
+
+    def test_generic_alias_rejects_multiple_generic_declarations(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            from typing import Generic, TypeVar
+            T = TypeVar("T")
+            U = TypeVar("U")
+            class Derived(Generic[T], Generic[U]):
+                pass
+        """)
+        with self.assertRaises(TypeError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(TypeError):
+            mod["Derived"].get_object().get_mro()
+
+    def test_source_mro_entries_uses_original_bases_and_returned_class(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Alias:
+                def __mro_entries__(self, bases):
+                    return (bases[1],)
+            class Derived(Alias(), Other):
+                pass
+        """)
+        with self.assertRaises(TypeError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            mod["Derived"].get_object().get_mro()
+
+    def test_source_mro_entries_preserves_returned_class_identity(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Alias:
+                def __mro_entries__(self, bases):
+                    return (Other,)
+            class Derived(Alias()):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    def test_source_mro_entries_preserves_every_returned_base(self):
+        for count in (4, 5):
+            with self.subTest(count=count):
+                names = "ABCDE"[:count]
+                code = dedent(f"""\
+                    class A(object):
+                        pass
+                    class B(object):
+                        pass
+                    class C(object):
+                        pass
+                    class D(object):
+                        pass
+                    class E(object):
+                        pass
+                    class Alias:
+                        def __mro_entries__(self, bases):
+                            return ({", ".join(names)},)
+                    class Derived(Alias()):
+                        pass
+                """)
+                namespace = {}
+                exec(code, namespace)
+                self.assertEqual(
+                    tuple(namespace[name] for name in names),
+                    namespace["Derived"].__bases__,
+                )
+                mod = libutils.get_string_module(self.project, code)
+                derived = mod["Derived"].get_object()
+                self.assertEqual(
+                    [mod[name].get_object() for name in names], derived.get_bases()
+                )
+                self.assertEqual(
+                    [cls.__name__ for cls in namespace["Derived"].__mro__],
+                    [cls.get_name() for cls in derived.get_mro()],
+                )
+
+    def test_source_mro_entries_rejects_a_noncallable_hook(self):
+        code = dedent("""\
+            class Alias:
+                __mro_entries__ = None
+            class Derived(Alias()):
+                pass
+        """)
+        with self.assertRaises(TypeError):
+            exec(code, {})
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(TypeError):
+            mod["Derived"].get_object().get_mro()
+
+    def test_source_mro_entries_staticmethod_receives_only_original_bases(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Alias:
+                replacement = Other
+                @staticmethod
+                def __mro_entries__(bases):
+                    return (bases[0].replacement,)
+            class Derived(Alias()):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    def test_source_mro_entries_classmethod_receives_its_class(self):
+        code = dedent("""\
+            class Alias:
+                @classmethod
+                def __mro_entries__(cls, bases):
+                    return (cls,)
+            class Derived(Alias()):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Alias"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Alias"].get_object()], derived.get_mro())
+
+    def test_source_mro_entries_invokes_callable_instance(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Rewriter:
+                def __call__(self, bases):
+                    return (Other,)
+            class Alias:
+                __mro_entries__ = Rewriter()
+            class Derived(Alias()):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    def test_source_mro_entries_class_lambda_retains_original_bases(self):
+        code = dedent("""\
+            class Other:
+                pass
+            class Alias:
+                replacement = Other
+                __mro_entries__ = classmethod(
+                    lambda cls, bases: (bases[0].replacement,)
+                )
+            class Derived(Alias()):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((namespace["Other"],), namespace["Derived"].__bases__)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual([derived, mod["Other"].get_object()], derived.get_mro())
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_implicit_generic_specialization_preserves_owner_and_bound(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        code = dedent("""\
+            class Identity:
+                pass
+            class Ownership[Resource: Identity]:
+                pass
+            class Leaf(Ownership[Identity]):
+                pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertIs(
+            namespace["Ownership"].__type_params__[0].__bound__, namespace["Identity"]
+        )
+        mod = libutils.get_string_module(self.project, code)
+        owner = mod["Ownership"].get_object()
+        leaf = mod["Leaf"].get_object()
+        self.assertIs(leaf.get_mro()[1], owner)
+        parameter = owner.get_ast().type_params[0]
+        index = mod.get_source_binding_index()
+        binding = index.context_for_node(parameter).environment.lookup("Resource")
+        self.assertIs(binding.node, parameter)
+        bound = index.context_for_node(parameter.bound).environment.lookup("Identity")
+        self.assertIs(bound.get_object(), mod["Identity"].get_object())
+        self.assertEqual(
+            [cls.__name__ for cls in namespace["Leaf"].__mro__],
+            [cls.get_name() for cls in leaf.get_mro()],
+        )
+
+    def test_mro_contains_object_only_when_declared(self):
+        code = dedent("""\
+            class Base:
+                pass
+            class Derived(Base):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        self.assertEqual(
+            ["Derived", "Base"], [cls.get_name() for cls in derived.get_mro()]
+        )
+
+    def test_diamond_attributes_follow_the_mro(self):
+        code = dedent("""\
+            class A(object):
+                def method(self):
+                    pass
+            class B(A):
+                pass
+            class C(A):
+                def method(self):
+                    pass
+            class D(B, C):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        c = mod["C"].get_object()
+        d = mod["D"].get_object()
+        self.assertEqual(c["method"].get_object(), d["method"].get_object())
+
+    def test_unresolved_base_keeps_its_place(self):
+        code = dedent("""\
+            class Base(object):
+                pass
+            class Other(object):
+                pass
+            class Derived(Base, NotFound, Other):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        other = mod["Other"].get_object()
+        derived = mod["Derived"].get_object()
+        first, unresolved, last = derived.get_bases()
+        self.assertEqual(base, first)
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual("NotFound", unresolved.node.id)
+        self.assertIsNone(unresolved.pyobject)
+        self.assertEqual(other, last)
+        self.assertEqual([base, other], derived.get_superclasses())
+        self.assertEqual(
+            [derived, base, unresolved, other, derived.get_mro()[-1]],
+            derived.get_mro(),
+        )
+        self.assertEqual("object", derived.get_mro()[-1].get_name())
+
+    def test_base_evaluating_to_a_non_class_is_unresolved(self):
+        code = dedent("""\
+            value = 1
+            class Derived(value):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        derived = mod["Derived"].get_object()
+        (unresolved,) = derived.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual(mod["value"].get_object(), unresolved.pyobject)
+        self.assertEqual([], derived.get_superclasses())
+        self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_imported_missing_base_preserves_resolved_ancestors(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write("def function():\n    pass\n")
+        code = dedent("""\
+            from provider import missing
+            class Base(object):
+                pass
+            class Derived(Base, missing):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        mro = derived.get_mro()
+        resolved, unresolved = derived.get_bases()
+        self.assertIs(base, resolved)
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual([base], derived.get_superclasses())
+        self.assertEqual(
+            [derived, *base.get_mro(), unresolved],
+            mro,
+        )
+
+    def test_class_base_uses_import_before_rebinding_its_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(
+            dedent("""\
+            class Foo:
+                member = 1
+        """)
+        )
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(
+            dedent("""\
+            from provider import Foo
+            class Foo(Foo):
+                pass
+        """)
+        )
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_class_base_uses_import_before_rebinding_its_name(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(
+            dedent("""\
+            class Foo:
+                member = 1
+        """)
+        )
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(
+            dedent("""\
+            from provider import Foo
+            class Foo[T](Foo):
+                pass
+        """)
+        )
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        namespace = {}
+        exec(provider.read(), namespace)
+        exec("class Foo[T](Foo):\n    pass\n", namespace)
+        self.assertEqual(
+            [cls.__name__ for cls in namespace["Foo"].__mro__],
+            [cls.get_name() for cls in derived.get_mro()],
+        )
+        self.assertIs(derived.get_mro()[1], imported)
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_parameter_precedes_imported_previous_class_name(self):
+        self.project.prefs.set("import_dynload_stdmods", True)
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(
+            dedent("""\
+            class Foo:
+                pass
+        """)
+        )
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(
+            dedent("""\
+            from provider import Foo
+            class Foo[Foo](Foo):
+                pass
+        """)
+        )
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        unresolved, generic = derived.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertIs(unresolved.pyobject, get_unknown())
+        self.assertIs(
+            self.project.get_module("typing")["Generic"].get_object(), generic
+        )
+
+    def test_inconsistent_mro(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(object):
+                pass
+            class X(A, B):
+                pass
+            class Y(B, A):
+                pass
+            class Z(X, Y):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        z = mod["Z"].get_object()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            z.get_mro()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            z.get_attributes()
+
+    def test_duplicate_base_class(self):
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(A, A):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            mod["B"].get_object().get_mro()
+
+    def test_cyclic_inheritance(self):
+        mod1 = testutils.create_module(self.project, "mod1")
+        mod2 = testutils.create_module(self.project, "mod2")
+        mod1.write("from mod2 import B\nclass A(B):\n    pass\n")
+        mod2.write("from mod1 import A\nclass B(A):\n    pass\n")
+        a = self.project.get_module("mod1")["A"].get_object()
+        with self.assertRaises(exceptions.InconsistentHierarchyError):
+            a.get_mro()
 
     def test_module_creation(self):
         new_module = testutils.create_module(self.project, "module")
@@ -471,11 +1396,13 @@ class PyCoreTest(unittest.TestCase):
 
     def test_get_pyname_definition_location_imports(self):
         module_resource = testutils.create_module(self.project, "mod")
-        module_resource.write(dedent("""\
+        module_resource.write(
+            dedent("""\
 
             def a_func():
                 pass
-        """))
+        """)
+        )
         imported_module = self.project.get_module("mod")
         code = dedent("""\
             from mod import a_func
@@ -650,8 +1577,6 @@ class PyCoreTest(unittest.TestCase):
             import threading
             with threading.lock() as var:    pass
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         self.assertTrue("var" in pymod)
 
@@ -664,8 +1589,6 @@ class PyCoreTest(unittest.TestCase):
             with A() as (a, b):
                 pass
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         self.assertTrue("a" in pymod)
         self.assertTrue("b" in pymod)
@@ -680,8 +1603,6 @@ class PyCoreTest(unittest.TestCase):
             with A() as var:
                 pass
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         a_class = pymod["A"].get_object()
         var = pymod["var"].get_object()
@@ -702,8 +1623,6 @@ class PyCoreTest(unittest.TestCase):
             with A() as var_a, B() as var_b:
                 pass
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         a_class = pymod["A"].get_object()
         var_a = pymod["var_a"].get_object()
@@ -717,8 +1636,6 @@ class PyCoreTest(unittest.TestCase):
         code = dedent("""\
             with open("file"):    pass
         """)
-        if sys.version_info < (2, 6, 0):
-            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         pymod.get_attributes()
 
@@ -834,10 +1751,12 @@ class PyCoreTest(unittest.TestCase):
 
     def test_pyobject_equality_should_compare_types(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             var1 = ""
             var2 = ""
-        """))
+        """)
+        )
         pymod1 = self.pycore.resource_to_pyobject(mod1)
         self.assertEqual(pymod1["var1"].get_object(), pymod1["var2"].get_object())
 
@@ -958,25 +1877,31 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_circular_imports2(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             from mod2 import Sample2
             class Sample1(object):
                 pass
-        """))
-        mod2.write(dedent("""\
+        """)
+        )
+        mod2.write(
+            dedent("""\
             from mod1 import Sample1
             class Sample2(object):
                 pass
-        """))
+        """)
+        )
         self.project.get_module("mod1").get_attributes()
 
     def test_multi_dot_imports(self):
         pkg = testutils.create_package(self.project, "pkg")
         pkg_mod = testutils.create_module(self.project, "mod", pkg)
-        pkg_mod.write(dedent("""\
+        pkg_mod.write(
+            dedent("""\
             def sample_func():
                 pass
-        """))
+        """)
+        )
         code = "import pkg.mod\n"
         mod = libutils.get_string_module(self.project, code)
         self.assertTrue("pkg" in mod)
@@ -1013,10 +1938,12 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_multi_dot_imports_as(self):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def f():
                 pass
-        """))
+        """)
+        )
         code = "import pkg.mod1 as mod1\n"
         mod = libutils.get_string_module(self.project, code)
         module = mod["mod1"].get_object()
@@ -1173,10 +2100,12 @@ class PyCoreInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2.write("from mod1 import a_func\n")
         mod1_object = self.pycore.resource_to_pyobject(mod1)
         mod2_object = self.pycore.resource_to_pyobject(mod2)
@@ -1215,10 +2144,12 @@ class PyCoreInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             def a_func():
                 pass
-        """))
+        """)
+        )
         mod2.write("from ..mod1 import a_func\n")
         mod1_object = self.pycore.resource_to_pyobject(mod1)
         mod2_object = self.pycore.resource_to_pyobject(mod2)
@@ -1229,14 +2160,18 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_invalidating_cache_for_from_imports_after_resource_change(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(dedent("""\
+        mod2.write(
+            dedent("""\
             def a_func():
                 print(1)
-        """))
-        mod1.write(dedent("""\
+        """)
+        )
+        mod1.write(
+            dedent("""\
             from mod2 import a_func
             a_func()
-        """))
+        """)
+        )
 
         pymod1 = self.project.get_module("mod1")
         pymod2 = self.project.get_module("mod2")
@@ -1248,25 +2183,31 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_invalidating_superclasses_after_change(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             class A(object):
                 def func1(self):
                     pass
-        """))
-        mod2.write(dedent("""\
+        """)
+        )
+        mod2.write(
+            dedent("""\
             import mod1
             class B(mod1.A):
                 pass
-        """))
+        """)
+        )
 
         b_class = self.project.get_module("mod2")["B"].get_object()
         self.assertTrue("func1" in b_class)
 
-        mod1.write(dedent("""\
+        mod1.write(
+            dedent("""\
             class A(object):
                 def func2(self):
                     pass
-        """))
+        """)
+        )
         self.assertTrue("func2" in b_class)
 
     def test_caching_pymodule_with_syntax_errors(self):

@@ -5,4 +5,4 @@ from .sqlite import AutoImport as _SqliteAutoImport
 
 AutoImport = _PickleAutoImport
 
-__all__ = ["AutoImport"]
+__all__ = ["AutoImport", "_SqliteAutoImport"]

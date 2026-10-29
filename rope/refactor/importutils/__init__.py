@@ -60,7 +60,7 @@ class ImportOrganizer:
         result = method(pymodule, import_filter=import_filter)
         if result is not None and result != before_performing:
             changes = ChangeSet(
-                method.__name__.replace("_", " ") + " in <%s>" % resource.path
+                method.__name__.replace("_", " ") + f" in <{resource.path}>"
             )
             changes.add_change(ChangeContents(resource, result))
             return changes
@@ -246,9 +246,9 @@ class ImportTools:
             if till_dot:
                 new_end = pymodule.source_code.index(".", end) + 1
                 space = pymodule.source_code[end : new_end - 1].strip()
-                if not space == "":
+                if space != "":
                     for c in space:
-                        if not c.isspace() and c not in "\\":
+                        if not c.isspace() and c != "\\":
                             raise ValueError()
                 end = new_end
             changes.add_change(start, end, new_name)

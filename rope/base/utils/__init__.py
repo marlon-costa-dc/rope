@@ -22,7 +22,7 @@ def prevent_recursion(default):
     """A decorator that returns the return value of `default` in recursions"""
 
     def decorator(func):
-        name = "_calling_%s_" % func.__name__
+        name = f"_calling_{func.__name__}_"
 
         def newfunc(self, *args, **kwds):
             if getattr(self, name, False):
@@ -58,7 +58,7 @@ def deprecated(message=None):
 
     def _decorator(func, message=message):
         if message is None:
-            message = "%s is deprecated" % func.__name__
+            message = f"{func.__name__} is deprecated"
 
         def newfunc(*args, **kwds):
             warnings.warn(message, DeprecationWarning, stacklevel=2)
@@ -74,7 +74,7 @@ def cached(size):
 
     def decorator(func):
         cached_func = _Cached(func, size)
-        return lambda *a, **kw: cached_func(*a, **kw)
+        return cached_func
 
     return decorator
 
@@ -95,6 +95,23 @@ class _Cached:
         if len(self.cache) > self.count:
             del self.cache[0]
         return result
+
+    def __get__(self, instance, owner=None):
+        # Decorar método exige binding de instância: sem isto, o ``self`` do
+        # método seria consumido como primeiro argumento posicional do cache
+        # e a assinatura real perderia um parâmetro.
+        if instance is None:
+            return self
+        return _CachedBound(self, instance)
+
+
+class _CachedBound:
+    def __init__(self, cached, instance):
+        self.cached = cached
+        self.instance = instance
+
+    def __call__(self, *args, **kwds):
+        return self.cached(self.instance, *args, **kwds)
 
 
 def resolve(str_or_obj):

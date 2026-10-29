@@ -3,7 +3,7 @@
 import pathlib
 import sys
 from collections import OrderedDict
-from typing import Generator, List, Optional, Tuple
+from collections.abc import Generator
 
 from rope.base import libutils
 from rope.base.project import Project
@@ -12,8 +12,8 @@ from .defs import ModuleCompiled, ModuleFile, ModuleInfo, Package, PackageType, 
 
 
 def get_package_tuple(
-    package_path: pathlib.Path, project: Optional[Project] = None
-) -> Optional[Package]:
+    package_path: pathlib.Path, project: Project | None = None
+) -> Package | None:
     """
     Get package name and type from a path.
 
@@ -27,10 +27,7 @@ def get_package_tuple(
     if package_name.endswith((".egg-info", ".dist-info")):
         return None
     if package_path.is_file():
-        if package_name.endswith(".so"):
-            package_name = package_name.split(".")[0]
-            package_type = PackageType.COMPILED
-        elif package_name.endswith(".pyd"):
+        if package_name.endswith((".so", ".pyd")):
             package_name = package_name.split(".")[0]
             package_type = PackageType.COMPILED
         elif package_name.endswith(".py"):
@@ -45,7 +42,7 @@ def get_package_tuple(
 
 
 def get_package_source(
-    package: pathlib.Path, project: Optional[Project], name: str
+    package: pathlib.Path, project: Project | None, name: str
 ) -> Source:
     """Detect the source of a given package. Rudimentary implementation."""
     if name in sys.builtin_module_names:
@@ -56,12 +53,8 @@ def get_package_source(
             return Source.PROJECT
     if "site-packages" in package.parts:
         return Source.SITE_PACKAGE
-    if sys.version_info < (3, 10, 0):
-        if str(package).startswith(sys.base_prefix):
-            return Source.STANDARD
-    else:
-        if name in sys.stdlib_module_names:
-            return Source.STANDARD
+    if name in sys.stdlib_module_names:
+        return Source.STANDARD
     return Source.UNKNOWN
 
 
@@ -95,7 +88,7 @@ def get_modname_from_path(
     return modname
 
 
-def sort_and_deduplicate(results: List[Tuple[str, int]]) -> List[str]:
+def sort_and_deduplicate(results: list[tuple[str, int]]) -> list[str]:
     """Sort and deduplicate a list of name, source entries."""
     results = sorted(results, key=lambda y: y[-1])
     results_sorted = [name for name, source in results]
@@ -103,8 +96,8 @@ def sort_and_deduplicate(results: List[Tuple[str, int]]) -> List[str]:
 
 
 def sort_and_deduplicate_tuple(
-    results: List[Tuple[str, str, int]],
-) -> List[Tuple[str, str]]:
+    results: list[tuple[str, str, int]],
+) -> list[tuple[str, str]]:
     """Sort and deduplicate a list of name, module, source entries."""
     results = sorted(results, key=lambda y: y[-1])
     results_sorted = [result[:-1] for result in results]

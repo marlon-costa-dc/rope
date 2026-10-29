@@ -32,6 +32,8 @@ def test_version_hash_varies_on_user_preferences(project):
 
 def test_version_hash_varies_on_get_file_content(project):
     actual_version_hash = versioning.calculate_version_hash(project)
-    with patch("rope.base.versioning._get_file_content", return_value=secrets.token_hex()):
+    with patch(
+        "rope.base.versioning._get_file_content", return_value=secrets.token_hex()
+    ):
         patched_version_hash = versioning.calculate_version_hash(project)
     assert actual_version_hash != patched_version_hash

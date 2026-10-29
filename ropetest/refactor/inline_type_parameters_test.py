@@ -312,7 +312,9 @@ def test_refuses_dependency_hidden_by_function_or_class_body(
     source = module(
         project,
         "source",
-        dedent("original = int\ntarget = original\n") + definition + dedent(f"""\
+        dedent("original = int\ntarget = original\n")
+        + definition
+        + dedent(f"""\
         original = str
         print({owner}.__type_params__[0].__bound__ is int)
     """),
@@ -422,7 +424,9 @@ def test_refuses_default_dependency_hidden_by_declared_scope(
     source = module(
         project,
         "source",
-        dedent("original = int\ntarget = original\n") + definition + dedent(f"""\
+        dedent("original = int\ntarget = original\n")
+        + definition
+        + dedent(f"""\
         original = str
         print({owner}.__type_params__[0].__default__ is int)
     """),
@@ -579,7 +583,9 @@ def test_allows_removing_binding_shadowed_by_enclosing_type_parameter(
     source = module(
         project,
         "source",
-        "target = 42\n" + definition + dedent(f"""\
+        "target = 42\n"
+        + definition
+        + dedent(f"""\
         result = target
         print(result, {comparison})
     """),

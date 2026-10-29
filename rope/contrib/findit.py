@@ -116,15 +116,7 @@ class Location:
         self.lineno = occurrence.lineno
 
     def __repr__(self):
-        return '<{}.{} "{}:{} ({}-{})" at {}>'.format(
-            self.__class__.__module__,
-            self.__class__.__name__,
-            self.resource.path,
-            self.lineno,
-            self.region[0],
-            self.region[1],
-            hex(id(self)),
-        )
+        return f'<{self.__class__.__module__}.{self.__class__.__name__} "{self.resource.path}:{self.lineno} ({self.region[0]}-{self.region[1]})" at {hex(id(self))}>'
 
 
 def _find_locations(finder, resources, job_set):

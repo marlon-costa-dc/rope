@@ -72,7 +72,7 @@ def test_get_package_source_venv_in_project_dir(example_external_package_path, p
     # technically being inside the project folder.
 
     # Set up actual venv in project folder:
-    project_venv_path = project.root.pathlib/".venv"
+    project_venv_path = project.root.pathlib / ".venv"
     venv.create(project_venv_path)
 
     # Crude approximation of a package installed into this venv:
@@ -112,10 +112,13 @@ def test_get_modname_path_components(path_type):
 
 
 def test_get_modname_external(example_external_package_path):
-    assert utils.get_modname_from_path(
-        example_external_package_path,
-        example_external_package_path,
-    ) == "external_fixturepkg"
+    assert (
+        utils.get_modname_from_path(
+            example_external_package_path,
+            example_external_package_path,
+        )
+        == "external_fixturepkg"
+    )
 
 
 def test_get_modname_folder(
@@ -151,7 +154,9 @@ def test_get_package_tuple_compiled(compiled_lib):
 
 def test_get_files(project, mod1, pkg1, mod2):
     root: Package = utils.get_package_tuple(project.root.pathlib)
-    paths = [m.filepath.relative_to(project.root.pathlib) for m in utils.get_files(root)]
+    paths = [
+        m.filepath.relative_to(project.root.pathlib) for m in utils.get_files(root)
+    ]
     assert set(paths) == {
         Path("mod1.py"),
         Path("pkg1/__init__.py"),

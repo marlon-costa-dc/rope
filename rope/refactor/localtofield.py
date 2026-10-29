@@ -32,7 +32,7 @@ class LocalToField:
     def _check_redefinition(self, name, function_scope):
         class_scope = function_scope.parent
         if name in class_scope.pyobject:
-            raise exceptions.RefactoringError("The field %s already exists" % name)
+            raise exceptions.RefactoringError(f"The field {name} already exists")
 
     def _get_field_name(self, pyfunction, name):
         if pyfunction.get_kind() == "staticmethod":

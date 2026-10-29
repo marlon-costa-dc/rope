@@ -118,7 +118,7 @@ class AutoImport:
             "Generating autoimport cache", len(resources)
         )
         for file in resources:
-            job_set.started_job("Working on <%s>" % file.path)
+            job_set.started_job(f"Working on <{file.path}>")
             self.update_resource(file, underlined)
             job_set.finished_job()
 
@@ -130,7 +130,7 @@ class AutoImport:
             "Generating autoimport cache for modules", len(modules)
         )
         for modname in modules:
-            job_set.started_job("Working on <%s>" % modname)
+            job_set.started_job(f"Working on <{modname}>")
             if modname.endswith(".*"):
                 mod = self.project.find_module(modname[:-2])
                 if mod:

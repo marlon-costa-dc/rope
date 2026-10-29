@@ -7,8 +7,8 @@ Can extract names from source code of a python file, .so object, or builtin modu
 import inspect
 import logging
 import pathlib
+from collections.abc import Generator
 from importlib import import_module
-from typing import Generator, List
 
 from rope.base import ast
 
@@ -95,7 +95,7 @@ def get_type_object(imported_object) -> NameType:
     return NameType.Variable
 
 
-def get_names(module: ModuleInfo, package: Package) -> List[Name]:
+def get_names(module: ModuleInfo, package: Package) -> list[Name]:
     """Get all names from a module and package."""
     if isinstance(module, ModuleCompiled):
         return list(
@@ -144,15 +144,12 @@ def get_names_from_compiled(
         return
     else:
         for name, value in inspect.getmembers(module):
-            if underlined or not name.startswith("_"):
-                if (
-                    inspect.isclass(value)
-                    or inspect.isfunction(value)
-                    or inspect.isbuiltin(value)
-                ):
-                    yield Name(
-                        str(name), package, package, source, get_type_object(value)
-                    )
+            if (underlined or not name.startswith("_")) and (
+                inspect.isclass(value)
+                or inspect.isfunction(value)
+                or inspect.isbuiltin(value)
+            ):
+                yield Name(str(name), package, package, source, get_type_object(value))
 
 
 def combine(package: Package, module: ModuleFile, name: PartialName) -> Name:

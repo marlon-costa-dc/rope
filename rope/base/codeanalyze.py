@@ -72,7 +72,7 @@ class SourceLinesAdapter:
 
 
 class ASTLinesAdapter:
-    """
+    r"""
     Convert between stdlib's ast `col_offset` and rope's `region` offsets.
 
     ast `col_offset` are given in byte offset of the utf-8 source code from
@@ -351,7 +351,7 @@ class LogicalLineFinder:
             except IndentationError as e:
                 tries += 1
                 if tries == 5:
-                    raise e
+                    raise
                 lineno = e.lineno + block_start - 1
                 indents = count_line_indents(self.lines.get_line(lineno))
 
@@ -510,7 +510,7 @@ def get_block_start_patterns():
             "^\\s*(((def|class|if|elif|except|for|while|with)\\s)|"
             "((try|else|finally|except)\\s*:))"
         )
-        _block_start_pattern = re.compile(pattern, re.M)
+        _block_start_pattern = re.compile(pattern, re.MULTILINE)
     return _block_start_pattern
 
 
@@ -530,7 +530,7 @@ def get_string_pattern_with_prefix(prefix, prefix_group_name=None):
     longstr = r'"""(\\.|"(?!"")|\\\n|[^"\\])*"""'
     shortstr = r'"(\\.|\\\n|[^"\\\n])*"'
     if prefix_group_name is not None:
-        pattern = "(?P<%s>%%s)(%%s)" % prefix_group_name
+        pattern = f"(?P<{prefix_group_name}>%s)(%s)"
     else:
         pattern = "%s(%s)"
     return pattern % (

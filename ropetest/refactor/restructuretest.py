@@ -1,3 +1,4 @@
+import typing
 import unittest
 from textwrap import dedent
 
@@ -59,12 +60,14 @@ class RestructureTest(unittest.TestCase):
         self.assertEqual("a = 1 * 2\n", self.mod.read())
 
     def test_replacing_patterns_with_checks(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             def f(p=1):
                 return p
             g = f
             g()
-        """))
+        """)
+        )
         refactoring = restructure.Restructure(
             self.project, "${f}()", "${f}(2)", args={"f": "object=mod.f"}
         )
@@ -102,12 +105,14 @@ class RestructureTest(unittest.TestCase):
         )
 
     def test_using_make_checks(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             def f(p=1):
                 return p
             g = f
             g()
-        """))
+        """)
+        )
         refactoring = restructure.Restructure(
             self.project, "${f}()", "${f}(2)", args={"f": "object=mod.f"}
         )
@@ -145,10 +150,12 @@ class RestructureTest(unittest.TestCase):
         )
 
     def test_auto_indentation(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             def f():
                 a = 2
-        """))
+        """)
+        )
         refactoring = restructure.Restructure(
             self.project, "${a} = 2", "${a} = 1\n${a} += 1"
         )
@@ -192,6 +199,69 @@ class RestructureTest(unittest.TestCase):
         self.project.do(refactoring.get_changes())
         self.assertEqual("a = True\n", self.mod.read())
 
+    def test_match_filter_selects_restructured_matches(self):
+        self.mod.write("a = 1\nb = 1\n")
+        seen = []
+
+        def match_filter(pymodule, match):
+            seen.append(pymodule.get_resource())
+            return match.get_region()[0] > 0
+
+        refactoring = restructure.Restructure(
+            self.project, "${x} = 1", "${x} = 2", match_filter=match_filter
+        )
+        self.project.do(refactoring.get_changes())
+        self.assertEqual("a = 1\nb = 2\n", self.mod.read())
+        self.assertEqual([self.mod, self.mod], seen)
+
+    def test_match_filter_rejecting_every_match_changes_nothing(self):
+        self.mod.write("a = 1\n")
+        refactoring = restructure.Restructure(
+            self.project,
+            "${x} = 1",
+            "${x} = 2",
+            imports=["import myconsts"],
+            match_filter=lambda pymodule, match: False,
+        )
+        self.assertEqual([], refactoring.get_changes().changes)
+        self.assertEqual("a = 1\n", self.mod.read())
+
+    def test_hook_annotations_resolve_at_runtime(self):
+        hints = typing.get_type_hints(restructure.Restructure.__init__)
+        self.assertEqual(
+            typing.Optional[restructure.MatchFilter], hints["match_filter"]
+        )
+        self.assertEqual(
+            typing.Optional[restructure.ImportFilter], hints["import_filter"]
+        )
+
+    def test_import_filter_selects_added_imports(self):
+        self.mod.write("a = 2\n")
+        received = []
+
+        def import_filter(resource, imports):
+            received.append((resource, imports))
+            return [
+                declaration for declaration in imports if "other" not in declaration
+            ]
+
+        refactoring = restructure.Restructure(
+            self.project,
+            "${a} = 2",
+            "${a} = myconsts.two",
+            imports=["import myconsts", "import other"],
+            import_filter=import_filter,
+        )
+        self.project.do(refactoring.get_changes())
+        self.assertEqual(
+            dedent("""\
+                import myconsts
+                a = myconsts.two
+            """),
+            self.mod.read(),
+        )
+        self.assertEqual([(self.mod, ["import myconsts", "import other"])], received)
+
     def test_handling_containing_matches(self):
         self.mod.write("a = 1 / 2 / 3\n")
         refactoring = restructure.Restructure(
@@ -231,12 +301,14 @@ class RestructureTest(unittest.TestCase):
         self.assertEqual("b = 2 / 1\n", mod2.read())
 
     def test_unsure_argument_of_default_wildcard(self):
-        self.mod.write(dedent("""\
+        self.mod.write(
+            dedent("""\
             def f(p):
                 return p * 2
             x = "" * 2
             i = 1 * 2
-        """))
+        """)
+        )
         refactoring = restructure.Restructure(
             self.project,
             "${s} * 2",

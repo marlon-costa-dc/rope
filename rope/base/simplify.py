@@ -124,11 +124,6 @@ def ignored_regions(source):
 
 
 _str = re.compile(
-    "|".join(
-        [
-            codeanalyze.get_comment_pattern(),
-            codeanalyze.get_any_string_pattern(),
-        ]
-    )
+    f"{codeanalyze.get_comment_pattern()}|{codeanalyze.get_any_string_pattern()}"
 )
 _parens = re.compile(r"[\({\[\]}\)\n]")

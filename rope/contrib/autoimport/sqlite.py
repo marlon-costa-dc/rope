@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import warnings
 from collections import OrderedDict
+from collections.abc import Generator, Iterable, Iterator
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -18,13 +19,6 @@ from pathlib import Path
 from threading import Lock, local
 from typing import (
     TYPE_CHECKING,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Set,
-    Tuple,
 )
 
 from rope.base import exceptions, libutils, resourceobserver, taskhandle, versioning
@@ -55,7 +49,7 @@ if TYPE_CHECKING:
 
 
 def get_future_names(
-    packages: List[Package], underlined: bool, job_set: taskhandle.BaseJobSet
+    packages: list[Package], underlined: bool, job_set: taskhandle.BaseJobSet
 ) -> Generator[Future[Collection[Name]], None, None]:
     """Get all names as futures."""
     with ProcessPoolExecutor() as executor:
@@ -67,7 +61,7 @@ def get_future_names(
 
 
 def filter_packages(
-    packages: Iterable[Package], underlined: bool, existing: List[str]
+    packages: Iterable[Package], underlined: bool, existing: list[str]
 ) -> Iterable[Package]:
     """Filter list of packages to parse."""
     if underlined:
@@ -142,9 +136,9 @@ class AutoImport:
                 DeprecationWarning,
             )
         self._closed = False
-        self._connections: Set[sqlite3.Connection] = set()
+        self._connections: set[sqlite3.Connection] = set()
         self._connections_lock = Lock()
-        self._observer: Optional[resourceobserver.ResourceObserver] = None
+        self._observer: resourceobserver.ResourceObserver | None = None
         self.thread_local = local()
         self.connection = self.create_database_connection(
             project=project,
@@ -161,7 +155,7 @@ class AutoImport:
     def create_database_connection(
         cls,
         *,
-        project: Optional[Project] = None,
+        project: Project | None = None,
         memory: bool = False,
     ) -> sqlite3.Connection:
         """
@@ -268,7 +262,7 @@ class AutoImport:
             results
         )  # Remove duplicates from multiple occurrences of the same item
 
-    def search(self, name: str, exact_match: bool = False) -> List[Tuple[str, str]]:
+    def search(self, name: str, exact_match: bool = False) -> list[tuple[str, str]]:
         """
         Search both modules and names for an import string.
 
@@ -276,7 +270,7 @@ class AutoImport:
 
         Returns a sorted list of import statement, modname pairs
         """
-        results: List[Tuple[str, str, int]] = [
+        results: list[tuple[str, str, int]] = [
             (statement, import_name, source)
             for statement, import_name, source, type in self.search_full(
                 name, exact_match
@@ -288,7 +282,7 @@ class AutoImport:
         self,
         name: str,
         exact_match: bool = False,
-        ignored_names: Optional[Set[str]] = None,
+        ignored_names: set[str] | None = None,
     ) -> Generator[SearchResult, None, None]:
         """
         Search both modules and names for an import string.
@@ -381,18 +375,18 @@ class AutoImport:
                 f"import {module} as {alias}", alias, source, NameType.Module.value
             )
 
-    def get_modules(self, name) -> List[str]:
+    def get_modules(self, name) -> list[str]:
         """Get the list of modules that have global `name`."""
         results = self._execute(
             models.Name.search_by_name.select("module", "source"), (name,)
         ).fetchall()
         return sort_and_deduplicate(results)
 
-    def get_all_names(self) -> List[str]:
+    def get_all_names(self) -> list[str]:
         """Get the list of all cached global names."""
         return self._execute(models.Name.objects.select("name")).fetchall()
 
-    def _dump_all(self) -> Tuple[List[Name], List[Package]]:
+    def _dump_all(self) -> tuple[list[Name], list[Package]]:
         """Dump the entire database."""
         name_results = self._execute(models.Name.objects.select_star()).fetchall()
         package_results = self._execute(models.Package.objects.select_star()).fetchall()
@@ -400,7 +394,7 @@ class AutoImport:
 
     def generate_cache(
         self,
-        resources: Optional[List[Resource]] = None,
+        resources: list[Resource] | None = None,
         underlined: bool = False,
         task_handle: taskhandle.BaseTaskHandle = taskhandle.DEFAULT_TASK_HANDLE,
     ):
@@ -431,10 +425,10 @@ class AutoImport:
 
     def generate_modules_cache(
         self,
-        modules: Optional[List[str]] = None,
+        modules: list[str] | None = None,
         task_handle: taskhandle.BaseTaskHandle = taskhandle.DEFAULT_TASK_HANDLE,
         single_thread: bool = False,
-        underlined: Optional[bool] = None,
+        underlined: bool | None = None,
     ):
         """
         Generate global name cache for external modules listed in `modules`.
@@ -446,7 +440,7 @@ class AutoImport:
         """
         underlined = self.underlined if underlined is None else underlined
 
-        packages: List[Package] = (
+        packages: list[Package] = (
             self._get_available_packages()
             if modules is None
             else list(self._get_packages_from_modules(modules))
@@ -474,7 +468,7 @@ class AutoImport:
 
         self.connection.commit()
 
-    def _get_packages_from_modules(self, modules: List[str]) -> Iterator[Package]:
+    def _get_packages_from_modules(self, modules: list[str]) -> Iterator[Package]:
         for modname in modules:
             package = self._find_package_path(modname)
             if package is None:
@@ -611,7 +605,7 @@ class AutoImport:
         self, resource: Resource, underlined: bool = False, commit: bool = True
     ):
         """Update the cache for global names in `resource`."""
-        underlined = underlined if underlined else self.underlined
+        underlined = underlined or self.underlined
         module = self._resource_to_module(resource, underlined)
         self._del_if_exist(module_name=module.modname, commit=False)
         for name in get_names(module, self.project_package):
@@ -634,7 +628,7 @@ class AutoImport:
         if commit:
             self.connection.commit()
 
-    def _get_python_folders(self) -> List[Path]:
+    def _get_python_folders(self) -> list[Path]:
         def filter_folders(folder: Path) -> bool:
             return folder.is_dir() and folder.as_posix() != "/usr/bin"
 
@@ -655,8 +649,8 @@ class AutoImport:
         except PermissionError:
             pass
 
-    def _get_available_packages(self) -> List[Package]:
-        packages: List[Package] = [
+    def _get_available_packages(self) -> list[Package]:
+        packages: list[Package] = [
             Package(module, Source.BUILTIN, None, PackageType.BUILTIN)
             for module in sys.builtin_module_names
         ]
@@ -668,12 +662,12 @@ class AutoImport:
                 packages.append(package_tuple)
         return packages
 
-    def _add_packages(self, packages: List[Package]):
+    def _add_packages(self, packages: list[Package]):
         data = [(p.name, str(p.path)) for p in packages]
         self._executemany(models.Package.objects.insert_into(), data)
 
-    def _get_packages_from_cache(self) -> List[str]:
-        existing: List[str] = list(
+    def _get_packages_from_cache(self) -> list[str]:
+        existing: list[str] = list(
             chain(*self._execute(models.Package.objects.select_star()).fetchall())
         )
         existing.append(self.project_package.name)
@@ -708,7 +702,7 @@ class AutoImport:
     def _add_name(self, name: Name):
         self._execute(models.Name.objects.insert_into(), self._convert_name(name))
 
-    def _find_package_path(self, target_name: str) -> Optional[Package]:
+    def _find_package_path(self, target_name: str) -> Package | None:
         if target_name in sys.builtin_module_names:
             return Package(target_name, Source.BUILTIN, None, PackageType.BUILTIN)
         for folder in self._get_python_folders():
@@ -716,7 +710,7 @@ class AutoImport:
                 package_tuple = get_package_tuple(package, self.project)
                 if package_tuple is None:
                     continue
-                name, source, package_path, package_type = package_tuple
+                name, _source, _package_path, _package_type = package_tuple
                 if name == target_name:
                     return package_tuple
 
@@ -726,7 +720,7 @@ class AutoImport:
         self, resource: Resource, underlined: bool = False
     ) -> ModuleFile:
         assert self.project_package.path
-        underlined = underlined if underlined else self.underlined
+        underlined = underlined or self.underlined
         resource_path: Path = resource.pathlib
         # Resolve the module name by walking up the package hierarchy from the
         # resource (stopping at the first directory without an ``__init__.py``),

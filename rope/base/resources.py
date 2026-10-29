@@ -42,12 +42,7 @@ class Resource(os.PathLike):
         self._path = path
 
     def __repr__(self):
-        return '<{}.{} "{}" at {}>'.format(
-            self.__class__.__module__,
-            self.__class__.__name__,
-            self.path,
-            hex(id(self)),
-        )
+        return f'<{self.__class__.__module__}.{self.__class__.__name__} "{self.path}" at {hex(id(self))}>'
 
     def __fspath__(self) -> str:
         """Return the file system path of this resource"""
@@ -62,7 +57,7 @@ class Resource(os.PathLike):
 
     def remove(self):
         """Remove resource from the project"""
-        self._perform_change(change.RemoveResource(self), "Removing <%s>" % self.path)
+        self._perform_change(change.RemoveResource(self), f"Removing <{self.path}>")
 
     def is_dir(self):
         """Alias for `is_folder()`"""
@@ -153,7 +148,7 @@ class File(Resource):
         except OSError:
             pass
         self._perform_change(
-            change.ChangeContents(self, contents), "Writing file <%s>" % self.path
+            change.ChangeContents(self, contents), f"Writing file <{self.path}>"
         )
 
     def is_folder(self):
@@ -182,14 +177,14 @@ class Folder(Resource):
     def create_file(self, file_name):
         self._perform_change(
             change.CreateFile(self, file_name),
-            "Creating file <%s>" % self._get_child_path(file_name),
+            f"Creating file <{self._get_child_path(file_name)}>",
         )
         return self.get_child(file_name)
 
     def create_folder(self, folder_name):
         self._perform_change(
             change.CreateFolder(self, folder_name),
-            "Creating folder <%s>" % self._get_child_path(folder_name),
+            f"Creating folder <{self._get_child_path(folder_name)}>",
         )
         return self.get_child(folder_name)
 

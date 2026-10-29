@@ -1,7 +1,6 @@
 import bisect
 import collections
 import io
-import numbers
 import re
 import tokenize
 import warnings
@@ -81,7 +80,7 @@ class _PatchingASTWalker:
             return method(node)
         # ???: Unknown node; what should we do here?
         warnings.warn(
-            "Unknown node type <%s>; please report!" % node.__class__.__name__,
+            f"Unknown node type <{node.__class__.__name__}>; please report!",
             RuntimeWarning,
         )
         node.region = (self.source.offset, self.source.offset)
@@ -92,8 +91,7 @@ class _PatchingASTWalker:
         if hasattr(node, "region"):
             # ???: The same node was seen twice; what should we do?
             warnings.warn(
-                "Node <%s> has been already patched; please report!"
-                % node.__class__.__name__,
+                f"Node <{node.__class__.__name__}> has been already patched; please report!",
                 RuntimeWarning,
             )
             return
@@ -175,7 +173,7 @@ class _PatchingASTWalker:
             if self.children:
                 children.appendleft(self.source[start + 1 : old_start])
                 children.appendleft("(")
-            token_start, token_end = self.source.consume(")")
+            token_start, _token_end = self.source.consume(")")
             if self.children:
                 children.append(self.source[old_offset:token_start])
                 children.append(")")
@@ -273,8 +271,7 @@ class _PatchingASTWalker:
     def _Assert(self, node):
         children = ["assert", node.test]
         if node.msg:
-            children.append(",")
-            children.append(node.msg)
+            children.extend((",", node.msg))
         self._handle(node, children)
 
     def _Assign(self, node):
@@ -288,8 +285,7 @@ class _PatchingASTWalker:
     def _AnnAssign(self, node):
         children = [node.target, ":", node.annotation]
         if node.value is not None:
-            children.append("=")
-            children.append(node.value)
+            children.extend(("=", node.value))
         self._handle(node, children)
 
     def _BinOp(self, node):
@@ -369,7 +365,6 @@ class _PatchingASTWalker:
             )
 
         QUOTE_CHARS = ['"""', "'''", '"', "'"]
-        offset = self.source.offset
         start, end = self.ast_adapter[node]
 
         children = []
@@ -413,8 +408,7 @@ class _PatchingASTWalker:
             )
         self.source.offset = field_start
         children = []
-        children.append("{")
-        children.append(node.value)
+        children.extend(("{", node.value))
         if node.format_spec:
             children.append(":")
             for val in node.format_spec.values:
@@ -589,7 +583,7 @@ class _PatchingASTWalker:
     def _is_elif(self, node):
         if not isinstance(node, ast.If):
             return False
-        start, end = self.ast_adapter[node]
+        start, _end = self.ast_adapter[node]
         return "elif" in self.source[start : start + 4]
 
     def _IfExp(self, node):
@@ -657,8 +651,7 @@ class _PatchingASTWalker:
         if node.exc:
             children.append(node.exc)
         if node.cause:
-            children.append("from")
-            children.append(node.cause)
+            children.extend(("from", node.cause))
         self._handle(node, children)
 
     def _Return(self, node):
@@ -678,8 +671,7 @@ class _PatchingASTWalker:
         if node.upper:
             children.append(node.upper)
         if node.step:
-            children.append(":")
-            children.append(node.step)
+            children.extend((":", node.step))
         self._handle(node, children)
 
     def _TryFinally(self, node):
@@ -732,8 +724,7 @@ class _PatchingASTWalker:
         if node.type:
             children.append(node.type)
         if node.name:
-            children.append("as")
-            children.append(node.name)
+            children.extend(("as", node.name))
         children.append(":")
         children.extend(node.body)
 
@@ -966,8 +957,7 @@ class _Source:
 
     def consume_node(self, node):
         start, end = self.ast_adapter[node]
-        if self.offset < end:
-            self.offset = end
+        self.offset = max(self.offset, end)
         return start, end
 
     def _good_token(self, token, offset):

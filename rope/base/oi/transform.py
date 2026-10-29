@@ -136,7 +136,7 @@ class TextualToPyObject:
             return None
 
     def builtin_to_pyobject(self, textual):
-        method = getattr(self, "builtin_%s_to_pyobject" % textual[1], None)
+        method = getattr(self, f"builtin_{textual[1]}_to_pyobject", None)
         if method is not None:
             return method(textual)
 

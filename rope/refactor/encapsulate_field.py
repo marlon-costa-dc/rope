@@ -36,7 +36,7 @@ class EncapsulateField:
         """
         if resources is None:
             resources = self.project.get_python_files()
-        changes = ChangeSet("Encapsulate field <%s>" % self.name)
+        changes = ChangeSet(f"Encapsulate field <{self.name}>")
         job_set = task_handle.create_jobset("Collecting Changes", len(resources))
         if getter is None:
             getter = "get_" + self.name
@@ -159,10 +159,10 @@ class _FindChangesForModule:
                         + "()"
                     )
                     result.append(
-                        self.setter + "(" + var_name + " %s " % assignment_type[:-1]
+                        self.setter + "(" + var_name + f" {assignment_type[:-1]} "
                     )
                 current_line = self.lines.get_line_number(start)
-                start_line, end_line = self.pymodule.logical_lines.logical_line_in(
+                _start_line, end_line = self.pymodule.logical_lines.logical_line_in(
                     current_line
                 )
                 self.last_set = self.lines.get_line_end(end_line)

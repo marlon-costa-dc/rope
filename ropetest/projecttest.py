@@ -75,7 +75,7 @@ class ProjectTest(unittest.TestCase):
             project_root = pathlib.Path(tmpdir) / "sampleproject2"
             assert not project_root.exists()
 
-            project = Project(project_root)
+            Project(project_root)
 
             assert project_root.exists()
             assert project_root.is_dir()
@@ -199,10 +199,16 @@ class ProjectTest(unittest.TestCase):
         self.assertTrue(not self.project.get_resource(self.sample_file).is_folder())
 
     def test_is_dir(self):
-        with patch('rope.base.resources.Folder.is_folder') as is_folder1:
-            assert self.project.get_resource(self.sample_folder).is_dir() == is_folder1.return_value
-        with patch('rope.base.resources.File.is_folder') as is_folder2:
-            assert self.project.get_resource(self.sample_file).is_dir() == is_folder2.return_value
+        with patch("rope.base.resources.Folder.is_folder") as is_folder1:
+            assert (
+                self.project.get_resource(self.sample_folder).is_dir()
+                == is_folder1.return_value
+            )
+        with patch("rope.base.resources.File.is_folder") as is_folder2:
+            assert (
+                self.project.get_resource(self.sample_file).is_dir()
+                == is_folder2.return_value
+            )
 
     def testget_children(self):
         children = self.project.get_resource(self.sample_folder).get_children()
@@ -397,7 +403,7 @@ class ProjectTest(unittest.TestCase):
         sample_file = self.project.root.create_file("my_file.txt")
         contents = (
             b"# -*- coding: utf-8 -*-\n"
-            + br"#\N{LATIN SMALL LETTER I WITH DIAERESIS}\n"
+            + rb"#\N{LATIN SMALL LETTER I WITH DIAERESIS}\n"
         ).decode("utf8")
         file = open(sample_file.real_path, "wb")
         file.write(contents.encode("utf-8"))
@@ -407,14 +413,14 @@ class ProjectTest(unittest.TestCase):
     def test_file_encoding_writing(self):
         sample_file = self.project.root.create_file("my_file.txt")
         contents = (
-            b"# -*- coding: utf-8 -*-\n" + br"\N{LATIN SMALL LETTER I WITH DIAERESIS}\n"
+            b"# -*- coding: utf-8 -*-\n" + rb"\N{LATIN SMALL LETTER I WITH DIAERESIS}\n"
         ).decode("utf8")
         sample_file.write(contents)
         self.assertEqual(contents, sample_file.read())
 
     def test_using_utf8_when_writing_in_case_of_errors(self):
         sample_file = self.project.root.create_file("my_file.txt")
-        contents = br"\n\N{LATIN SMALL LETTER I WITH DIAERESIS}\n".decode("utf8")
+        contents = rb"\n\N{LATIN SMALL LETTER I WITH DIAERESIS}\n".decode("utf8")
         sample_file.write(contents)
         self.assertEqual(contents, sample_file.read())
 
@@ -1088,7 +1094,10 @@ class RopeFolderTest(unittest.TestCase):
         site_packages.mkdir(parents=True)
         (site_packages / "stubpkg.py").write_text("")
         project = Project(str(directory), python_path=[str(site_packages)])
-        self.assertTrue(project.get_file(".venv/lib/python3.13/site-packages/stubpkg.py").exists() is not None)
+        self.assertTrue(
+            project.get_file(".venv/lib/python3.13/site-packages/stubpkg.py").exists()
+            is not None
+        )
         project.close()
 
     def test_ignored_folders(self):
@@ -1212,7 +1221,7 @@ class RopeFolderTest(unittest.TestCase):
         self.project = testutils.sample_project(fscommands=fscommands, ropefolder=None)
         myfile = self.project.get_file("myfile.txt")
         myfile.create()
-        myfolder = self.project.root.create_folder("myfolder")
+        self.project.root.create_folder("myfolder")
 
         children = {resource.path for resource in self.project.root.get_children()}
 
@@ -1249,12 +1258,14 @@ class RopeFolderTest(unittest.TestCase):
         config = self.project.get_file(".ropeproject/config.py")
         if not config.exists():
             config.create()
-        config.write(dedent("""\
+        config.write(
+            dedent("""\
             def set_prefs(prefs):
                 prefs["ignored_resources"] = ["myfile.txt"]
             def project_opened(project):
                 project.root.create_file("loaded")
-        """))
+        """)
+        )
         self.project.close()
         self.project = Project(self.project.address)
         self.assertTrue(self.project.get_file("loaded").exists())
@@ -1266,10 +1277,12 @@ class RopeFolderTest(unittest.TestCase):
         config = self.project.get_file("pyproject.toml")
         if not config.exists():
             config.create()
-        config.write(dedent("""\
+        config.write(
+            dedent("""\
             [tool.rope]
             ignored_resources=["pyproject.py"]
-        """))
+        """)
+        )
         self.project.close()
         self.project = Project(self.project.address)
         myfile = self.project.get_file("pyproject.py")
@@ -1291,10 +1304,12 @@ class RopeFolderTest(unittest.TestCase):
         config = self.project.get_file("pyproject.toml")
         if not config.exists():
             config.create()
-        config.write(dedent("""\
+        config.write(
+            dedent("""\
             [project]
             name = 'testproject'
-        """))
+        """)
+        )
         self.project.close()
         self.project = Project(self.project.address)
         myfile = self.project.get_file("pyproject.py")
@@ -1305,10 +1320,12 @@ class RopeFolderTest(unittest.TestCase):
         config = self.project.get_file("pyproject.toml")
         if not config.exists():
             config.create()
-        config.write(dedent("""\
+        config.write(
+            dedent("""\
             [tool.anothertool]
             name = 'testproject'
-        """))
+        """)
+        )
         self.project.close()
         self.project = Project(self.project.address)
         myfile = self.project.get_file("pyproject.py")

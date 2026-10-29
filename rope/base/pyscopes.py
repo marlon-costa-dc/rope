@@ -1,6 +1,4 @@
-import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import ast, codeanalyze, exceptions, pynames, utils
-from rope.refactor import patchedast
 
 
 class Scope:
@@ -20,7 +18,7 @@ class Scope:
     def get_name(self, name):
         """Return name `PyName` defined in this scope"""
         if name not in self.get_names():
-            raise exceptions.NameNotFoundError("name %s not found" % name)
+            raise exceptions.NameNotFoundError(f"name {name} not found")
         return self.get_names()[name]
 
     def __getitem__(self, key):
@@ -31,13 +29,23 @@ class Scope:
         """The same as ``key in self.get_names()``"""
         return key in self.get_names()
 
-    @utils.saveit
     def get_scopes(self):
         """Return the subscopes of this scope
 
         The returned scopes should be sorted by the order they appear.
         """
-        return self._create_scopes()
+        scopes = getattr(self, "_scopes", None)
+        if scopes is None:
+            scopes = self._create_scopes()
+            # Durante a criação estrutural do dono, a guarda de recursão em
+            # _get_structural_attributes devolve um conjunto vazio
+            # temporário; cachear essa resposta (saveit) envenenaria o
+            # resolve das referências estruturais com uma lista vazia
+            # permanente. Só publica cache quando os objetos definidos do
+            # dono já existem.
+            if getattr(self.pyobject, "defineds", None) is not None:
+                self._scopes = scopes
+        return scopes
 
     def lookup(self, name):
         if name in self.get_names():
@@ -145,7 +153,7 @@ class GlobalScope(Scope):
         except exceptions.AttributeNotFoundError:
             if name in self.builtin_names:
                 return self.builtin_names[name]
-            raise exceptions.NameNotFoundError("name %s not found" % name)
+            raise exceptions.NameNotFoundError(f"name {name} not found")
 
     @property
     @utils.saveit
@@ -155,6 +163,12 @@ class GlobalScope(Scope):
     @property
     @utils.saveit
     def _region_source(self):
+        # Deferred import: rope.refactor's package init pulls the analysis
+        # stack, which reaches evaluate; evaluate subclasses this module's
+        # TemporaryScope at import time, so a module-level import here is
+        # circular when pyscopes loads first.
+        from rope.refactor import patchedast
+
         return patchedast._Source(self._get_source())
 
     def _get_source(self):
@@ -183,6 +197,11 @@ class GlobalScope(Scope):
 
     @property
     def builtin_names(self):
+        # Deferred import: builtins imports evaluate, whose SourceValueScope
+        # subclasses this module's TemporaryScope at import time; a module-level
+        # import here re-enters a half-initialized pyscopes (circular).
+        import rope.base.builtins  # Use full qualification for clarity.
+
         return rope.base.builtins.builtins.get_attributes()
 
 
@@ -261,7 +280,13 @@ class FunctionScope(Scope):
             for n in self.pyobject.get_ast().body:
                 new_visitor.visit(n)
             self.names = new_visitor.names
-            self.names.update(self.pyobject.get_parameters())
+            parameters = self.pyobject.get_parameters()
+            for name, parameter in parameters.items():
+                assigned = self.names.get(name)
+                if isinstance(assigned, pynames.AssignedName):
+                    assigned.initial_binding = parameter
+                    parameter.assigned_value = assigned
+            self.names.update(parameters)
             self.returned_asts = new_visitor.returned_asts
             self.is_generator = new_visitor.generator
             self.defineds = new_visitor.defineds

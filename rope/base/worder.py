@@ -536,7 +536,7 @@ class _RealFinder:
             if self.code[current] == "=":
                 primary_start = current - 1
                 current -= 1
-                while current != first and self.code[current] not in ",":
+                while current != first and self.code[current] != ",":
                     current = self._find_last_non_space_char(current - 1)
                 param_name = self.raw[current + 1 : primary_start + 1].strip()
                 keywords.append((self.__strip_type_hint(param_name), primary))
@@ -575,7 +575,7 @@ class _RealFinder:
 
     def get_function_and_args_in_header(self, offset):
         offset = self.find_function_offset(offset)
-        lparens, rparens = self.get_word_parens_range(offset)
+        _lparens, rparens = self.get_word_parens_range(offset)
         return self.raw[offset : rparens + 1]
 
     def find_function_offset(self, offset, definition="def "):
@@ -589,5 +589,5 @@ class _RealFinder:
 
     def get_lambda_and_args(self, offset):
         offset = self.find_function_offset(offset, definition="lambda ")
-        lparens, rparens = self.get_word_parens_range(offset, opening=" ", closing=":")
+        _lparens, rparens = self.get_word_parens_range(offset, opening=" ", closing=":")
         return self.raw[offset : rparens + 1]

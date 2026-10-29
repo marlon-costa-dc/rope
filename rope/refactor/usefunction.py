@@ -54,7 +54,7 @@ class UseFunction:
             )
         if resources is None:
             resources = self.project.get_python_files()
-        changes = change.ChangeSet("Using function <%s>" % self.pyfunction.get_name())
+        changes = change.ChangeSet(f"Using function <{self.pyfunction.get_name()}>")
         if self.resource in resources:
             newresources = list(resources)
             newresources.remove(self.resource)
@@ -75,7 +75,7 @@ class UseFunction:
         goal = self._make_goal(import_=others)
         imports = None
         if others:
-            imports = ["import %s" % self._module_name()]
+            imports = [f"import {self._module_name()}"]
 
         body_region = sourceutils.get_body_region(self.pyfunction)
         args_value = {"skip": (self.resource, body_region)}
@@ -100,13 +100,11 @@ class UseFunction:
         wildcards.extend(self._find_temps())
         if self._does_return():
             if self._is_expression():
-                replacement = "${%s}" % self._rope_returned
+                replacement = f"${{{self._rope_returned}}}"
             else:
-                replacement = "{} = ${{{}}}".format(
-                    self._rope_result, self._rope_returned
-                )
+                replacement = f"{self._rope_result} = ${{{self._rope_returned}}}"
             body = restructure.replace(
-                body, "return ${%s}" % self._rope_returned, replacement
+                body, f"return ${{{self._rope_returned}}}", replacement
             )
             wildcards.append(self._rope_result)
         return similarfinder.make_pattern(body, wildcards)
@@ -121,13 +119,10 @@ class UseFunction:
             function_name = self._module_name() + "." + function_name
         goal = "{}({})".format(
             function_name,
-            ", ".join(("${%s}" % p) for p in params),
+            ", ".join((f"${{{p}}}") for p in params),
         )
         if self._does_return() and not self._is_expression():
-            goal = "${{{}}} = {}".format(
-                self._rope_result,
-                goal,
-            )
+            goal = f"${{{self._rope_result}}} = {goal}"
         return goal
 
     def _does_return(self):

@@ -16,6 +16,25 @@ from rope.base import (
 )
 
 
+def _mro_holds(mro, target):
+    """Tell whether ``mro`` holds the class ``target`` by runtime identity.
+
+    A runtime class can be wrapped by distinct ``BuiltinClass`` objects
+    (``_runtime_class`` cache versus module attribute exposure); the
+    metaclass derivation compares the wrapped runtime classes, falling back
+    to object identity for source-defined classes.
+    """
+    target_builtin = getattr(target, "builtin", None)
+    if target_builtin is not None:
+        for ancestor in mro:
+            if ancestor is target:
+                return True
+            if getattr(ancestor, "builtin", None) is target_builtin:
+                return True
+        return False
+    return target in mro
+
+
 class PyFunction(pyobjects.PyFunction):
     def __init__(self, pycore, ast_node, parent):
         rope.base.pyobjects.AbstractFunction.__init__(self)
@@ -26,9 +45,10 @@ class PyFunction(pyobjects.PyFunction):
         )
         self.returned = pynamesdef._Inferred(self._infer_returned)
         self.parameter_pynames = None
+        self.assigned_attributes = {}
 
     def _create_structural_attributes(self):
-        return {}
+        return self.assigned_attributes
 
     def _create_concluded_attributes(self):
         return {}
@@ -147,6 +167,8 @@ class PyFunction(pyobjects.PyFunction):
                     return "staticmethod"
                 if decorator_object.builtin is classmethod:
                     return "classmethod"
+            if self.get_name() == "__class_getitem__":
+                return "classmethod"
             return "method"
         return "function"
 
@@ -179,22 +201,129 @@ class PyClass(pyobjects.PyClass):
         rope.base.pyobjects.AbstractClass.__init__(self)
         rope.base.pyobjects.PyDefinedObject.__init__(self, pycore, ast_node, parent)
         self.parent = parent
-        self._superclasses = self.get_module()._get_concluded_data()
+        self._bases = self.get_module()._get_concluded_data()
+        self._mro = self.get_module()._get_concluded_data()
+        self._metaclass = self.get_module()._get_concluded_data()
+        self._linearizing = False
         self._receiver_attributes_collected = False
+        self._base_name_binding = None
 
     def _create_structural_attributes(self):
         from rope.base import externaldata
 
         attributes = super()._create_structural_attributes()
-        return externaldata.add_class_data(self, attributes)
+        attributes = externaldata.add_class_data(self, attributes)
+        if any(
+            rope.base.builtins._is_runtime_class(self, owner)
+            for owner in (
+                rope.base.builtins.typing.Generic,
+                rope.base.builtins.typing.Protocol,
+            )
+        ):
+            attributes["__class_getitem__"] = rope.base.builtins._class_getitem(
+                self, self.pycore.project, True
+            )
+        return attributes
+
+    def get_bases(self):
+        if self._bases.get() is None:
+            bases = self._get_bases()
+            if any(
+                isinstance(base, pyobjects.UnresolvedBase) and base.pyobject is None
+                for base in bases
+            ):
+                # Base que ainda não pôde ser avaliada é resposta transitória
+                # (inferência incompleta no momento da pergunta); publicar
+                # cache envenenaria o MRO com um UnresolvedBase permanente.
+                return bases
+            self._bases.set(bases)
+        return self._bases.get()
 
     def get_superclasses(self):
-        if self._superclasses.get() is None:
-            self._superclasses.set(self._get_bases())
-        return self._superclasses.get()
+        return [
+            base
+            for base in self.get_bases()
+            if not isinstance(base, pyobjects.UnresolvedBase)
+        ]
+
+    def get_mro(self):
+        if self._mro.get() is None:
+            # Evaluating the bases may look up attributes of this class;
+            # only the linearization of the ancestors can reach it again.
+            bases = self.get_bases()
+            if self._linearizing:
+                raise exceptions.InconsistentHierarchyError(
+                    f"Cyclic class inheritance: {self.get_name()}"
+                )
+            self._linearizing = True
+            try:
+                if self._bases.get() is None and any(
+                    isinstance(base, pyobjects.UnresolvedBase)
+                    and base.pyobject is None
+                    for base in bases
+                ):
+                    # Bases que a primeira avaliação não pôde vincular são
+                    # transientes de construção do índice fonte lazy; os
+                    # efeitos da própria avaliação completam os módulos
+                    # envolvidos. Uma reavaliação imediata settle; se o
+                    # transitório persiste, ele segue adiante sem cache.
+                    bases = self._get_bases()
+                    if not any(
+                        isinstance(base, pyobjects.UnresolvedBase)
+                        and base.pyobject is None
+                        for base in bases
+                    ):
+                        self._bases.set(bases)
+                mro = pyobjects.linearize(self, bases)
+            finally:
+                self._linearizing = False
+            # Bases transitórias persistentes (sem cache estável em _bases)
+            # linearizam sem publicar cache: o MRO seria envenenado pelos
+            # UnresolvedBase da avaliação incompleta.
+            if self._bases.get() is None:
+                return mro
+            self._mro.set(mro)
+        return self._mro.get()
 
     def get_name(self):
         return self.get_ast().name
+
+    def get_metaclass(self):
+        if self._metaclass.get() is None:
+            self.get_mro()
+            winner = super().get_metaclass()
+            for keyword in self.ast_node.keywords:
+                if keyword.arg == "metaclass":
+                    binding = rope.base.evaluate.eval_node(
+                        self.parent.get_scope(), keyword.value
+                    )
+                    if binding is None or not isinstance(
+                        binding.get_object(), pyobjects.AbstractClass
+                    ):
+                        self._metaclass.set(
+                            pyobjects.UnresolvedBase(
+                                keyword.value,
+                                binding.get_object() if binding is not None else None,
+                            )
+                        )
+                        return self._metaclass.get()
+                    winner = binding.get_object()
+            for base in self.get_bases():
+                if isinstance(base, pyobjects.UnresolvedBase):
+                    self._metaclass.set(base)
+                    return base
+                candidate = base.get_metaclass()
+                if not isinstance(candidate, pyobjects.AbstractClass):
+                    self._metaclass.set(candidate)
+                    return candidate
+                if _mro_holds(candidate.get_mro(), winner):
+                    winner = candidate
+                elif not _mro_holds(winner.get_mro(), candidate):
+                    raise exceptions.InconsistentHierarchyError(
+                        f"Conflicting metaclasses: {self.get_name()}"
+                    )
+            self._metaclass.set(winner)
+        return self._metaclass.get()
 
     def _get_structural_attributes(self):
         attributes = super()._get_structural_attributes()
@@ -222,20 +351,131 @@ class PyClass(pyobjects.PyClass):
 
     def _create_concluded_attributes(self):
         result = {}
-        for base in reversed(self.get_superclasses()):
-            result.update(base.get_attributes())
+        for ancestor in reversed(self.get_mro()[1:]):
+            result.update(ancestor._get_own_attributes())
         return result
 
+    def _get_own_attributes(self):
+        return self._get_structural_attributes()
+
     def _get_bases(self):
+        if rope.base.builtins._is_runtime_class(
+            self, rope.base.builtins.typing.Generic
+        ):
+            return rope.base.builtins._runtime_class(
+                rope.base.builtins.typing.Generic
+            ).get_superclasses()
+        bindings = []
+        for base_node in self.ast_node.bases:
+            scope = self.parent.get_scope()
+            if self._base_name_binding is not None:
+                from rope.base.sourcebindings import TypeParameterEnvironment
+
+                context = (
+                    self.get_module()
+                    .get_source_binding_index()
+                    .context_for_node(base_node)
+                )
+                if context is not None:
+                    scope = context.environment
+                names = {self.get_name(): self._base_name_binding}
+                if isinstance(scope, TypeParameterEnvironment):
+                    names.update(scope.get_defined_names())
+                scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
+            bindings.append(rope.base.evaluate.eval_node(scope, base_node))
+        original = rope.base.builtins.get_tuple(
+            *(
+                binding.get_object() if binding is not None else None
+                for binding in bindings
+            )
+        )
+        generic_aliases = [
+            value
+            for value in original.get_type().get_holding_objects()
+            if isinstance(value, rope.base.builtins.GenericAlias)
+            and rope.base.builtins._is_runtime_class(
+                value.origin, rope.base.builtins.typing.Generic
+            )
+        ]
+        if generic_aliases and any(
+            alias != generic_aliases[0] for alias in generic_aliases[1:]
+        ):
+            raise TypeError("Cannot inherit from Generic[...] multiple times")
         result = []
-        for base_name in self.ast_node.bases:
-            base = rope.base.evaluate.eval_node(self.parent.get_scope(), base_name)
-            if (
-                base is not None
-                and base.get_object().get_type()
-                == rope.base.pyobjects.get_base_type("Type")
+        for base_node, binding in zip(self.ast_node.bases, bindings):
+            if binding is None:
+                result.append(pyobjects.UnresolvedBase(base_node))
+            else:
+                value = binding.get_object()
+                if isinstance(value, pyobjects.AbstractClass):
+                    result.append(value)
+                elif "__mro_entries__" in value:
+                    method, receiver = rope.base.evaluate.get_callable(
+                        value["__mro_entries__"]
+                    )
+                    if method is None:
+                        raise TypeError("__mro_entries__ must be callable")
+                    if receiver is None:
+                        receiver = pynamesdef.UnboundName(value)
+                    args = arguments.ObjectArguments([pynamesdef.UnboundName(original)])
+                    args = arguments.bind_method(
+                        receiver,
+                        method,
+                        args,
+                        self.parent.get_scope(),
+                        owner=receiver.get_object().get_type(),
+                    )
+                    replacement = method.get_returned_object(args)
+                    if replacement is None:
+                        result.append(pyobjects.UnresolvedBase(base_node, value))
+                        continue
+                    sequence = replacement.get_type()
+                    if not isinstance(sequence, rope.base.builtins.Tuple):
+                        raise TypeError("__mro_entries__ must return a tuple")
+                    entries = sequence.get_holding_objects()
+                    # ``__mro_entries__`` derivations may hand back the raw
+                    # typing origin (a GenericAlias head or a module-level
+                    # alias object) instead of a rope class. A non-class
+                    # entry occupies its MRO slot as an unresolved witness —
+                    # raising here would abort the whole hierarchy walk for
+                    # a base Python itself accepts at runtime.
+                    classes = [
+                        entry
+                        for entry in entries
+                        if isinstance(entry, pyobjects.AbstractClass)
+                    ]
+                    result.extend(classes)
+                    if len(classes) != len(entries):
+                        result.append(pyobjects.UnresolvedBase(base_node, value))
+                else:
+                    if isinstance(base_node, ast.Subscript):
+                        origin_binding = rope.base.evaluate.eval_node(
+                            scope, base_node.value
+                        )
+                        origin = (
+                            origin_binding.get_object()
+                            if origin_binding is not None
+                            else None
+                        )
+                        if isinstance(origin, pyobjects.AbstractClass):
+                            # PEP 560: uma base parametrizada contribui com a
+                            # ancestralidade da classe de origem. Quando o
+                            # __class_getitem__ do dono é opaco (ex.: pydantic
+                            # constrói submodelos dinâmicos), o valor não é
+                            # classe nem expõe __mro_entries__; a origem é o
+                            # limite inferior correto para o MRO.
+                            result.append(origin)
+                            continue
+                    result.append(pyobjects.UnresolvedBase(base_node, value))
+        if getattr(self.ast_node, "type_params", ()):
+            generic = self.pycore.project.get_module("typing")["Generic"].get_object()
+            if not isinstance(generic, pyobjects.AbstractClass):
+                result.append(pyobjects.UnresolvedBase(self.ast_node, generic))
+            elif not any(
+                isinstance(base, pyobjects.AbstractClass) and generic in base.get_mro()
+                for base in result
             ):
-                result.append(base.get_object())
+                result.append(generic)
         return result
 
     def _create_scope(self):
@@ -279,10 +519,10 @@ class PyModule(pyobjects.PyModule):
         except SyntaxError as e:
             raise exceptions.ModuleSyntaxError(filename, e.lineno, e.msg)
         except UnicodeDecodeError as e:
-            raise exceptions.ModuleSyntaxError(filename, 1, "%s" % (e.reason))
+            raise exceptions.ModuleSyntaxError(filename, 1, f"{e.reason}")
         return source_code, ast_node
 
-    @utils.prevent_recursion(lambda: {})
+    @utils.prevent_recursion(dict)
     def _create_concluded_attributes(self):
         result = {}
         for star_import in self.star_imports:
@@ -488,9 +728,11 @@ class _AssignVisitor(ast.RopeNodeVisitor):
     def __init__(self, scope_visitor):
         self.scope_visitor = scope_visitor
         self.assigned_ast = None
+        self.assigned_targets = ()
 
     def _Assign(self, node):
         self.assigned_ast = node.value
+        self.assigned_targets = node.targets
         for child_node in node.targets:
             self.visit(child_node)
         _ExpressionVisitor(self.scope_visitor).visit(node.value)
@@ -519,7 +761,61 @@ class _AssignVisitor(ast.RopeNodeVisitor):
             self._assigned(name, assignment)
 
     def _Attribute(self, node):
-        pass
+        visitor = self.scope_visitor
+        if not isinstance(visitor, _GlobalVisitor) or not isinstance(
+            node.value, ast.Name
+        ):
+            return
+        receiver = visitor.names.get(node.value.id)
+        if not isinstance(receiver, pynamesdef.DefinedName):
+            return
+        function = receiver.get_object()
+        if (
+            not isinstance(function, PyFunction)
+            or function.parent is not visitor.owner_object
+        ):
+            return
+        if visitor.depth != 1 or len(self.assigned_targets) != 1:
+            function.assigned_attributes[node.attr] = self._unresolved_attribute(
+                function, node, "conditional or chained assignment"
+            )
+            function.attributes.set(None)
+            return
+        builtins_scope = rope.base.pyscopes.Scope(
+            visitor.pycore, rope.base.builtins.builtins, None
+        )
+        scope = rope.base.pyscopes.TemporaryScope(
+            visitor.pycore, builtins_scope, visitor.names
+        )
+        scope.pyobject = visitor.owner_object
+        value = rope.base.evaluate.eval_node(scope, self.assigned_ast)
+        if value is None:
+            function.assigned_attributes[node.attr] = self._unresolved_attribute(
+                function, node, "unresolved assignment value"
+            )
+            function.attributes.set(None)
+            return
+        from rope.base.sourcebindings import SourceValueName
+
+        function.assigned_attributes[node.attr] = SourceValueName(
+            value, value.get_object()
+        )
+        function.attributes.set(None)
+
+    @staticmethod
+    def _unresolved_attribute(function, target, reason):
+        module = function.get_module()
+        line = target.lineno
+        message = (
+            "Unresolved function attribute write: "
+            f"{module.get_name()}:{line}: "
+            f"{function.get_name()}.{target.attr} ({reason})"
+        )
+
+        def unresolved():
+            raise exceptions.RopeError(message)
+
+        return pynamesdef.EvaluatedName(unresolved, module=module, lineno=line)
 
     def _Subscript(self, node):
         pass
@@ -544,6 +840,7 @@ class _ScopeVisitor(_ExpressionVisitor):
 
     def _ClassDef(self, node):
         pyclass = PyClass(self.pycore, node, self.owner_object)
+        pyclass._base_name_binding = self.names.get(node.name)
         self.names[node.name] = pynamesdef.DefinedName(pyclass)
         self.defineds.append(pyclass)
 
@@ -623,6 +920,13 @@ class _ScopeVisitor(_ExpressionVisitor):
             pyname = pynamesdef.AssignedName(module=self.get_module())
         if isinstance(pyname, pynamesdef.AssignedName):
             if assignment is not None:
+                node = assignment.type_hint or assignment.ast_node
+                context = (
+                    self.get_module().get_source_binding_index().context_for_node(node)
+                )
+                assignment.branch_context = (
+                    context.branch_context if context is not None else None
+                )
                 pyname.assignments.append(assignment)
             self.names[name] = pyname
 
@@ -738,7 +1042,16 @@ class _ComprehensionVisitor(_ScopeVisitor):
 
 
 class _GlobalVisitor(_ScopeVisitor):
-    pass
+    def __init__(self, pycore, owner_object):
+        super().__init__(pycore, owner_object)
+        self.depth = 0
+
+    def visit(self, node):
+        self.depth += 1
+        try:
+            return super().visit(node)
+        finally:
+            self.depth -= 1
 
 
 class _ClassVisitor(_ScopeVisitor):

@@ -40,7 +40,7 @@ class IntroduceFactory:
         """
         if resources is None:
             resources = self.project.get_python_files()
-        changes = ChangeSet("Introduce factory method <%s>" % factory_name)
+        changes = ChangeSet(f"Introduce factory method <{factory_name}>")
         job_set = task_handle.create_jobset("Collecting Changes", len(resources))
         self._change_module(resources, changes, factory_name, global_factory, job_set)
         return changes
@@ -51,7 +51,7 @@ class IntroduceFactory:
 
     def _change_module(self, resources, changes, factory_name, global_, job_set):
         if global_:
-            replacement = "__rope_factory_%s_" % factory_name
+            replacement = f"__rope_factory_{factory_name}_"
         else:
             replacement = self._new_function_name(factory_name, global_)
 
@@ -107,13 +107,9 @@ class IntroduceFactory:
                 raise exceptions.RefactoringError(
                     "Cannot make global factory method for nested classes."
                 )
-            return "\ndef {}(*args, **kwds):\n{}return {}(*args, **kwds)\n".format(
-                factory_name,
-                unit_indents,
-                self.old_name,
-            )
+            return f"\ndef {factory_name}(*args, **kwds):\n{unit_indents}return {self.old_name}(*args, **kwds)\n"
         unindented_factory = (
-            "@staticmethod\ndef %s(*args, **kwds):\n" % factory_name
+            f"@staticmethod\ndef {factory_name}(*args, **kwds):\n"
             + f"{unit_indents}return {self.old_name}(*args, **kwds)\n"
         )
         indents = self._get_scope_indents(lines, class_scope) + sourceutils.get_indent(

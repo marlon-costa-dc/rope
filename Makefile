@@ -8,7 +8,14 @@ export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
 
-.PHONY: setup test test-file check check-codecov fmt build artifact-check
+.PHONY: setup test test-file check check-codecov fmt build artifact-check source-ancestry source-fixture
+
+source-fixture:
+	"$(PYTHON)" -m ropetest.source_ancestry_fixtures
+
+source-ancestry:
+	test -n "$(REQUEST)"
+	"$(PYTHON)" -m ropetest.source_ancestry_probe "$(REQUEST)"
 
 setup:
 	@set -eu; \

@@ -43,9 +43,7 @@ class DefaultWildcard:
 
         if not self._check_exact(args, suspect):
             return False
-        if not self._check_object(args, suspect):
-            return False
-        return True
+        return self._check_object(args, suspect)
 
     def _check_object(self, args, suspect):
         kind = None
@@ -63,7 +61,7 @@ class DefaultWildcard:
     def _check_exact(self, args, suspect):
         node = suspect.node
         if args.get("exact"):
-            if not isinstance(node, ast.Name) or not node.id == suspect.name:
+            if not isinstance(node, ast.Name) or node.id != suspect.name:
                 return False
         else:
             if not isinstance(node, ast.expr):

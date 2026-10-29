@@ -27,14 +27,13 @@ class _MockValidation:
 
 
 class _MockFileListObserver:
-
     log = ""
 
     def added(self, path):
-        self.log += "added %s " % path
+        self.log += f"added {path} "
 
     def removed(self, path):
-        self.log += "removed %s " % path
+        self.log += f"removed {path} "
 
 
 class ObjectDBTest(unittest.TestCase):
@@ -155,7 +154,7 @@ class ObjectDBTest(unittest.TestCase):
         db.add_pername("file", "key", "name", 1)
         scope_info = db._get_scope_info("file", "key")
 
-        pickled_data = b'\x80\x04\x95D\x00\x00\x00\x00\x00\x00\x00\x8c\x15rope.base.oi.memorydb\x94\x8c\tScopeInfo\x94\x93\x94)\x81\x94}\x94K\x01K\x02\x86\x94K\x03s}\x94\x8c\x04name\x94K\x01s\x86\x94b.'  # noqa
+        pickled_data = b"\x80\x04\x95D\x00\x00\x00\x00\x00\x00\x00\x8c\x15rope.base.oi.memorydb\x94\x8c\tScopeInfo\x94\x93\x94)\x81\x94}\x94K\x01K\x02\x86\x94K\x03s}\x94\x8c\x04name\x94K\x01s\x86\x94b."
 
         assert pickle.loads(pickled_data).call_info == scope_info.call_info
         assert pickle.loads(pickled_data).per_name == scope_info.per_name
