@@ -65,6 +65,19 @@ against the runtime library's name and physical module resource. A project-local
 ``typing.py`` or a same-named class does not select this model. The shared alias
 factory retains every argument and recognizes only the type-variable capabilities
 available in that interpreter; unavailable APIs do not become substitutes or skips.
+When that authenticated owner is ``Generic`` or ``Protocol``, invalid parameters
+raise the original ``TypeError`` before an alias is constructed. Concrete aliases
+such as ``Mapping[str, str]`` have a different owner and do not justify admitting
+invalid ``Generic`` or ``Protocol`` arguments. This preserves the
+`typing specification's parameter contract
+<https://typing.python.org/en/latest/spec/generics.html#user-defined-generic-types>`_;
+an inference failure must be diagnosed at its actual source rather than bypassing
+this validation. The rejecting exception retains native object and type identities
+for the supplied arguments, including their declaring module resources when known.
+Unknown objects are reported by their native kind without assuming a class name;
+the diagnostic reads the values already supplied to the alias factory and does not
+resolve another namespace. Diagnostic failures remain secondary notes on the same
+``TypeError``. Restoring the validation alone does not qualify a consumer.
 Source ``Generic`` bases use the same native C3 machinery and runtime-library base
 identities as their builtin counterpart. This contract does not authorize importing
 application targets or replacing an unresolved custom hook with its origin.
@@ -94,6 +107,16 @@ application or executing a runtime class factory. This contract includes
 ``type.__new__``, three-argument ``type`` and source metaclass calls whose
 constructor resolves to native ``type.__new__``; qualification against real
 consumers is pending.
+
+Calling a class whose ``__new__`` is a source Python function with implicit or
+explicit staticmethod semantics supplies the requested class exactly once through
+the existing native argument binder. Simple names and qualified class calls use
+the same path. Its inferred return is retained, including an unresolved return;
+the source constructor does not manufacture an instance of its declaring proxy.
+The native ``type.__new__`` path remains unchanged. This cut does not alter the
+existing classmethod or lambda constructor paths and does not establish complete
+constructor qualification. The original public consumer remains the runtime
+acceptance boundary before SDK regression tests and integration.
 
 While an assignment's right-hand side is inferred, a recursive read of that same
 ``AssignedName`` observes only its preceding assignments on a compatible control
@@ -171,6 +194,16 @@ chained event, that event replaces the previous value with an existing native
 ``EvaluatedName`` carrying its module and line. Consuming it raises ``RopeError``
 with that event's origin instead of publishing the old value as definitive.
 A later supported unconditional write can replace this unresolved event.
+
+When evaluating a declared base raises, Rope re-raises that same exception
+with its original traceback. Its ``__notes__`` metadata identifies the source
+module, declaring class, base line and base expression; nested failures retain
+each declaring context. The metadata is stored on Python 3.10 as well, without
+requiring ``BaseException.add_note``. Python 3.11 and later render these notes
+with the traceback. This diagnostic neither substitutes a base nor establishes
+that the ancestry or a consuming refactoring succeeded. If formatting the source
+context itself fails, that secondary failure is recorded as a note without
+replacing the original exception.
 
 To diagnose a real source graph without importing its application, run
 ``make source-ancestry REQUEST=/absolute/request.json``. The request provides

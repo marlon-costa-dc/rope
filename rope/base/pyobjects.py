@@ -249,9 +249,28 @@ def linearize(cls, bases):
             if not any(head is item for other in sequences for item in other[1:]):
                 break
         else:
+            # O bloqueio com as cabeças correntes identifica o par de
+            # hierarquias conflitantes; sem isto, a mensagem nua esconde
+            # quem disputa a posição. A sequência que contém a cabeça não
+            # resolvida aponta a base transitória; módulos identificam de
+            # onde cada sequência veio.
+            heads = []
+            for sequence in sequences:
+                head = _class_name(sequence[0])
+                if isinstance(sequence[0], UnresolvedBase):
+                    head = f"{head} (node={type(sequence[0].node).__name__}:{getattr(sequence[0].node, 'lineno', '?')})"
+                origins = []
+                for item in sequence[:3]:
+                    try:
+                        origins.append(
+                            f"{_class_name(item)}@{item.get_module().get_name()}"
+                        )
+                    except Exception:
+                        origins.append(_class_name(item))
+                heads.append(f"{head} | first3={origins}")
             raise exceptions.InconsistentHierarchyError(
                 "Cannot create a consistent method resolution order "
-                f"for {_class_name(cls)}"
+                f"for {_class_name(cls)} (blocked heads: {heads})"
             )
         result.append(head)
         for sequence in sequences:

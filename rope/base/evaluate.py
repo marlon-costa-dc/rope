@@ -396,7 +396,10 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             result = None
             if "__new__" in pyobject:
                 new_function = pyobject["__new__"].get_object()
-                if rope.base.builtins.BuiltinType.is_constructor(new_function):
+                if rope.base.builtins.BuiltinType.is_constructor(new_function) or (
+                    isinstance(new_function, rope.base.pyobjects.PyFunction)
+                    and new_function.get_kind() != "classmethod"
+                ):
                     args = arguments.create_arguments(
                         None, new_function, node, self.scope, ignore_instance=True
                     )

@@ -9,19 +9,36 @@ from rope.base.project import Project
 
 
 def describe(value):
+    """Describe existing native identities without resolving another binding.
+
+    Object and type ids are process-local witnesses. Type module and resource
+    metadata is included only when the native object exposes that origin;
+    unresolved kinds do not acquire an assumed name or declaring module.
+    Getter failures propagate instead of substituting a different object.
+    """
     if value is None:
         return None
-    result = {"native_type": type(value).__qualname__}
+    result = {
+        "native_type": type(value).__qualname__,
+        "native_id": hex(id(value)),
+    }
     if isinstance(value, (pyobjects.AbstractClass, pyobjects.PyFunction)):
         result["name"] = value.get_name()
         module = value.get_module()
         if module is not None:
             result["module"] = module.get_name()
-    elif isinstance(value, pyobjects.PyObject):
+    if isinstance(value, pyobjects.PyObject):
         value_type = value.get_type()
         result["object_type"] = type(value_type).__qualname__
+        result["object_type_id"] = hex(id(value_type))
         if isinstance(value_type, pyobjects.AbstractClass):
             result["object_type_name"] = value_type.get_name()
+        type_module = value_type.get_module()
+        if type_module is not None:
+            result["object_type_module"] = type_module.get_name()
+            resource = type_module.get_resource()
+            if resource is not None:
+                result["object_type_resource"] = resource.real_path
         if isinstance(value, pyobjects.AbstractFunction):
             result["name"] = value.get_name()
     return result
@@ -102,11 +119,14 @@ def describe_base(owner, base):
 
 
 def describe_frame(function, preassignment_names=()):
+    """Report a native function frame and its elected module resource, or None."""
     module = function.get_module()
     scope = function.get_scope()
+    resource = module.get_resource()
     result = {
         "name": function.get_name(),
         "module": module.get_name(),
+        "resource": resource.real_path if resource is not None else None,
         "parameters": {
             name: describe(parameter.get_object())
             for name, parameter in function.get_parameters().items()
@@ -216,7 +236,10 @@ def describe_expression(scope, expression):
 
 
 def describe_binding(module, binding):
+    """Report a native binding and its elected module resource, or None."""
     result = {"value": describe(binding.get_object())}
+    resource = module.get_resource()
+    result["resource"] = resource.real_path if resource is not None else None
     if isinstance(binding, pynames.AssignedName):
         scope = module.get_scope()
         result["calls"] = []

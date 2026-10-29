@@ -274,7 +274,19 @@ class PyClass(pyobjects.PyClass):
                         for base in bases
                     ):
                         self._bases.set(bases)
-                mro = pyobjects.linearize(self, bases)
+                try:
+                    mro = pyobjects.linearize(self, bases)
+                except exceptions.InconsistentHierarchyError:
+                    # Um conflito pode nascer de um ancestral cuja própria
+                    # hierarquia ainda é transitória; a avaliação feita até
+                    # aqui completou os módulos envolvidos. A reavaliação
+                    # invalida também as bases dos ancestrais diretos (o
+                    # mundo deles completa junto); falha persistente é real.
+                    for base in bases:
+                        invalidate = getattr(base, "invalidate_bases", None)
+                        if invalidate is not None:
+                            invalidate()
+                    mro = pyobjects.linearize(self, self._get_bases())
             finally:
                 self._linearizing = False
             # Bases transitórias persistentes (sem cache estável em _bases)
@@ -395,7 +407,21 @@ class PyClass(pyobjects.PyClass):
                 if isinstance(scope, TypeParameterEnvironment):
                     names.update(scope.get_defined_names())
                 scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
-            bindings.append(rope.base.evaluate.eval_node(scope, base_node))
+            try:
+                bindings.append(rope.base.evaluate.eval_node(scope, base_node))
+            except Exception as error:
+                try:
+                    module = self.get_module()
+                    expression = ast.get_source_segment(module.source_code, base_node)
+                    note = (
+                        f"while evaluating base {expression!r} of "
+                        f"{module.get_name()}.{self.get_name()} "
+                        f"at line {base_node.lineno}"
+                    )
+                except Exception as diagnostic_error:
+                    note = f"base evaluation context failed: {diagnostic_error!r}"
+                error.__dict__.setdefault("__notes__", []).append(note)
+                raise
         original = rope.base.builtins.get_tuple(
             *(
                 binding.get_object() if binding is not None else None

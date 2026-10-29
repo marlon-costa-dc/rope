@@ -213,7 +213,40 @@ def _generic_alias(context, project, typing_alias):
             )
             for argument in arguments_
         ):
-            raise TypeError(f"{origin.get_name()} parameters must be type variables")
+            error = TypeError(f"{origin.get_name()} parameters must be type variables")
+            notes = [
+                f"alias origin={type(origin).__name__}@{id(origin):x} "
+                f"key={type(key).__name__}@{id(key):x}"
+            ]
+            try:
+                for index, argument in enumerate(arguments_):
+                    if argument is None:
+                        notes.append(f"argument[{index}]=None")
+                        continue
+                    for label, value in (
+                        ("object", argument),
+                        ("type", argument.get_type()),
+                    ):
+                        module = value.get_module()
+                        resource = module.get_resource() if module is not None else None
+                        module_name = module.get_name() if module is not None else None
+                        resource_path = (
+                            resource.real_path if resource is not None else None
+                        )
+                        name = (
+                            value.get_name()
+                            if isinstance(value, pyobjects.AbstractClass)
+                            else None
+                        )
+                        notes.append(
+                            f"argument[{index}].{label}="
+                            f"{type(value).__name__}@{id(value):x} name={name!r} "
+                            f"module={module_name!r} resource={resource_path!r}"
+                        )
+            except Exception as diagnostic_error:
+                notes.append(f"generic argument context failed: {diagnostic_error!r}")
+            error.__dict__["__notes__"] = notes
+            raise error
         if len({id(argument) for argument in arguments_}) != len(arguments_):
             raise TypeError(f"{origin.get_name()} parameters must be unique")
     return GenericAlias(origin, arguments_, project, typing_alias)
