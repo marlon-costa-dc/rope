@@ -40,11 +40,13 @@ def test_installed_mro_retains_unresolved_imported_base(alias_project):
     provider = alias_project.root.create_file("provider.py")
     provider.write("declared = 1\n")
     resource = alias_project.root.create_file("consumer.py")
-    resource.write(
-        "from provider import missing\n"
-        "class Base(object):\n    member = 1\n"
-        "class Derived(Base, missing):\n    pass\n"
-    )
+    resource.write(dedent("""\
+        from provider import missing
+        class Base(object):
+            member = 1
+        class Derived(Base, missing):
+            pass
+    """))
     module = alias_project.get_pymodule(resource)
     base = module["Base"].get_object()
     derived = module["Derived"].get_object()
