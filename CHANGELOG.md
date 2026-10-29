@@ -1,5 +1,9 @@
 # **Upcoming release**
 
+- Classify evaluated bases by the native `AbstractClass` contract rather than
+  equality with metatype markers. An unresolved base must retain its source
+  witness without being treated as a class supporting method resolution order.
+
 # Release 1.15.0+dc.7
 
 - Resolve class attributes in C3 method resolution order instead of a

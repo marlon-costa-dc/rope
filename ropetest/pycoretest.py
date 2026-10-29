@@ -7,7 +7,12 @@ from rope.base.builtins import BuiltinClass, File
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
 from rope.base.pynamesdef import AssignedName
-from rope.base.pyobjects import AbstractFunction, UnresolvedBase, get_base_type
+from rope.base.pyobjects import (
+    AbstractFunction,
+    UnresolvedBase,
+    get_base_type,
+    get_unknown,
+)
 from ropetest import testutils
 
 
@@ -416,6 +421,82 @@ class PyCoreTest(unittest.TestCase):
         self.assertEqual(mod["value"].get_object(), unresolved.pyobject)
         self.assertEqual([], derived.get_superclasses())
         self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_imported_missing_base_preserves_resolved_ancestors(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write("def function():\n    pass\n")
+        code = dedent("""\
+            from provider import missing
+            class Base(object):
+                pass
+            class Derived(Base, missing):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        base = mod["Base"].get_object()
+        derived = mod["Derived"].get_object()
+        mro = derived.get_mro()
+        resolved, unresolved = derived.get_bases()
+        self.assertIs(base, resolved)
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertEqual([base], derived.get_superclasses())
+        self.assertEqual(
+            [derived, *base.get_mro(), unresolved],
+            mro,
+        )
+
+    def test_class_base_uses_import_before_rebinding_its_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                member = 1
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo(Foo):
+                pass
+        """))
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_class_base_uses_import_before_rebinding_its_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                member = 1
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo[T](Foo):
+                pass
+        """))
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_parameter_precedes_imported_previous_class_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                pass
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo[Foo](Foo):
+                pass
+        """))
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        (unresolved,) = derived.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertIs(unresolved.pyobject, get_unknown())
 
     def test_inconsistent_mro(self):
         code = dedent("""\

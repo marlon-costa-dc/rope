@@ -249,6 +249,12 @@ class Match:
         """Return the ast node that has matched rope variables"""
         return self.mapping.get(name, None)
 
+    def get_capture_region(self, name):
+        """Return the captured variable's half-open source character range."""
+        if name not in self.mapping:
+            raise ValueError("Match has no captured variable: %s" % name)
+        return patchedast.node_region(self.mapping[name])
+
 
 class ExpressionMatch(Match):
     def __init__(self, ast, mapping):

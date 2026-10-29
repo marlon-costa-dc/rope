@@ -1045,6 +1045,78 @@ class SourceBindingIndex:
                 self.fragments[position] = fragment
         return context
 
+    def absolute_import_roots(self):
+        """Return absolute import roots from the existing declaration index."""
+        roots = set()
+        for fragment in self.fragments:
+            node = fragment.context.source_node
+            if isinstance(node, ast.Import):
+                roots.update(alias.name.partition(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                roots.add(node.module.partition(".")[0])
+        return frozenset(roots)
+
+    def assignment_string_sequence(self, name, scope=None, *, class_metadata=False):
+        """Read a direct string-sequence declaration from the existing parse."""
+        if scope is not None and class_metadata:
+            raise ValueError("Select either an explicit scope or class metadata")
+        if scope is not None and not isinstance(
+            scope, (pyscopes.GlobalScope, pyscopes.ClassScope)
+        ):
+            raise TypeError("Assignment query requires a module or class scope")
+        if scope is not None and scope.pyobject.get_module() is not self.pymodule:
+            raise ValueError("Assignment scope belongs to another source module")
+        module_body = self.pymodule.get_ast().body
+        body = module_body if scope is None else scope.pyobject.get_ast().body
+        visited = set()
+        declared = False
+        while (id(body), name) not in visited:
+            for statement in body:
+                if isinstance(statement, ast.Assign):
+                    targets = statement.targets
+                elif isinstance(statement, ast.AnnAssign):
+                    targets = (statement.target,)
+                else:
+                    continue
+                if any(
+                    isinstance(target, ast.Name) and target.id == name
+                    for target in targets
+                ):
+                    value = statement.value
+                    break
+            else:
+                if class_metadata and not declared:
+                    class_metadata = False
+                    classes = [
+                        node for node in module_body if isinstance(node, ast.ClassDef)
+                    ]
+                    if len(classes) == 1:
+                        body = classes[0].body
+                        continue
+                return () if declared else None
+            visited.add((id(body), name))
+            declared = True
+            if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+                if all(
+                    isinstance(item, ast.Constant) and isinstance(item.value, str)
+                    for item in value.elts
+                ):
+                    return tuple(item.value for item in value.elts)
+                return ()
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in {"tuple", "list", "set", "frozenset"}
+                and len(value.args) == 1
+                and not value.keywords
+            ):
+                value = value.args[0]
+            if not isinstance(value, ast.Name):
+                return ()
+            name = value.id
+            body = module_body
+        raise ValueError("Cyclic native string-sequence declaration: %s" % name)
+
     def context_at(self, offset):
         matched = [item for item in self.fragments if item.start <= offset < item.end]
         if matched:

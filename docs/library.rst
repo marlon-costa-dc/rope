@@ -14,6 +14,43 @@ Quick Start
 
 This section will help you get started as soon as possible.
 
+Semantic match capture regions
+------------------------------
+
+Matches returned by ``rope.refactor.similarfinder.SimilarFinder.get_matches``
+provide ``get_capture_region(name)``.  It returns the captured variable's
+half-open character range in the original source, for both expression and
+statement patterns.  An unknown capture raises ``ValueError``.  Clients can
+therefore use source regions without depending on Rope's syntax nodes.
+
+The module's existing ``get_source_binding_index().absolute_import_roots()``
+returns a frozen set of absolute top-level import names from its indexed
+declarations, including guarded and nested imports.  Relative imports are
+excluded.  This query neither imports the declared packages nor resolves their
+classes, and it preserves declarations whose local bindings are overwritten.
+
+``assignment_string_sequence(name, scope=None, *, class_metadata=False)`` reads the first direct
+assignment in the indexed module or an explicitly supplied class scope.  It
+returns a tuple for a literal string list, tuple or set, and follows module
+name references and single-name ``tuple``/``list``/``set``/``frozenset`` wrappers.
+Missing declarations return ``None``; present empty or unsupported values return
+an empty tuple.  Cyclic references raise ``ValueError``.  It uses the module's
+existing parse without evaluating authored code or resolving class ancestry.
+A supplied scope must belong to that same indexed module; another module's
+scope raises ``ValueError`` instead of mixing its declarations with local names.
+With ``class_metadata=True``, an absent module declaration may be read from a
+single directly declared class.  Module declarations still take precedence,
+including empty or unsupported values.  This mode does not resolve class scopes
+or superclasses and cannot be combined with an explicit scope.
+
+Class headers use the binding that exists before the new class replaces its
+name. In particular, importing ``Foo`` and then declaring ``class Foo(Foo)``
+inherits the imported class; it does not declare a self-inheritance cycle.
+For a generic class, a same-named native type parameter takes precedence over
+that earlier binding, as it does for the other names in the generic header.
+This source-binding requirement does not waive rejection of an inconsistent
+hierarchy or introduce a second method-resolution-order implementation.
+
 
 Making A Project
 ----------------

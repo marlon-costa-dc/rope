@@ -24,6 +24,86 @@ def alias_project(tmp_path):
         project.close()
 
 
+def test_installed_native_capture_region(alias_project):
+    source = 'prefix = "é"\nvalue = (first,\n         second)\n'
+    resource = alias_project.root.create_file("captures.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    match = next(similarfinder.SimilarFinder(module).get_matches("value = ${value}"))
+    start, end = match.get_capture_region("value")
+    assert source[start:end] == "(first,\n         second)"
+    with pytest.raises(ValueError, match="missing"):
+        match.get_capture_region("missing")
+
+
+def test_installed_mro_retains_unresolved_imported_base(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write("declared = 1\n")
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(dedent("""\
+        from provider import missing
+        class Base(object):
+            member = 1
+        class Derived(Base, missing):
+            pass
+    """))
+    module = alias_project.get_pymodule(resource)
+    base = module["Base"].get_object()
+    derived = module["Derived"].get_object()
+    resolved, unresolved = derived.get_bases()
+    assert resolved is base
+    assert isinstance(unresolved, pyobjects.UnresolvedBase)
+    assert unresolved.pyobject is module["missing"].get_object()
+    assert derived.get_superclasses() == [base]
+    assert derived.get_mro() == [derived, *base.get_mro(), unresolved]
+    assert derived["member"] is base["member"]
+
+
+def test_installed_class_header_retains_previous_import_binding(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write(dedent("""\
+        class Foo:
+            member = 1
+    """))
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(dedent("""\
+        from provider import Foo
+        class Foo(Foo):
+            pass
+    """))
+    imported = alias_project.get_pymodule(provider)["Foo"].get_object()
+    derived = alias_project.get_pymodule(resource)["Foo"].get_object()
+    assert derived.get_mro() == [derived, imported]
+    assert derived["member"] is imported["member"]
+
+
+def test_installed_native_import_roots(alias_project):
+    source = (
+        "import outer.child as overwritten, second\n"
+        "overwritten = None\n"
+        "from .relative import ignored\n"
+        "if False:\n    from guarded.child import *\n"
+        "def nested():\n    import nested_package.child\n"
+    )
+    resource = alias_project.root.create_file("imports.py")
+    resource.write(source)
+    module = alias_project.get_pymodule(resource)
+    assert module.get_source_binding_index().absolute_import_roots() == frozenset(
+        {"outer", "second", "guarded", "nested_package"}
+    )
+
+
+def test_installed_native_assignment_string_sequence(alias_project):
+    resource = alias_project.root.create_file("metadata.py")
+    resource.write("shared = ('first',)\nclass Owner:\n    names = tuple(shared)\n")
+    module = alias_project.get_pymodule(resource)
+    index = module.get_source_binding_index()
+    assert index.assignment_string_sequence("names") is None
+    scope = module["Owner"].get_object().get_scope()
+    assert index.assignment_string_sequence("names", scope) == ("first",)
+    assert index.assignment_string_sequence("names", class_metadata=True) == ("first",)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("owner", ["module", "function", "class"])
 @pytest.mark.parametrize("bindings", ["alias", "ordinary-first", "alias-first", "repeated"])
