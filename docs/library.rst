@@ -29,6 +29,16 @@ declarations, including guarded and nested imports.  Relative imports are
 excluded.  This query neither imports the declared packages nor resolves their
 classes, and it preserves declarations whose local bindings are overwritten.
 
+``assignment_string_sequence(name, scope=None)`` reads the first direct
+assignment in the indexed module or an explicitly supplied class scope.  It
+returns a tuple for a literal string list, tuple or set, and follows module
+name references and single-name ``tuple``/``list``/``set``/``frozenset`` wrappers.
+Missing declarations return ``None``; present empty or unsupported values return
+an empty tuple.  Cyclic references raise ``ValueError``.  It uses the module's
+existing parse without evaluating authored code or resolving class ancestry.
+A supplied scope must belong to that same indexed module; another module's
+scope raises ``ValueError`` instead of mixing its declarations with local names.
+
 
 Making A Project
 ----------------

@@ -52,6 +52,16 @@ def test_installed_native_import_roots(alias_project):
     )
 
 
+def test_installed_native_assignment_string_sequence(alias_project):
+    resource = alias_project.root.create_file("metadata.py")
+    resource.write("shared = ('first',)\nclass Owner:\n    names = tuple(shared)\n")
+    module = alias_project.get_pymodule(resource)
+    index = module.get_source_binding_index()
+    assert index.assignment_string_sequence("names") is None
+    scope = module["Owner"].get_object().get_scope()
+    assert index.assignment_string_sequence("names", scope) == ("first",)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize("owner", ["module", "function", "class"])
 @pytest.mark.parametrize("bindings", ["alias", "ordinary-first", "alias-first", "repeated"])

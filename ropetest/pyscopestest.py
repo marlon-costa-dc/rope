@@ -55,6 +55,48 @@ class PyCoreScopesTest(unittest.TestCase):
         module = libutils.get_string_module(self.project, "value = 1\n")
         self.assertEqual(frozenset(), module.get_source_binding_index().absolute_import_roots())
 
+    def test_indexed_assignment_string_sequences(self):
+        cases = (
+            ("value = 1\n", None),
+            ("names: tuple[str, ...]\n", ()),
+            ("names = ('first',)\nnames = ('second',)\n", ("first",)),
+            ("alias = names = ['one', 'two']\n", ("one", "two")),
+            ("names: tuple[str, ...] = ('é',)\n", ("é",)),
+            ("shared = ('one',)\nnames = tuple(shared)\n", ("one",)),
+            ("names = []\n", ()),
+            ("names = ['one', 2]\n", ()),
+            ("names = [*other]\n", ()),
+            ("if False:\n    names = ('guarded',)\n", None),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                module = libutils.get_string_module(self.project, source)
+                self.assertEqual(
+                    expected,
+                    module.get_source_binding_index().assignment_string_sequence("names"),
+                )
+
+    def test_indexed_assignment_sequence_class_scope_and_module_reference(self):
+        module = libutils.get_string_module(
+            self.project, "shared = ('value',)\nclass Owner:\n    names = shared\n"
+        )
+        index = module.get_source_binding_index()
+        self.assertIsNone(index.assignment_string_sequence("names"))
+        owner_scope = module["Owner"].get_object().get_scope()
+        self.assertEqual(("value",), index.assignment_string_sequence("names", owner_scope))
+
+    def test_indexed_assignment_sequence_cycles_fail(self):
+        module = libutils.get_string_module(self.project, "names = other\nother = names\n")
+        with self.assertRaisesRegex(ValueError, "Cyclic"):
+            module.get_source_binding_index().assignment_string_sequence("names")
+
+    def test_indexed_assignment_sequence_rejects_foreign_scope(self):
+        local = libutils.get_string_module(self.project, "names = ('local',)\n")
+        foreign = libutils.get_string_module(self.project, "class Owner:\n    names = ('foreign',)\n")
+        scope = foreign["Owner"].get_object().get_scope()
+        with self.assertRaisesRegex(ValueError, "another source module"):
+            local.get_source_binding_index().assignment_string_sequence("names", scope)
+
     def test_simple_function_scope(self):
         code = dedent("""\
             def sample_func():
