@@ -59,6 +59,24 @@ def test_installed_mro_retains_unresolved_imported_base(alias_project):
     assert derived["member"] is base["member"]
 
 
+def test_installed_class_header_retains_previous_import_binding(alias_project):
+    provider = alias_project.root.create_file("provider.py")
+    provider.write(dedent("""\
+        class Foo:
+            member = 1
+    """))
+    resource = alias_project.root.create_file("consumer.py")
+    resource.write(dedent("""\
+        from provider import Foo
+        class Foo(Foo):
+            pass
+    """))
+    imported = alias_project.get_pymodule(provider)["Foo"].get_object()
+    derived = alias_project.get_pymodule(resource)["Foo"].get_object()
+    assert derived.get_mro() == [derived, imported]
+    assert derived["member"] is imported["member"]
+
+
 def test_installed_native_import_roots(alias_project):
     source = (
         "import outer.child as overwritten, second\n"

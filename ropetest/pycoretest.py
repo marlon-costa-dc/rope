@@ -7,7 +7,12 @@ from rope.base.builtins import BuiltinClass, File
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
 from rope.base.pynamesdef import AssignedName
-from rope.base.pyobjects import AbstractFunction, UnresolvedBase, get_base_type
+from rope.base.pyobjects import (
+    AbstractFunction,
+    UnresolvedBase,
+    get_base_type,
+    get_unknown,
+)
 from ropetest import testutils
 
 
@@ -439,6 +444,59 @@ class PyCoreTest(unittest.TestCase):
             [derived, *base.get_mro(), unresolved],
             mro,
         )
+
+    def test_class_base_uses_import_before_rebinding_its_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                member = 1
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo(Foo):
+                pass
+        """))
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_class_base_uses_import_before_rebinding_its_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                member = 1
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo[T](Foo):
+                pass
+        """))
+        imported = self.project.get_pymodule(provider)["Foo"].get_object()
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
+    def test_generic_parameter_precedes_imported_previous_class_name(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Foo:
+                pass
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import Foo
+            class Foo[Foo](Foo):
+                pass
+        """))
+        derived = self.project.get_pymodule(resource)["Foo"].get_object()
+        (unresolved,) = derived.get_bases()
+        self.assertIsInstance(unresolved, UnresolvedBase)
+        self.assertIs(unresolved.pyobject, get_unknown())
 
     def test_inconsistent_mro(self):
         code = dedent("""\

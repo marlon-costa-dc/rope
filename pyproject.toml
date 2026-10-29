@@ -52,6 +52,7 @@ dev = [
     'pytest-xdist>=3.8.0',
     'build>=0.7.0',
     'pre-commit>=3.2.0',
+    'toml>=0.10.2',
 ]
 release = [
     'toml>=0.10.2',

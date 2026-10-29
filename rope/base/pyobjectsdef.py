@@ -183,6 +183,7 @@ class PyClass(pyobjects.PyClass):
         self._mro = self.get_module()._get_concluded_data()
         self._linearizing = False
         self._receiver_attributes_collected = False
+        self._base_name_binding = None
 
     def _create_structural_attributes(self):
         from rope.base import externaldata
@@ -257,7 +258,22 @@ class PyClass(pyobjects.PyClass):
     def _get_bases(self):
         result = []
         for base_node in self.ast_node.bases:
-            base = rope.base.evaluate.eval_node(self.parent.get_scope(), base_node)
+            scope = self.parent.get_scope()
+            if self._base_name_binding is not None:
+                from rope.base.sourcebindings import TypeParameterEnvironment
+
+                context = (
+                    self.get_module()
+                    .get_source_binding_index()
+                    .context_for_node(base_node)
+                )
+                if context is not None:
+                    scope = context.environment
+                names = {self.get_name(): self._base_name_binding}
+                if isinstance(scope, TypeParameterEnvironment):
+                    names.update(scope.get_defined_names())
+                scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
+            base = rope.base.evaluate.eval_node(scope, base_node)
             if base is None:
                 result.append(pyobjects.UnresolvedBase(base_node))
             elif isinstance(base.get_object(), pyobjects.AbstractClass):
@@ -572,6 +588,7 @@ class _ScopeVisitor(_ExpressionVisitor):
 
     def _ClassDef(self, node):
         pyclass = PyClass(self.pycore, node, self.owner_object)
+        pyclass._base_name_binding = self.names.get(node.name)
         self.names[node.name] = pynamesdef.DefinedName(pyclass)
         self.defineds.append(pyclass)
 

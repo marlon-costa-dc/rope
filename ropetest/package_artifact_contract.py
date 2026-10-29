@@ -9,11 +9,12 @@ import sys
 import sysconfig
 import tarfile
 import tempfile
-import tomllib
 import venv
 import zipfile
 from importlib.metadata import version
 from pathlib import Path
+
+import toml
 
 
 def installed_contract(expected_version, contract):
@@ -59,8 +60,7 @@ def main():
         installed_contract(arguments.expected_version, arguments.contract)
         return
     source_root = Path(__file__).resolve().parents[1]
-    with (source_root / "pyproject.toml").open("rb") as manifest:
-        release = tomllib.load(manifest)["project"]["version"]
+    release = toml.load(source_root / "pyproject.toml")["project"]["version"]
     wheel = Path("dist") / f"rope-{release}-py3-none-any.whl"
     sdist = Path("dist") / f"rope-{release}.tar.gz"
     for artifact in (wheel, sdist):

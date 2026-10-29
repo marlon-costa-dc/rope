@@ -29,7 +29,7 @@ declarations, including guarded and nested imports.  Relative imports are
 excluded.  This query neither imports the declared packages nor resolves their
 classes, and it preserves declarations whose local bindings are overwritten.
 
-``assignment_string_sequence(name, scope=None)`` reads the first direct
+``assignment_string_sequence(name, scope=None, *, class_metadata=False)`` reads the first direct
 assignment in the indexed module or an explicitly supplied class scope.  It
 returns a tuple for a literal string list, tuple or set, and follows module
 name references and single-name ``tuple``/``list``/``set``/``frozenset`` wrappers.
@@ -42,6 +42,12 @@ With ``class_metadata=True``, an absent module declaration may be read from a
 single directly declared class.  Module declarations still take precedence,
 including empty or unsupported values.  This mode does not resolve class scopes
 or superclasses and cannot be combined with an explicit scope.
+
+Class headers use the binding that exists before the new class replaces its
+name. In particular, importing ``Foo`` and then declaring ``class Foo(Foo)``
+inherits the imported class; it does not declare a self-inheritance cycle.
+This source-binding requirement does not waive rejection of an inconsistent
+hierarchy or introduce a second method-resolution-order implementation.
 
 
 Making A Project
