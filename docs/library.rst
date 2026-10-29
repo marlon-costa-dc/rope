@@ -46,6 +46,8 @@ or superclasses and cannot be combined with an explicit scope.
 Class headers use the binding that exists before the new class replaces its
 name. In particular, importing ``Foo`` and then declaring ``class Foo(Foo)``
 inherits the imported class; it does not declare a self-inheritance cycle.
+For a generic class, a same-named native type parameter takes precedence over
+that earlier binding, as it does for the other names in the generic header.
 This source-binding requirement does not waive rejection of an inconsistent
 hierarchy or introduce a second method-resolution-order implementation.
 
