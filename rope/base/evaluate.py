@@ -69,6 +69,18 @@ def eval_node2(scope, node):
     return evaluator.old_result, evaluator.result
 
 
+def get_callable(pyname):
+    """Return the function and receiver selected by a callable value."""
+    value = pyname.get_object()
+    if isinstance(value, pyobjects.AbstractFunction):
+        return value, None
+    if "__call__" in value:
+        function = value["__call__"].get_object()
+        if isinstance(function, pyobjects.AbstractFunction):
+            return function, pyname
+    return None, None
+
+
 def eval_str(holding_scope, name):
     return eval_str2(holding_scope, name)[1]
 
@@ -303,16 +315,13 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         if pyobject is None:
             return
 
-        def _get_returned(pyobject, receiver=None):
+        def _get_returned(pyobject):
             args = arguments.create_arguments(
                 primary,
                 pyobject,
                 node,
                 self.scope,
-                ignore_instance=receiver is not None,
             )
-            if receiver is not None:
-                args = arguments.MixedArguments(receiver, args, self.scope)
             return pyobject.get_returned_object(args)
 
         if isinstance(pyobject, rope.base.pyobjects.AbstractClass):
@@ -340,26 +349,23 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             self.result = rope.base.pynames.UnboundName(pyobject=result)
             return
 
-        pyfunction = None
-        receiver = None
-        if isinstance(pyobject, rope.base.pyobjects.AbstractFunction):
-            pyfunction = pyobject
-        elif "__call__" in pyobject:
-            pyfunction = pyobject["__call__"].get_object()
-            from rope.base.sourcebindings import SourceLambdaFunction
-
-            if isinstance(pyfunction, SourceLambdaFunction):
-                pyfunction = pyfunction.bind_receiver(
-                    rope.base.pynames.UnboundName(pyobject)
-                )
-            else:
-                # The receiver of an instance __call__ is the callable
-                # value itself, not the receiver of the attribute access.
-                receiver = func_pyname
+        pyfunction, receiver = get_callable(func_pyname)
         if pyfunction is not None:
-            self.result = rope.base.pynames.UnboundName(
-                pyobject=_get_returned(pyfunction, receiver)
-            )
+            if receiver is None:
+                result = _get_returned(pyfunction)
+            else:
+                args = arguments.create_arguments(
+                    None, pyfunction, node, self.scope, ignore_instance=True
+                )
+                args = arguments.bind_method(
+                    receiver,
+                    pyfunction,
+                    args,
+                    self.scope,
+                    owner=receiver.get_object().get_type(),
+                )
+                result = pyfunction.get_returned_object(args)
+            self.result = rope.base.pynames.UnboundName(pyobject=result)
 
     def _Str(self, node):
         self.result = rope.base.pynames.UnboundName(
@@ -520,13 +526,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         return rope.base.pyscopes.TemporaryScope(scope.pycore, scope, names)
 
     def _Tuple(self, node):
-        objects = []
-        if len(node.elts) < 4:
-            for stmt in node.elts:
-                pyobject = self._get_object_for_node(stmt)
-                objects.append(pyobject)
-        else:
-            objects.append(self._get_object_for_node(node.elts[0]))
+        objects = [self._get_object_for_node(stmt) for stmt in node.elts]
         self.result = rope.base.pynames.UnboundName(
             pyobject=rope.base.builtins.get_tuple(*objects)
         )
@@ -539,12 +539,46 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         return pyobject
 
     def _Subscript(self, node):
-        if isinstance(node.slice, ast.Index):
-            self._call_function(node.value, "__getitem__", [node.slice.value])
-        elif isinstance(node.slice, ast.Slice):
-            self._call_function(node.value, "__getitem__", [node.slice])
-        elif isinstance(node.slice, ast.expr):
-            self._call_function(node.value, "__getitem__", [node.value])
+        receiver = eval_node(self.scope, node.value)
+        if receiver is None:
+            return
+        value = receiver.get_object()
+        is_class = isinstance(value, pyobjects.AbstractClass)
+        owner = value.get_metaclass() if is_class else value.get_type()
+        if is_class and not isinstance(owner, pyobjects.AbstractClass):
+            self.result = rope.base.pynames.UnboundName(owner)
+            return
+        if isinstance(owner, rope.base.builtins.Tuple) and (
+            isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, int)
+            or isinstance(node.slice, ast.UnaryOp)
+            and isinstance(node.slice.op, (ast.UAdd, ast.USub))
+            and isinstance(node.slice.operand, ast.Constant)
+            and isinstance(node.slice.operand.value, int)
+        ):
+            self.result = rope.base.pynames.UnboundName(
+                owner.get_item(ast.literal_eval(node.slice))
+            )
+            return
+        if "__getitem__" in owner:
+            called, callable_receiver = get_callable(owner["__getitem__"])
+            descriptor_owner = owner
+        elif is_class and "__class_getitem__" in value:
+            called, callable_receiver = get_callable(value["__class_getitem__"])
+            descriptor_owner = value
+        else:
+            return
+        if called is None:
+            return
+        if callable_receiver is not None:
+            receiver = callable_receiver
+            descriptor_owner = receiver.get_object().get_type()
+        key = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+        args = arguments.Arguments([key], self.scope, called)
+        args = arguments.bind_method(
+            receiver, called, args, self.scope, owner=descriptor_owner
+        )
+        self.result = rope.base.pynames.UnboundName(called.get_returned_object(args))
 
     def _Slice(self, node):
         self.result = self._get_builtin_name("slice")

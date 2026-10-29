@@ -935,9 +935,12 @@ class SourceLambdaFunction(pyobjects.AbstractFunction):
                 )
             )
         elif arguments is not None:
-            values.update(
-                zip(self.param_names, arguments.get_pynames(self.param_names))
+            names = (
+                self.param_names[1:]
+                if receiver is not None and self.positional
+                else self.param_names
             )
+            values.update(zip(names, arguments.get_pynames(names)))
         else:
             values.update(
                 _LambdaArgumentValues(self, receiver).match(

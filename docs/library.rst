@@ -51,6 +51,13 @@ that earlier binding, as it does for the other names in the generic header.
 This source-binding requirement does not waive rejection of an inconsistent
 hierarchy or introduce a second method-resolution-order implementation.
 
+Subscription analysis must distinguish instance ``__getitem__`` from class
+``__class_getitem__`` and retain the actual subscription argument. A metaclass's
+``__getitem__`` has precedence over the class hook. An unresolved subscription
+remains unresolved; substituting its origin class without proving the hook's
+result is not an ancestry contract. Native support for these cases is being
+qualified against source-derived regressions before consumers rely on it.
+
 
 Making A Project
 ----------------

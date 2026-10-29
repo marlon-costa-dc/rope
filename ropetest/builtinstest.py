@@ -65,6 +65,25 @@ class BuiltinTypesTest(unittest.TestCase):
         a_var = pymod["a_var"].get_object()
         self.assertEqual(c_class, a_var.get_type())
 
+    def test_get_items_passes_the_subscript_argument(self):
+        code = dedent("""\
+            class Value:
+                pass
+            class Container:
+                def __getitem__(self, item):
+                    return item
+            value = Value()
+            selected = Container()[value]
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertIs(namespace["value"], namespace["selected"])
+        self.mod.write(code)
+        pymod = self.project.get_pymodule(self.mod)
+        self.assertIs(
+            pymod["value"].get_object(), pymod["selected"].get_object()
+        )
+
     def test_get_items_from_slices(self):
         self.mod.write(dedent("""\
             class C(object):

@@ -77,6 +77,47 @@ def test_installed_class_header_retains_previous_import_binding(alias_project):
     assert derived["member"] is imported["member"]
 
 
+def test_installed_class_subscription_retains_hook_result(alias_project):
+    resource = alias_project.root.create_file("subscription.py")
+    source = dedent("""\
+        class Other:
+            pass
+        class Base:
+            def __class_getitem__(cls, item):
+                return Other
+        class Derived(Base[int]):
+            pass
+    """)
+    resource.write(source)
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["Derived"].__bases__ == (namespace["Other"],)
+    module = alias_project.get_pymodule(resource)
+    assert module["Derived"].get_object().get_bases() == [
+        module["Other"].get_object()
+    ]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
+def test_installed_pep695_bound_generic_preserves_ancestry(alias_project):
+    resource = alias_project.root.create_file("generic.py")
+    source = dedent("""\
+        class Identity:
+            pass
+        class Ownership[Resource: Identity]:
+            pass
+        class Leaf(Ownership[Identity]):
+            pass
+    """)
+    resource.write(source)
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["Ownership"] in namespace["Leaf"].__mro__
+    assert namespace["Ownership"].__type_params__[0].__bound__ is namespace["Identity"]
+    module = alias_project.get_pymodule(resource)
+    assert module["Ownership"].get_object() in module["Leaf"].get_object().get_mro()
+
+
 def test_installed_native_import_roots(alias_project):
     source = (
         "import outer.child as overwritten, second\n"

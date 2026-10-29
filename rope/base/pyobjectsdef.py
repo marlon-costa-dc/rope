@@ -147,6 +147,8 @@ class PyFunction(pyobjects.PyFunction):
                     return "staticmethod"
                 if decorator_object.builtin is classmethod:
                     return "classmethod"
+            if self.get_name() == "__class_getitem__":
+                return "classmethod"
             return "method"
         return "function"
 
@@ -181,6 +183,7 @@ class PyClass(pyobjects.PyClass):
         self.parent = parent
         self._bases = self.get_module()._get_concluded_data()
         self._mro = self.get_module()._get_concluded_data()
+        self._metaclass = self.get_module()._get_concluded_data()
         self._linearizing = False
         self._receiver_attributes_collected = False
         self._base_name_binding = None
@@ -222,6 +225,43 @@ class PyClass(pyobjects.PyClass):
     def get_name(self):
         return self.get_ast().name
 
+    def get_metaclass(self):
+        if self._metaclass.get() is None:
+            self.get_mro()
+            winner = super().get_metaclass()
+            for keyword in self.ast_node.keywords:
+                if keyword.arg == "metaclass":
+                    binding = rope.base.evaluate.eval_node(
+                        self.parent.get_scope(), keyword.value
+                    )
+                    if binding is None or not isinstance(
+                        binding.get_object(), pyobjects.AbstractClass
+                    ):
+                        self._metaclass.set(
+                            pyobjects.UnresolvedBase(
+                                keyword.value,
+                                binding.get_object() if binding is not None else None,
+                            )
+                        )
+                        return self._metaclass.get()
+                    winner = binding.get_object()
+            for base in self.get_bases():
+                if isinstance(base, pyobjects.UnresolvedBase):
+                    self._metaclass.set(base)
+                    return base
+                candidate = base.get_metaclass()
+                if not isinstance(candidate, pyobjects.AbstractClass):
+                    self._metaclass.set(candidate)
+                    return candidate
+                if winner in candidate.get_mro():
+                    winner = candidate
+                elif candidate not in winner.get_mro():
+                    raise exceptions.InconsistentHierarchyError(
+                        "Conflicting metaclasses: %s" % self.get_name()
+                    )
+            self._metaclass.set(winner)
+        return self._metaclass.get()
+
     def _get_structural_attributes(self):
         attributes = super()._get_structural_attributes()
         if (
@@ -256,7 +296,7 @@ class PyClass(pyobjects.PyClass):
         return self._get_structural_attributes()
 
     def _get_bases(self):
-        result = []
+        bindings = []
         for base_node in self.ast_node.bases:
             scope = self.parent.get_scope()
             if self._base_name_binding is not None:
@@ -273,13 +313,72 @@ class PyClass(pyobjects.PyClass):
                 if isinstance(scope, TypeParameterEnvironment):
                     names.update(scope.get_defined_names())
                 scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
-            base = rope.base.evaluate.eval_node(scope, base_node)
-            if base is None:
+            bindings.append(rope.base.evaluate.eval_node(scope, base_node))
+        original = rope.base.builtins.get_tuple(
+            *(
+                binding.get_object() if binding is not None else None
+                for binding in bindings
+            )
+        )
+        generic_aliases = [
+            value
+            for value in original.get_type().get_holding_objects()
+            if isinstance(value, rope.base.builtins.GenericAlias)
+            and isinstance(value.origin, rope.base.builtins.BuiltinClass)
+            and value.origin.builtin is rope.base.builtins.typing.Generic
+        ]
+        if generic_aliases and any(
+            alias != generic_aliases[0] for alias in generic_aliases[1:]
+        ):
+            raise TypeError("Cannot inherit from Generic[...] multiple times")
+        result = []
+        for base_node, binding in zip(self.ast_node.bases, bindings):
+            if binding is None:
                 result.append(pyobjects.UnresolvedBase(base_node))
-            elif isinstance(base.get_object(), pyobjects.AbstractClass):
-                result.append(base.get_object())
             else:
-                result.append(pyobjects.UnresolvedBase(base_node, base.get_object()))
+                value = binding.get_object()
+                if isinstance(value, pyobjects.AbstractClass):
+                    result.append(value)
+                elif "__mro_entries__" in value:
+                    method, receiver = rope.base.evaluate.get_callable(
+                        value["__mro_entries__"]
+                    )
+                    if method is None:
+                        raise TypeError("__mro_entries__ must be callable")
+                    if receiver is None:
+                        receiver = pynamesdef.UnboundName(value)
+                    args = arguments.ObjectArguments([pynamesdef.UnboundName(original)])
+                    args = arguments.bind_method(
+                        receiver,
+                        method,
+                        args,
+                        self.parent.get_scope(),
+                        owner=receiver.get_object().get_type(),
+                    )
+                    replacement = method.get_returned_object(args)
+                    if replacement is None:
+                        result.append(pyobjects.UnresolvedBase(base_node, value))
+                        continue
+                    sequence = replacement.get_type()
+                    if not isinstance(sequence, rope.base.builtins.Tuple):
+                        raise TypeError("__mro_entries__ must return a tuple")
+                    entries = sequence.get_holding_objects()
+                    if not all(
+                        isinstance(entry, pyobjects.AbstractClass) for entry in entries
+                    ):
+                        raise TypeError("__mro_entries__ must return classes")
+                    result.extend(entries)
+                else:
+                    result.append(pyobjects.UnresolvedBase(base_node, value))
+        if getattr(self.ast_node, "type_params", ()):
+            generic = self.pycore.project.get_module("typing")["Generic"].get_object()
+            if not isinstance(generic, pyobjects.AbstractClass):
+                result.append(pyobjects.UnresolvedBase(self.ast_node, generic))
+            elif not any(
+                isinstance(base, pyobjects.AbstractClass) and generic in base.get_mro()
+                for base in result
+            ):
+                result.append(generic)
         return result
 
     def _create_scope(self):

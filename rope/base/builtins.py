@@ -2,6 +2,8 @@
 
 import inspect
 import io
+import types
+import typing
 
 import rope.base.evaluate
 from rope.base import arguments, ast, pynames, pyobjects, utils
@@ -86,8 +88,45 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
     @utils.saveit
     def get_attributes(self):
         result = _object_attributes(self.builtin, self)
+        if self.builtin is typing.Generic or (
+            inspect.isclass(self.builtin)
+            and self.builtin.__module__ == "builtins"
+            and hasattr(self.builtin, "__class_getitem__")
+        ):
+            result["__class_getitem__"] = BuiltinName(
+                BuiltinFunction(
+                    function=self._class_getitem, argnames=["cls", "key"], parent=self
+                )
+            )
         result.update(self.initial)
         return result
+
+    def _class_getitem(self, context):
+        origin = context.get_argument("cls")
+        key = context.get_argument("key")
+        arguments_ = (
+            key.get_type().get_holding_objects()
+            if key is not None and isinstance(key.get_type(), Tuple)
+            else (key,)
+        )
+        if isinstance(origin, BuiltinClass) and origin.builtin is typing.Generic:
+            if not arguments_ or any(
+                argument is None
+                or not isinstance(argument.get_type(), BuiltinClass)
+                or argument.get_type().builtin
+                not in (typing.TypeVar, typing.ParamSpec, typing.TypeVarTuple)
+                for argument in arguments_
+            ):
+                raise TypeError("Generic parameters must be type variables")
+            if len({id(argument) for argument in arguments_}) != len(arguments_):
+                raise TypeError("Generic parameters must be unique")
+        parent = self.parent
+        project = (
+            parent.pycore.project
+            if isinstance(parent, BuiltinModule) and parent.pycore
+            else None
+        )
+        return GenericAlias(origin, arguments_, project, self.builtin is typing.Generic)
 
     @utils.saveit
     def get_superclasses(self):
@@ -114,6 +153,9 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
     def get_module(self):
         return builtins
 
+    def get_metaclass(self):
+        return _runtime_class(type(self.builtin))
+
 
 _runtime_classes = {}
 
@@ -134,6 +176,63 @@ def _runtime_class(cls):
     if cls not in _runtime_classes:
         _runtime_classes[cls] = BuiltinClass(cls, {})
     return _runtime_classes[cls]
+
+
+class GenericAlias(pyobjects.PyObject):
+    """The native value of a standard-library class subscription."""
+
+    def __init__(self, origin, arguments_, project, typing_alias):
+        super().__init__(
+            _runtime_class(typing._GenericAlias if typing_alias else types.GenericAlias)
+        )
+        self.origin = origin
+        self.arguments = arguments_
+        self.project = project
+        self.typing_alias = typing_alias
+
+    def __eq__(self, other):
+        if not isinstance(other, GenericAlias):
+            return NotImplemented
+        return (
+            self.origin is other.origin
+            and len(self.arguments) == len(other.arguments)
+            and all(
+                left is right for left, right in zip(self.arguments, other.arguments)
+            )
+        )
+
+    def __hash__(self):
+        return hash(
+            (id(self.origin), tuple(id(argument) for argument in self.arguments))
+        )
+
+    def get_attributes(self):
+        return {
+            "__origin__": BuiltinName(self.origin),
+            "__args__": BuiltinName(get_tuple(*self.arguments)),
+            "__mro_entries__": BuiltinName(
+                BuiltinFunction(function=self._mro_entries, argnames=["self", "bases"])
+            ),
+        }
+
+    def _mro_entries(self, context):
+        original = context.get_argument("bases").get_type().get_holding_objects()
+        if (
+            isinstance(self.origin, BuiltinClass)
+            and self.origin.builtin is typing.Generic
+        ):
+            protocol = self.project.get_module("typing")["Protocol"].get_object()
+            if any(base is protocol for base in original):
+                return get_tuple()
+            position = next(
+                index for index, base in enumerate(original) if base is self
+            )
+            if any(
+                isinstance(base, GenericAlias) and base.typing_alias and base != self
+                for base in original[position + 1 :]
+            ):
+                return get_tuple()
+        return get_tuple(self.origin)
 
 
 class BuiltinFunction(_BuiltinElement, pyobjects.AbstractFunction):
@@ -504,6 +603,10 @@ class Tuple(BuiltinClass):
 
     def get_holding_objects(self):
         return self.objects
+
+    def get_item(self, index):
+        if -len(self.objects) <= index < len(self.objects):
+            return self.objects[index]
 
     def _new_tuple(self, args):
         return _create_builtin(args, get_tuple)

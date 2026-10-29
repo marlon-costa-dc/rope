@@ -133,11 +133,19 @@ class AbstractClass(PyObject):
     def get_superclasses(self):
         return []
 
+    def get_metaclass(self):
+        """Return the governing class, or the unresolved metaclass witness."""
+        from rope.base import builtins
+
+        return builtins.builtins["type"].get_object()
+
     def get_bases(self):
-        """Return the declared bases in declaration order
+        """Return the resolved bases in declaration order
 
         Each item is either a class or an `UnresolvedBase` standing
         for a base expression rope could not evaluate to a class.
+        Non-class bases with `__mro_entries__` expand into their returned
+        classes. PEP 695 classes also retain their implicit Generic base.
         `get_superclasses()` returns only the classes.
 
         """
