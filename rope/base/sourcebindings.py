@@ -241,6 +241,7 @@ class SourceClassLayout:
 
     region: tuple[int, int]
     header: tuple[int, int]
+    header_end: int
     body: tuple[int, int]
     name_region: tuple[int, int]
     bases_insertion_offset: int
@@ -266,6 +267,28 @@ class SourceAssignmentLayout:
     root_binding: pynames.PyName | None
     string_sequence: tuple[str, ...] | None
     type_parameters: tuple[tuple[str, tuple[int, int]], ...]
+
+
+@dataclass(frozen=True)
+class SourceImportLayout:
+    """Existing import declarations and lexical provider/alias regions."""
+
+    region: tuple[int, int]
+    module_region: tuple[int, int] | None
+    module_name: str | None
+    level: int
+    aliases: tuple[tuple[str, str | None, tuple[int, int]], ...]
+    separators: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class SourceStringMapping:
+    """Literal mapping tokens and wrapper provenance from an indexed call."""
+
+    region: tuple[int, int]
+    callee_binding: pynames.PyName | None
+    wrapper_bindings: tuple[pynames.PyName | None, ...]
+    entries: tuple[tuple[str, tuple[str, ...], tuple[tuple[int, int], ...]], ...] | None
 
 
 class SourceContext:
@@ -1060,9 +1083,7 @@ class SourceBindingIndex:
         mode = (
             "future-string"
             if self.future_annotations
-            else "lazy"
-            if sys.version_info >= (3, 14)
-            else "eager"
+            else "lazy" if sys.version_info >= (3, 14) else "eager"
         )
         self.policy = AnnotationPolicy(
             mode,
@@ -1166,6 +1187,8 @@ class SourceBindingIndex:
         if words.code_finder.code[next_token : next_token + 1] == "(":
             first, last = words.get_word_parens_range(insertion - 1)
             arguments = (start + first + 1, start + last - 1)
+        colon_start = arguments[1] - start + 1 if arguments is not None else insertion
+        colon = words.code_finder.code.index(":", colon_start)
         annotations = []
         for member in node.body:
             if not isinstance(member, ast.AnnAssign):
@@ -1187,6 +1210,7 @@ class SourceBindingIndex:
         return SourceClassLayout(
             region=(start, end),
             header=(start, body_start),
+            header_end=start + colon + 1,
             body=(body_start, end),
             name_region=(start + name_start, start + name_end),
             bases_insertion_offset=start + insertion,
@@ -1223,6 +1247,135 @@ class SourceBindingIndex:
             for callee in callees
         )
 
+    def import_layouts(self):
+        """Expose indexed import boundaries without moving or reparsing them."""
+        from rope.base import worder
+
+        layouts = []
+        for fragment in self.fragments:
+            node = fragment.context.source_node
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            start, end = self._span(node)
+            words = worder.Worder(self.source[start:end]).code_finder
+            provider = None
+            if isinstance(node, ast.ImportFrom):
+                # The node already proves the grammar. Use Rope's lexical
+                # source to locate the provider before the import keyword.
+                keyword = words.code.rindex(
+                    "import", 0, self._span(node.names[0])[0] - start
+                )
+                first = words._find_first_non_space_char(4)
+                last = words._find_last_non_space_char(keyword - 1)
+                provider = (start + first, start + last + 1)
+            layouts.append(
+                SourceImportLayout(
+                    (start, end),
+                    provider,
+                    node.module if isinstance(node, ast.ImportFrom) else None,
+                    node.level if isinstance(node, ast.ImportFrom) else 0,
+                    tuple(
+                        (alias.name, alias.asname, self._span(alias))
+                        for alias in node.names
+                    ),
+                    tuple(
+                        (start + comma, start + comma + 1)
+                        for left, right in zip(node.names, node.names[1:])
+                        for comma in (
+                            words.code.index(
+                                ",",
+                                self._span(left)[1] - start,
+                                self._span(right)[0] - start,
+                            ),
+                        )
+                    ),
+                )
+            )
+        return tuple(layouts)
+
+    def string_mapping_arguments(self, callee, position):
+        """Read literal mapping arguments through the existing declaration index."""
+        from rope.base import evaluate
+
+        selected = []
+        for fragment in self.fragments:
+            call = fragment.context.source_node
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == callee
+                and 0 <= position < len(call.args)
+            ):
+                continue
+            value = call.args[position]
+            wrappers = []
+            visited = set()
+            while id(value) not in visited:
+                visited.add(id(value))
+                if isinstance(value, ast.Name):
+                    binding = evaluate.eval_node(
+                        self.node_contexts[id(value)].environment, value
+                    )
+                    if isinstance(binding, SourceValueName):
+                        binding = binding.source_pyname
+                    if not isinstance(binding, pynames.AssignedName):
+                        break
+                    if len(binding.assignments) != 1:
+                        break
+                    assigned = binding.assignments[0].ast_node
+                    if id(assigned) not in self.node_contexts:
+                        break
+                    value = assigned
+                    continue
+                if (
+                    isinstance(value, ast.Call)
+                    and len(value.args) == 1
+                    and not value.keywords
+                ):
+                    wrappers.append(
+                        evaluate.eval_node(
+                            self.node_contexts[id(value.func)].environment, value.func
+                        )
+                    )
+                    value = value.args[0]
+                    continue
+                break
+            entries = []
+            if isinstance(value, ast.Dict):
+                for key, item in zip(value.keys, value.values):
+                    values = item.elts if isinstance(item, ast.Tuple) else (item,)
+                    if not (
+                        isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                        and all(
+                            isinstance(part, ast.Constant)
+                            and isinstance(part.value, str)
+                            for part in values
+                        )
+                    ):
+                        entries = None
+                        break
+                    entries.append(
+                        (
+                            key.value,
+                            tuple(part.value for part in values),
+                            tuple(self._span(part) for part in values),
+                        )
+                    )
+            else:
+                entries = None
+            selected.append(
+                SourceStringMapping(
+                    self._span(value),
+                    evaluate.eval_node(
+                        self.node_contexts[id(call.func)].environment, call.func
+                    ),
+                    tuple(wrappers),
+                    None if entries is None else tuple(entries),
+                )
+            )
+        return tuple(selected)
+
     def assignment_layouts(self, scope=None, *, name=None, resolve_values=False):
         """Return direct binding regions without reparsing the module source."""
         from rope.base import evaluate
@@ -1240,9 +1393,11 @@ class SourceBindingIndex:
             targets = (
                 node.targets
                 if isinstance(node, ast.Assign)
-                else (node.name,)
-                if _TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES)
-                else (node.target,)
+                else (
+                    (node.name,)
+                    if _TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES)
+                    else (node.target,)
+                )
             )
             selected = tuple(
                 (target.id, self._span(target))
@@ -1262,9 +1417,9 @@ class SourceBindingIndex:
                     region=self._span(node),
                     targets=selected,
                     value=self._span(value) if value is not None else None,
-                    annotation=self._span(annotation)
-                    if annotation is not None
-                    else None,
+                    annotation=(
+                        self._span(annotation) if annotation is not None else None
+                    ),
                     value_binding=(
                         evaluate.eval_node(
                             self.node_contexts[id(value)].environment, value

@@ -53,7 +53,8 @@ hierarchy or introduce a second method-resolution-order implementation.
 
 ``get_source_binding_index().class_layout(scope)`` exposes the source layout of
 a class in that same module. Its immutable result contains the declaration,
-header and body regions, the name region and base-list insertion offset, optional
+header and body regions, the offset immediately after the declaration colon,
+the name region and base-list insertion offset, optional
 parenthesized argument-content region, direct keyword/base/decorator regions,
 original base bindings, named type-parameter regions,
 and direct annotated
@@ -101,6 +102,26 @@ the original header environment rather than evaluating its factory result.
 Declarations without decorators return an empty tuple. Unknown callees retain
 ``None`` and native resolution errors propagate; no decorator is imported or
 executed by this query.
+
+``string_mapping_arguments(callee, position)`` locates a named call's positional
+mapping argument in the existing index.
+
+``import_layouts()`` exposes imports from that same index, including guarded and
+local imports. Each immutable record retains the statement region, optional
+from-provider region, module name, relative level and original imported names,
+aliases and their source regions. It never hoists imports or resolves unrelated
+providers. Native lexical offsets preserve the original importing boundary.
+Alias-separator regions identify the existing commas between indexed aliases;
+consumers can retain intervening comments when removing selected names.
+
+The string-mapping query follows a single native assignment
+for a referenced lexical name and retains native bindings of the selected callee
+and single-argument wrappers. Each result carries the mapping region and literal string keys with
+string-or-string-tuple values and the original value-token regions. Unsupported
+or ambiguous shapes have ``entries=None``; clients decide whether that is an
+expected refusal. The query neither evaluates a wrapper nor assigns it mapping
+semantics. It opens no project, parses no new source and keeps unrelated strings
+out of the selected mapping.
 
 Subscription analysis must distinguish instance ``__getitem__`` from class
 ``__class_getitem__`` and retain the actual subscription argument. A metaclass's

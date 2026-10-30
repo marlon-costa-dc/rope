@@ -962,7 +962,10 @@ class _ScopeVisitor(_ExpressionVisitor):
 
     def _assigned(self, name, assignment):
         pyname = self.names.get(name, None)
-        if pyname is None:
+        if pyname is None or not isinstance(pyname, pynamesdef.AssignedName):
+            # Python rebinds the name on assignment: an earlier import
+            # binding (ImportedName/ImportedModule) must not shadow the
+            # module's own later assignment (runtime semantics).
             pyname = pynamesdef.AssignedName(module=self.get_module())
         if isinstance(pyname, pynamesdef.AssignedName):
             if assignment is not None:
