@@ -1,5 +1,6 @@
 import operator
 import sys
+import typing
 from operator import itemgetter
 
 import rope.base.builtins
@@ -747,6 +748,26 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         if is_class and not isinstance(owner, pyobjects.AbstractClass):
             self.result = rope.base.pynames.UnboundName(owner)
             return
+        if rope.base.builtins._runtime_unpack(value) is not None:
+            # PEP 646: an explicit ``Unpack[Ts]`` evaluates to the typing
+            # alias carrying the parameter, mirroring the runtime's
+            # ``_GenericAlias``; the generic-alias validation recognizes
+            # the form through its origin.
+            key = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            if isinstance(key, ast.Starred):
+                # The runtime rejects starred subscripting of ``Unpack``;
+                # rope models that failure as no result.
+                return
+            target = eval_node(self.scope, key)
+            if target is None:
+                return
+            module = self.scope.pyobject.get_module()
+            self.result = rope.base.pynames.UnboundName(
+                rope.base.builtins.GenericAlias(
+                    value, (target.get_object(),), module.pycore.project, True
+                )
+            )
+            return
         if isinstance(owner, rope.base.builtins.Tuple) and (
             isinstance(node.slice, ast.Constant)
             and isinstance(node.slice.value, int)
@@ -773,10 +794,37 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             receiver = callable_receiver
             descriptor_owner = receiver.get_object().get_type()
         key = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+        starred = isinstance(key, ast.Starred)
+        if starred:
+            # PEP 646: the starred subscription syntax exists only at the
+            # expression level; evaluate the target so the typing alias
+            # validation receives the unpack fact, not the star node.
+            key = key.value
         args = arguments.Arguments([key], self.scope, called)
         args = arguments.bind_method(
             receiver, called, args, self.scope, owner=descriptor_owner
         )
+        if starred:
+            target = eval_node(self.scope, key)
+            if target is None or not rope.base.builtins._is_runtime_class(
+                target.get_object().get_type(), typing.TypeVarTuple
+            ):
+                # Runtime rejects every non-TypeVarTuple starred subscript;
+                # rope models that failure as no result.
+                return
+            args = arguments.bind_method(
+                receiver,
+                called,
+                arguments.ObjectArguments(
+                    [
+                        rope.base.pynames.UnboundName(
+                            rope.base.builtins.UnpackedTypeVarTuple(target.get_object())
+                        )
+                    ]
+                ),
+                self.scope,
+                owner=descriptor_owner,
+            )
         self.result = rope.base.pynames.UnboundName(called.get_returned_object(args))
 
     def _Slice(self, node):

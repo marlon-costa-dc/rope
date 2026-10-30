@@ -95,6 +95,7 @@ class Scope:
             return body[0].lineno
         return self.get_start()
 
+    @utils.saveit
     def get_end(self):
         pymodule = self._get_global_scope().pyobject
         return pymodule.logical_lines.logical_line_in(self.logical_end)[1]
@@ -140,6 +141,7 @@ class GlobalScope(Scope):
     def __init__(self, pycore, module):
         super().__init__(pycore, module, None)
         self.names = module._get_concluded_data()
+        self._inner_scopes_for_lines = {}
 
     def get_start(self):
         return 1
@@ -182,7 +184,16 @@ class GlobalScope(Scope):
         return self.names.get()
 
     def get_inner_scope_for_line(self, lineno, indents=None):
-        return self._scope_finder.get_holding_scope(self, lineno, indents)
+        # The holding scope for a (line, indents) pair is a structural
+        # property of the module: inference follows thousands of name paths
+        # through the same lines, so the tree walk runs once per pair for the
+        # lifetime of this module scope (rebuilt with its pymodule).
+        key = (lineno, indents)
+        cached = self._inner_scopes_for_lines.get(key)
+        if cached is None:
+            cached = self._scope_finder.get_holding_scope(self, lineno, indents)
+            self._inner_scopes_for_lines[key] = cached
+        return cached
 
     def get_inner_scope_for_offset(self, offset):
         return self._scope_finder.get_holding_scope_for_offset(self, offset)
@@ -270,7 +281,7 @@ class FunctionScope(Scope):
         if self.names is None:
             self._visit_function()
         module = self.pyobject.get_module()
-        if ":=" in module.source_code:
+        if module.requires_header_bindings():
             module.get_source_binding_index().prepare_header_bindings(self)
         return self.names
 

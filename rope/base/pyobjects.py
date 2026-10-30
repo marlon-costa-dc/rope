@@ -218,6 +218,23 @@ class UnresolvedBase(PyObject):
         self.node = node
         self.pyobject = pyobject
 
+    def __eq__(self, obj):
+        # Transient by design (never cached in `_bases`/`_mro`), so each
+        # re-evaluation builds a fresh instance: unresolved bases identify
+        # by their source expression and evaluation, not by identity.
+        if isinstance(obj, UnresolvedBase):
+            return self.node is obj.node and self.pyobject == obj.pyobject
+        return NotImplemented
+
+    def __ne__(self, obj):
+        result = self.__eq__(obj)
+        if result is NotImplemented:
+            return result
+        return not result
+
+    def __hash__(self):
+        return hash((UnresolvedBase, id(self.node)))
+
     def get_mro(self):
         return [self]
 

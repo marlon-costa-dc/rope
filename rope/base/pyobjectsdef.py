@@ -575,13 +575,22 @@ class PyModule(pyobjects.PyModule):
 
         return SourceBindingIndex(self)
 
+    @utils.saveit
+    def requires_header_bindings(self):
+        """Whether walrus header names need binding-index preparation.
+
+        The raw ``":=" in source_code`` scan answers a per-module constant,
+        so attribute and scope reads must not repeat it per call.
+        """
+        return ":=" in self.source_code
+
     def get_attributes(self):
-        if ":=" in self.source_code:
+        if self.requires_header_bindings():
             self.get_source_binding_index().prepare_header_bindings()
         return super().get_attributes()
 
     def get_attribute(self, name):
-        if ":=" in self.source_code:
+        if self.requires_header_bindings():
             self.get_source_binding_index().prepare_header_bindings()
         return super().get_attribute(name)
 

@@ -2,6 +2,7 @@
 
 import inspect
 import io
+import sys
 import types
 import typing
 from functools import partial
@@ -177,6 +178,40 @@ def _is_runtime_class(value, runtime_class):
     )
 
 
+def _is_runtime_form(value, runtime_form):
+    """Authenticate a typing special form against its runtime declaration.
+
+    ``typing.Unpack`` is a ``_SpecialForm``-decorated function, not a class,
+    so class authentication does not apply: builtin-side values match by
+    identity, source-side functions by their declaring module and name.
+    """
+    if isinstance(value, (BuiltinFunction, BuiltinUnknown)):
+        return value.builtin is runtime_form
+    if not isinstance(value, pyobjects.PyFunction):
+        return False
+    module = value.get_module()
+    resource = module.get_resource()
+    runtime_module = inspect.getmodule(runtime_form)
+    return (
+        value.parent is module
+        and value.get_name() == getattr(runtime_form, "__name__", None)
+        and resource is not None
+        and runtime_module is not None
+        and resource.real_path == runtime_module.__file__
+    )
+
+
+def _runtime_unpack(value):
+    """Return the runtime ``Unpack`` form `value` stands for, if any."""
+    for form in (
+        getattr(typing, "Unpack", None),
+        getattr(sys.modules.get("typing_extensions"), "Unpack", None),
+    ):
+        if form is not None and _is_runtime_form(value, form):
+            return form
+    return None
+
+
 def _class_getitem(owner, project, typing_alias):
     return BuiltinName(
         BuiltinFunction(
@@ -209,14 +244,38 @@ def _generic_alias(context, project, typing_alias):
             for name in ("TypeVar", "ParamSpec", "TypeVarTuple")
             if name in typing.__dict__
         )
-        if not arguments_ or any(
-            argument is None
-            or not any(
-                _is_runtime_class(argument.get_type(), variable)
-                for variable in variables
-            )
-            for argument in arguments_
-        ):
+        direct = tuple(
+            typing.__dict__[name]
+            for name in ("TypeVar", "ParamSpec")
+            if name in typing.__dict__
+        )
+        unwrapped = []
+        invalid = None
+        for argument in arguments_:
+            # PEP 646: a TypeVarTuple parameter enters only unpacked — the
+            # ``*Ts`` subscription marker or an explicit ``Unpack[Ts]``
+            # alias; a raw ``Cls[Ts]`` subscript is the TypeError the
+            # runtime raises.
+            if isinstance(argument, UnpackedTypeVarTuple):
+                allowed = variables
+                argument = argument.target
+            elif (
+                isinstance(argument, GenericAlias)
+                and argument.typing_alias
+                and len(argument.arguments) == 1
+                and _runtime_unpack(argument.origin) is not None
+            ):
+                allowed = variables
+                argument = argument.arguments[0]
+            else:
+                allowed = direct
+            if argument is None or not any(
+                _is_runtime_class(argument.get_type(), variable) for variable in allowed
+            ):
+                invalid = argument
+                break
+            unwrapped.append(argument)
+        if invalid is not None or not unwrapped:
             error = TypeError(f"{origin.get_name()} parameters must be type variables")
             notes = [
                 (
@@ -253,8 +312,10 @@ def _generic_alias(context, project, typing_alias):
                 notes.append(f"generic argument context failed: {diagnostic_error!r}")
             error.__dict__["__notes__"] = notes
             raise error
-        if len({id(argument) for argument in arguments_}) != len(arguments_):
+        if len({id(argument) for argument in unwrapped}) != len(unwrapped):
             raise TypeError(f"{origin.get_name()} parameters must be unique")
+        # The alias keeps the arguments as subscribed, like the runtime's
+        # ``__args__``; unwrapping is validation-internal.
     return GenericAlias(origin, arguments_, project, typing_alias)
 
 
@@ -378,9 +439,15 @@ def _create_builtin_type_getter(cls):
     def _get_builtin(*args):
         if not hasattr(cls, "_generated"):
             cls._generated = {}
-        if args not in cls._generated:
-            cls._generated[args] = cls(*args)
-        return cls._generated[args]
+        # Identity-keyed: plain ``PyObject``s hash and compare by type,
+        # so a value-keyed cache collapses distinct inferred objects
+        # (each module's own ``TypeVar``/``TypeVarTuple``) onto one
+        # cached builtin.  The cached instance holds its arguments
+        # strongly, so an id cannot be reused while its entry lives.
+        key = tuple(id(arg) for arg in args)
+        if key not in cls._generated:
+            cls._generated[key] = cls(*args)
+        return cls._generated[key]
 
     return _get_builtin
 
@@ -581,6 +648,36 @@ class LiteralString(pyobjects.PyObject):
     def __init__(self, value):
         super().__init__(get_str_type())
         self.value = value
+
+    def __eq__(self, obj):
+        # Literal values are value objects: two known strings with the same
+        # text are the same object, unlike reference-like builtin types.
+        if isinstance(obj, LiteralString):
+            return self.value == obj.value
+        return NotImplemented
+
+    def __ne__(self, obj):
+        result = self.__eq__(obj)
+        if result is NotImplemented:
+            return result
+        return not result
+
+    def __hash__(self):
+        return hash((LiteralString, self.value))
+
+
+class UnpackedTypeVarTuple(pyobjects.PyObject):
+    """PEP 646 ``*Ts`` subscription marker holding the parameter target.
+
+    The starred subscription syntax exists only at the expression level;
+    this marker carries the unpack fact from the evaluator into the typing
+    alias validation, which accepts a TypeVarTuple parameter only through
+    it (a raw ``Cls[Ts]`` subscript is the runtime ``TypeError``).
+    """
+
+    def __init__(self, target):
+        super().__init__(pyobjects.get_base_type("Unknown"))
+        self.target = target
 
 
 class LiteralDict(pyobjects.PyObject):
