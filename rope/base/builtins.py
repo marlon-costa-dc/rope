@@ -192,6 +192,10 @@ def _class_getitem(owner, project, typing_alias):
 def _generic_alias(context, project, typing_alias):
     origin = context.get_argument("cls")
     key = context.get_argument("key")
+    if origin is None or key is None:
+        # Leitura de um subscrito cuja origem ou chave não pôde ser
+        # inferida: sem alias, sem exceção — o consumidor trata ausência.
+        return None
     arguments_ = (
         key.get_type().get_holding_objects()
         if key is not None and isinstance(key.get_type(), Tuple)
@@ -215,8 +219,10 @@ def _generic_alias(context, project, typing_alias):
         ):
             error = TypeError(f"{origin.get_name()} parameters must be type variables")
             notes = [
-                f"alias origin={type(origin).__name__}@{id(origin):x} "
-                f"key={type(key).__name__}@{id(key):x}"
+                (
+                    f"alias origin={type(origin).__name__}@{id(origin):x} "
+                    f"key={type(key).__name__}@{id(key):x}"
+                )
             ]
             try:
                 for index, argument in enumerate(arguments_):

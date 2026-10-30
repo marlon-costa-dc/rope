@@ -1097,7 +1097,7 @@ class _GlobalVisitor(_ScopeVisitor):
         )
         if selected is None:
             return self.generic_visit(node)
-        for statement in (node.body if selected else node.orelse):
+        for statement in node.body if selected else node.orelse:
             self.visit(statement)
 
     def visit(self, node):

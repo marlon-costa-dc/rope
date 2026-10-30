@@ -51,6 +51,57 @@ that earlier binding, as it does for the other names in the generic header.
 This source-binding requirement does not waive rejection of an inconsistent
 hierarchy or introduce a second method-resolution-order implementation.
 
+``get_source_binding_index().class_layout(scope)`` exposes the source layout of
+a class in that same module. Its immutable result contains the declaration,
+header and body regions, the name region and base-list insertion offset, optional
+parenthesized argument-content region, direct keyword/base/decorator regions,
+original base bindings, named type-parameter regions,
+and direct annotated
+bindings. Each annotated binding retains its complete statement region, the
+native binding of its annotation qualifier and whether a value is present.
+Qualifier resolution uses the annotation's original source context, including
+aliases and generic header bindings. An unresolved qualifier remains ``None``;
+it is not replaced by a guessed name. Regions are half-open character offsets
+into the indexed module, not lines or a copy of its syntax tree. A scope from
+another module, or a non-class scope, is rejected. Consumers can use these facts
+and the existing ``context_at``/native class queries without inspecting syntax
+nodes, reconstructing a header or opening a second project.
+The argument region distinguishes ``class A:`` from ``class A():`` and preserves
+keyword-only headers such as ``class A(metaclass=M):``. Header tokens are read by
+Rope's existing lexical reader over the bounded header, so Unicode identifier
+spelling, comments, generic bounds and explicit line continuations keep their
+original character offsets. A leading decorated member belongs to the body,
+including its decorator lines.
+
+``assignment_layouts(scope=None, *, name=None)`` returns immutable metadata for
+direct assignments and type-alias declarations in the supplied scope (the module
+by default). Each record carries its native statement kind, complete statement
+region, named target regions, optional value/annotation regions and the native
+value binding resolved in its original source context. ``root_binding`` is the
+binding of a bare-name root below attribute access, or ``None`` for other
+expressions. ``string_sequence`` is the exact tuple of a direct literal string
+list, tuple or set, or ``None`` for another value. ``type_parameters`` retains
+named parameter regions of generic type aliases. Value inference is explicit:
+``resolve_values=True`` resolves ``value_binding`` and ``root_binding``; the
+default returns layout only. A name selection is applied before this inference,
+so a query for one binding does not infer unrelated declarations. Multiple writes remain separate ordered records;
+clients retain responsibility for admitting ambiguous or augmented writes.
+Like ``class_layout``, this query uses only the existing indexed source and
+rejects a scope from another module.
+
+The existing ``SourceContext.access`` query distinguishes expression reads,
+writes and deletions (``"read"``, ``"write"`` and ``"delete"``), returning
+``None`` for a context that is not a name/attribute/subscript access. Clients
+can combine this with the original context environment and semantic match
+regions without interpreting a syntax node.
+
+``decorator_bindings(scope)`` returns the ordered native callee bindings of a
+source declaration's decorators. A called decorator resolves its callable in
+the original header environment rather than evaluating its factory result.
+Declarations without decorators return an empty tuple. Unknown callees retain
+``None`` and native resolution errors propagate; no decorator is imported or
+executed by this query.
+
 Subscription analysis must distinguish instance ``__getitem__`` from class
 ``__class_getitem__`` and retain the actual subscription argument. A metaclass's
 ``__getitem__`` has precedence over the class hook. An unresolved subscription

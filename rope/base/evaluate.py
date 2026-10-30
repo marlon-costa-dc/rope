@@ -1,3 +1,5 @@
+import operator
+import sys
 from operator import itemgetter
 
 import rope.base.builtins
@@ -17,6 +19,117 @@ from rope.base import (
 )
 
 BadIdentifierError = exceptions.BadIdentifierError
+
+
+def _has_stdlib_import_prelude(module, node):
+    """Certify a direct header without loading its imported modules."""
+    project = module.pycore.project
+    resource = module.get_resource()
+    folder = resource.parent if resource is not None else None
+    for statement in module.get_ast().body:
+        if statement is node:
+            return True
+        if (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        if isinstance(statement, ast.Import):
+            imported = [alias.name for alias in statement.names]
+        elif isinstance(statement, ast.ImportFrom) and not statement.level:
+            if any(alias.name == "*" for alias in statement.names):
+                return False
+            imported = [statement.module]
+        else:
+            return False
+        for name in imported:
+            if not name or name.partition(".")[0] not in sys.stdlib_module_names:
+                return False
+            runtime = sys.modules.get(name)
+            if type(runtime) is not type(sys):
+                return False
+            if name in sys.builtin_module_names:
+                continue
+            runtime_file = vars(runtime).get("__file__")
+            origin = project.find_module(name, folder)
+            if origin is None:
+                return False
+            if origin.is_folder():
+                if not origin.has_child("__init__.py"):
+                    return False
+                origin = origin.get_child("__init__.py")
+            if not isinstance(runtime_file, str) or origin.real_path != runtime_file:
+                return False
+    return False
+
+
+def _header_version_guard(module, names, node):
+    """Prove a header sys.version_info comparison; return None when unproved.
+
+    The current native bindings and an authenticated standard-library prelude
+    supply the runtime. No target package or expression is executed. Other
+    guards, scopes and comparison domains keep their existing treatment.
+    """
+    if module is None:
+        return None
+    if not all(
+        isinstance(statement, (ast.Import, ast.ImportFrom))
+        for statement in node.body + node.orelse
+    ):
+        return None
+    test = node.test
+    if not (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == len(test.comparators) == 1
+        and isinstance(test.left, ast.Attribute)
+        and test.left.attr == "version_info"
+        and isinstance(test.left.value, ast.Name)
+        and isinstance(test.comparators[0], ast.Tuple)
+    ):
+        return None
+    binding = names.get(test.left.value.id)
+    if not (
+        isinstance(binding, rope.base.pynames.ImportedModule)
+        and binding.importing_module is module
+        and binding.module_name == "sys"
+        and binding.level == 0
+        and _has_stdlib_import_prelude(module, node)
+    ):
+        return None
+    namespace = binding.get_object()
+    if not (
+        isinstance(namespace, rope.base.builtins.BuiltinModule)
+        and namespace.name == "sys"
+        and namespace.module is sys
+    ):
+        return None
+    version = namespace.get_attribute("version_info").get_object()
+    if not (
+        isinstance(version, rope.base.builtins.BuiltinUnknown)
+        and version.builtin is sys.version_info
+    ):
+        return None
+    try:
+        compared = ast.literal_eval(test.comparators[0])
+    except (TypeError, ValueError):
+        return None
+    if any(
+        type(value) is not type(actual)
+        for value, actual in zip(compared, version.builtin)
+    ):
+        return None
+    comparison = {
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+    }.get(type(test.ops[0]))
+    if comparison is None:
+        return None
+    return comparison(version.builtin, compared)
 
 
 class SourceValueScope(pyscopes.TemporaryScope):

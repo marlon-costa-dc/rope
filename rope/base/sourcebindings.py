@@ -235,6 +235,39 @@ class AnnotationPolicy:
     resolver_contract: str
 
 
+@dataclass(frozen=True)
+class SourceClassLayout:
+    """Source regions and native annotation bindings of one class declaration."""
+
+    region: tuple[int, int]
+    header: tuple[int, int]
+    body: tuple[int, int]
+    name_region: tuple[int, int]
+    bases_insertion_offset: int
+    arguments_region: tuple[int, int] | None
+    keywords: tuple[tuple[int, int], ...]
+    bases: tuple[tuple[int, int], ...]
+    base_bindings: tuple[tuple[tuple[int, int], pynames.PyName | None], ...]
+    decorators: tuple[tuple[int, int], ...]
+    type_parameters: tuple[tuple[str, tuple[int, int]], ...]
+    annotated_bindings: tuple[tuple[tuple[int, int], pynames.PyName | None, bool], ...]
+
+
+@dataclass(frozen=True)
+class SourceAssignmentLayout:
+    """Native assignment identity, regions and original value binding."""
+
+    kind: str
+    region: tuple[int, int]
+    targets: tuple[tuple[str, tuple[int, int]], ...]
+    value: tuple[int, int] | None
+    annotation: tuple[int, int] | None
+    value_binding: pynames.PyName | None
+    root_binding: pynames.PyName | None
+    string_sequence: tuple[str, ...] | None
+    type_parameters: tuple[tuple[str, tuple[int, int]], ...]
+
+
 class SourceContext:
     """A recorded node environment (hand-rolled frozen dataclass equivalent).
 
@@ -278,6 +311,17 @@ class SourceContext:
     @property
     def structural_scope(self):
         return _resolved(self._structural_scope)
+
+    @property
+    def access(self):
+        context = getattr(self.source_node, "ctx", None)
+        if isinstance(context, ast.Load):
+            return "read"
+        if isinstance(context, ast.Store):
+            return "write"
+        if isinstance(context, ast.Del):
+            return "delete"
+        return None
 
     def __eq__(self, other):
         if other.__class__ is self.__class__:
@@ -1088,6 +1132,170 @@ class SourceBindingIndex:
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 roots.add(node.module.partition(".")[0])
         return frozenset(roots)
+
+    def class_layout(self, scope):
+        """Read class layout and annotation origins from this indexed module."""
+        from rope.base import evaluate, worder
+
+        owner = scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("class layout scope belongs to another source module")
+        node = owner.get_ast()
+        if not isinstance(node, ast.ClassDef):
+            raise TypeError("class layout requires a source class scope")
+        start, end = self._span(node)
+        body_start, _ = self._span(node.body[0])
+        leading_decorators = getattr(node.body[0], "decorator_list", ())
+        if leading_decorators:
+            body_start = self.pymodule.lines.get_line_start(
+                min(item.lineno for item in leading_decorators)
+            )
+        words = worder.Worder(self.source[start:body_start])
+        name_offset = words.code_finder._find_first_non_space_char(
+            words.get_word_range(0)[1]
+        )
+        name_start, name_end = words.get_word_range(name_offset)
+        type_parameters = getattr(node, "type_params", ())
+        insertion = (
+            words.get_word_parens_range(name_start, "[", "]")[1]
+            if type_parameters
+            else name_end
+        )
+        next_token = words.code_finder._find_first_non_space_char(insertion)
+        arguments = None
+        if words.code_finder.code[next_token : next_token + 1] == "(":
+            first, last = words.get_word_parens_range(insertion - 1)
+            arguments = (start + first + 1, start + last - 1)
+        annotations = []
+        for member in node.body:
+            if not isinstance(member, ast.AnnAssign):
+                continue
+            annotation = member.annotation
+            qualifier = (
+                annotation.value
+                if isinstance(annotation, ast.Subscript)
+                else annotation
+            )
+            context = self.node_contexts[id(qualifier)]
+            annotations.append(
+                (
+                    self._span(member),
+                    evaluate.eval_node(context.environment, qualifier),
+                    member.value is not None,
+                )
+            )
+        return SourceClassLayout(
+            region=(start, end),
+            header=(start, body_start),
+            body=(body_start, end),
+            name_region=(start + name_start, start + name_end),
+            bases_insertion_offset=start + insertion,
+            arguments_region=arguments,
+            keywords=tuple(self._span(keyword) for keyword in node.keywords),
+            bases=tuple(self._span(base) for base in node.bases),
+            base_bindings=tuple(
+                (
+                    self._span(base),
+                    evaluate.eval_node(self.node_contexts[id(base)].environment, base),
+                )
+                for base in node.bases
+            ),
+            decorators=tuple(self._span(item) for item in node.decorator_list),
+            type_parameters=tuple(
+                (parameter.name, self._span(parameter)) for parameter in type_parameters
+            ),
+            annotated_bindings=tuple(annotations),
+        )
+
+    def decorator_bindings(self, scope):
+        """Resolve decorator callees in their recorded source environments."""
+        from rope.base import evaluate
+
+        owner = scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("decorator scope belongs to another source module")
+        decorators = getattr(owner.get_ast(), "decorator_list", ())
+        callees = (
+            item.func if isinstance(item, ast.Call) else item for item in decorators
+        )
+        return tuple(
+            evaluate.eval_node(self.node_contexts[id(callee)].environment, callee)
+            for callee in callees
+        )
+
+    def assignment_layouts(self, scope=None, *, name=None, resolve_values=False):
+        """Return direct binding regions without reparsing the module source."""
+        from rope.base import evaluate
+
+        owner = self.pymodule if scope is None else scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("assignment scope belongs to another source module")
+        assignments = []
+        for node in owner.get_ast().body:
+            if not (
+                isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+                or (_TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES))
+            ):
+                continue
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else (node.name,)
+                if _TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES)
+                else (node.target,)
+            )
+            selected = tuple(
+                (target.id, self._span(target))
+                for target in targets
+                if isinstance(target, ast.Name)
+            )
+            if name is not None and all(target != name for target, _ in selected):
+                continue
+            value = node.value
+            annotation = getattr(node, "annotation", None)
+            root = value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            assignments.append(
+                SourceAssignmentLayout(
+                    kind=type(node).__name__,
+                    region=self._span(node),
+                    targets=selected,
+                    value=self._span(value) if value is not None else None,
+                    annotation=self._span(annotation)
+                    if annotation is not None
+                    else None,
+                    value_binding=(
+                        evaluate.eval_node(
+                            self.node_contexts[id(value)].environment, value
+                        )
+                        if resolve_values and value is not None
+                        else None
+                    ),
+                    root_binding=(
+                        evaluate.eval_node(
+                            self.node_contexts[id(root)].environment, root
+                        )
+                        if resolve_values and isinstance(root, ast.Name)
+                        else None
+                    ),
+                    string_sequence=(
+                        tuple(item.value for item in value.elts)
+                        if isinstance(value, (ast.List, ast.Tuple, ast.Set))
+                        and all(
+                            isinstance(item, ast.Constant)
+                            and isinstance(item.value, str)
+                            for item in value.elts
+                        )
+                        else None
+                    ),
+                    type_parameters=tuple(
+                        (parameter.name, self._span(parameter))
+                        for parameter in getattr(node, "type_params", ())
+                    ),
+                )
+            )
+        return tuple(assignments)
 
     def assignment_string_sequence(self, name, scope=None, *, class_metadata=False):
         """Read a direct string-sequence declaration from the existing parse."""
