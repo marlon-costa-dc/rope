@@ -286,7 +286,19 @@ class PyClass(pyobjects.PyClass):
                         invalidate = getattr(base, "invalidate_bases", None)
                         if invalidate is not None:
                             invalidate()
-                    mro = pyobjects.linearize(self, self._get_bases())
+                    try:
+                        mro = pyobjects.linearize(self, self._get_bases())
+                    except exceptions.InconsistentHierarchyError:
+                        # Conflito persistente em código EXTERNO ao projeto
+                        # (biblioteca instalada) é limitação da análise, não
+                        # defeito da árvore governada: o Python executa essa
+                        # hierarquia. Degrada para MRO aproximado em
+                        # profundidade, opaco para consumidores do índice.
+                        # Classe autoral continua levantando — defeito real.
+                        if self._hierarchy_is_external():
+                            mro = self._degraded_mro(bases)
+                        else:
+                            raise
             finally:
                 self._linearizing = False
             # Bases transitórias persistentes (sem cache estável em _bases)
@@ -296,6 +308,52 @@ class PyClass(pyobjects.PyClass):
                 return mro
             self._mro.set(mro)
         return self._mro.get()
+
+    def _hierarchy_is_external(self):
+        """Whether this class's module lives outside the project's own tree.
+
+        Installed third-party hierarchies are opaque facts: Python runs them,
+        so a linearization conflict is an analysis limitation and consumers
+        receive an approximate MRO instead of an analysis failure.
+
+        """
+        module = self.get_module()
+        resource = module.get_resource() if module is not None else None
+        if resource is None:
+            return False
+        project_root = getattr(resource.project, "address", None)
+        if project_root is None:
+            return False
+        real = str(resource.real_path)
+        return not real.startswith(str(project_root))
+
+    def _degraded_mro(self, bases):
+        """Approximate an unlinearizable external hierarchy deterministically.
+
+        Depth-first over each base's own (guarded) MRO, deduplicated,
+        preserving declaration order — enough for attribute resolution on
+        foreign classes whose real C3 the analysis cannot reproduce.
+
+        """
+        order = []
+        seen = set()
+
+        def visit(cls):
+            if id(cls) in seen:
+                return
+            seen.add(id(cls))
+            order.append(cls)
+            try:
+                ancestors = cls.get_mro() if cls is not self else bases
+            except Exception:
+                return
+            for ancestor in ancestors:
+                if ancestor is not cls and id(ancestor) not in seen:
+                    visit(ancestor)
+
+        for base in bases:
+            visit(base)
+        return order
 
     def invalidate_bases(self):
         """Drop the cached bases and MRO so the next read recomputes them.
@@ -1081,9 +1139,26 @@ class _ComprehensionVisitor(_ScopeVisitor):
 
 
 class _GlobalVisitor(_ScopeVisitor):
+    """Build module bindings without treating inactive version imports as live.
+
+    A direct import-only guard may select a branch only after an import-only
+    standard-library prelude authenticates its ``sys`` binding and runtime.
+    The source AST remains complete; mixed scopes, TYPE_CHECKING and unproved
+    conditions retain their existing traversal and declaration identities.
+    """
+
     def __init__(self, pycore, owner_object):
         super().__init__(pycore, owner_object)
         self.depth = 0
+
+    def _If(self, node):
+        selected = rope.base.evaluate._header_version_guard(
+            self.get_module(), self.names, node
+        )
+        if selected is None:
+            return self.generic_visit(node)
+        for statement in (node.body if selected else node.orelse):
+            self.visit(statement)
 
     def visit(self, node):
         self.depth += 1
