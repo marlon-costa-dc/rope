@@ -35,6 +35,27 @@ def _mro_holds(mro, target):
     return target in mro
 
 
+def _base_is_external(cls, base_node):
+    """Whether a failing base node lives in an installed third-party module.
+
+    The base expression is evaluated in the declaring module's scope; when
+    that module's file sits outside the project root, the evaluation failure
+    is an analysis limitation over foreign code, never a defect of the
+    governed tree.
+
+    """
+    module = cls.get_module()
+    resource = module.get_resource() if module is not None else None
+    if resource is None:
+        return False
+    project = resource.project
+    if not hasattr(project, "address"):
+        # NoProject: recurso fora de qualquer projeto aberto — biblioteca
+        # instalada, definicionalmente externa à árvore governada.
+        return True
+    return not str(resource.real_path).startswith(str(project.address))
+
+
 class PyFunction(pyobjects.PyFunction):
     def __init__(self, pycore, ast_node, parent):
         rope.base.pyobjects.AbstractFunction.__init__(self)
@@ -247,6 +268,12 @@ class PyClass(pyobjects.PyClass):
         ]
 
     def get_mro(self):
+        """Return the native C3 order, retaining unresolved base witnesses.
+
+        Linearize the current bases once and preserve hierarchy failures.
+        An order containing an unresolved base is partial and is never
+        cached as a complete method resolution order.
+        """
         if self._mro.get() is None:
             # Evaluating the bases may look up attributes of this class;
             # only the linearization of the ancestors can reach it again.
@@ -257,113 +284,18 @@ class PyClass(pyobjects.PyClass):
                 )
             self._linearizing = True
             try:
-                if self._bases.get() is None and any(
-                    isinstance(base, pyobjects.UnresolvedBase)
-                    and base.pyobject is None
-                    for base in bases
-                ):
-                    # Bases que a primeira avaliação não pôde vincular são
-                    # transientes de construção do índice fonte lazy; os
-                    # efeitos da própria avaliação completam os módulos
-                    # envolvidos. Uma reavaliação imediata settle; se o
-                    # transitório persiste, ele segue adiante sem cache.
-                    bases = self._get_bases()
-                    if not any(
-                        isinstance(base, pyobjects.UnresolvedBase)
-                        and base.pyobject is None
-                        for base in bases
-                    ):
-                        self._bases.set(bases)
-                try:
-                    mro = pyobjects.linearize(self, bases)
-                except exceptions.InconsistentHierarchyError:
-                    # Um conflito pode nascer de um ancestral cuja própria
-                    # hierarquia ainda é transitória; a avaliação feita até
-                    # aqui completou os módulos envolvidos. A reavaliação
-                    # invalida também as bases dos ancestrais diretos (o
-                    # mundo deles completa junto); falha persistente é real.
-                    for base in bases:
-                        invalidate = getattr(base, "invalidate_bases", None)
-                        if invalidate is not None:
-                            invalidate()
-                    try:
-                        mro = pyobjects.linearize(self, self._get_bases())
-                    except exceptions.InconsistentHierarchyError:
-                        # Conflito persistente em código EXTERNO ao projeto
-                        # (biblioteca instalada) é limitação da análise, não
-                        # defeito da árvore governada: o Python executa essa
-                        # hierarquia. Degrada para MRO aproximado em
-                        # profundidade, opaco para consumidores do índice.
-                        # Classe autoral continua levantando — defeito real.
-                        if self._hierarchy_is_external():
-                            mro = self._degraded_mro(bases)
-                        else:
-                            raise
+                mro = pyobjects.linearize(self, bases)
             finally:
                 self._linearizing = False
-            # Bases transitórias persistentes (sem cache estável em _bases)
-            # linearizam sem publicar cache: o MRO seria envenenado pelos
-            # UnresolvedBase da avaliação incompleta.
-            if self._bases.get() is None:
+            if any(isinstance(base, pyobjects.UnresolvedBase) for base in mro):
                 return mro
             self._mro.set(mro)
         return self._mro.get()
 
-    def _hierarchy_is_external(self):
-        """Whether this class's module lives outside the project's own tree.
-
-        Installed third-party hierarchies are opaque facts: Python runs them,
-        so a linearization conflict is an analysis limitation and consumers
-        receive an approximate MRO instead of an analysis failure.
-
-        """
-        module = self.get_module()
-        resource = module.get_resource() if module is not None else None
-        if resource is None:
-            return False
-        project_root = getattr(resource.project, "address", None)
-        if project_root is None:
-            return False
-        real = str(resource.real_path)
-        return not real.startswith(str(project_root))
-
-    def _degraded_mro(self, bases):
-        """Approximate an unlinearizable external hierarchy deterministically.
-
-        Depth-first over each base's own (guarded) MRO, deduplicated,
-        preserving declaration order — enough for attribute resolution on
-        foreign classes whose real C3 the analysis cannot reproduce.
-
-        """
-        order = []
-        seen = set()
-
-        def visit(cls):
-            if id(cls) in seen:
-                return
-            seen.add(id(cls))
-            order.append(cls)
-            try:
-                ancestors = cls.get_mro() if cls is not self else bases
-            except Exception:
-                return
-            for ancestor in ancestors:
-                if ancestor is not cls and id(ancestor) not in seen:
-                    visit(ancestor)
-
-        for base in bases:
-            visit(base)
-        return order
-
     def invalidate_bases(self):
         """Drop the cached bases and MRO so the next read recomputes them.
 
-        A first evaluation can observe construction transients of the lazy
-        source index — including transients of foreign modules still under
-        construction, whose completion this class's caches never see.
-        The evaluation's own side effects complete those modules after its
-        stack unwinds; consumers that must read a settled hierarchy
-        invalidate and re-ask.
+        Call this after the inputs defining the hierarchy change.
         """
         self._bases.set(None)
         self._mro.set(None)
@@ -479,6 +411,14 @@ class PyClass(pyobjects.PyClass):
                 except Exception as diagnostic_error:
                     note = f"base evaluation context failed: {diagnostic_error!r}"
                 error.__dict__.setdefault("__notes__", []).append(note)
+                # Base EXTERNA ao projeto cuja avaliação a análise não
+                # reproduz (ex.: alias genérico de biblioteca instalada):
+                # vira UnresolvedBase — os consumidores já tratam bases
+                # não resolvidas — em vez de derrubar a indexação inteira.
+                # Classe autoral continua propagando: defeito real.
+                if _base_is_external(self, base_node):
+                    bindings.append(None)
+                    continue
                 raise
         original = rope.base.builtins.get_tuple(
             *(
