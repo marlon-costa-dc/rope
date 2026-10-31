@@ -41,6 +41,8 @@ import tokenize
 from typing import Iterator
 
 from rope.base import (
+    ast,
+    codeanalyze,
     evaluate,
     exceptions,
     pynames,
@@ -323,18 +325,36 @@ class _TextualFinder:
     def _token_search(self, source: str) -> Iterator[int]:
         """Yield the offsets of every NAME token equal to the searched name.
 
-        Python 3.12+ tokenizes f-string replacement fields as ordinary
-        tokens, so names are found even inside PEP 701 f-strings whose
-        replacement fields reuse the outer quote, where regex matching and
-        ``ast.parse`` of a truncated capture fail.
+        Complete string tokens expose replacement expressions through Python's
+        native AST; expression tokens retain their source coordinates.
         """
         line_starts = [0]
         for line in source.splitlines(keepends=True):
             line_starts.append(line_starts[-1] + len(line))
-        for token in tokenize.generate_tokens(io.StringIO(source).readline):
-            if token.type == tokenize.NAME and token.string == self.name:
-                row, column = token.start
+        for item in tokenize.generate_tokens(io.StringIO(source).readline):
+            row, column = item.start
+            if item.type == tokenize.NAME and item.string == self.name:
                 yield line_starts[row - 1] + column
+            elif item.type == tokenize.STRING and item.string.lower().startswith(
+                ("f", "rf")
+            ):
+                module = ast.parse(item.string)
+                positions = codeanalyze.ASTLinesAdapter(item.string)
+                for offset in self._formatted_offsets(
+                    item.string, module.body[0].value, positions
+                ):
+                    yield line_starts[row - 1] + column + offset
+
+    def _formatted_offsets(self, source, node, positions) -> Iterator[int]:
+        for value in node.values:
+            if not isinstance(value, ast.FormattedValue):
+                continue
+            start, end = positions[value.value]
+            # AST spans omit the grouping that permits continuation indentation.
+            for offset in self._token_search("(" + source[start:end] + ")"):
+                yield start + offset - 1
+            if value.format_spec is not None:
+                yield from self._formatted_offsets(source, value.format_spec, positions)
 
     def _normal_search(self, source: str) -> Iterator[int]:
         current = 0
