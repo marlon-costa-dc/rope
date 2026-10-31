@@ -1,5 +1,7 @@
 # __Upcoming release__
 
+# Release 1.15.0+dc.8
+
 - Type `rope.base.utils.saveit` so decorated methods and properties, such
   as `Project.pycore`, keep their return type for type checkers.
 - Keep analysing classes whose hierarchy Python refuses to create, as upstream
