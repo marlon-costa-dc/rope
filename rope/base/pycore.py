@@ -234,6 +234,7 @@ class _ModuleCache:
     def __init__(self, pycore):
         self.pycore = pycore
         self.module_map = {}
+        self.data_epoch = 0
         self.pycore.cache_observers.append(self._invalidate_resource)
         self.observer = self.pycore.observer
 
@@ -265,6 +266,7 @@ class _ModuleCache:
         return result
 
     def forget_all_data(self):
+        self.data_epoch += 1
         for pymodule in self.module_map.values():
             pymodule._forget_concluded_data()
 

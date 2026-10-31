@@ -3,7 +3,7 @@ import typing
 import unittest
 from textwrap import dedent
 
-from rope.base import exceptions, libutils
+from rope.base import evaluate, exceptions, libutils
 from rope.base.builtins import BuiltinClass, File, builtins
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
@@ -1196,6 +1196,25 @@ class PyCoreTest(unittest.TestCase):
         a = self.project.get_module("mod1")["A"].get_object()
         with self.assertRaises(exceptions.InconsistentHierarchyError):
             a.get_mro()
+
+    def test_offset_resolution_follows_changes_in_other_modules(self):
+        mod1 = testutils.create_module(self.project, "mod1")
+        mod2 = testutils.create_module(self.project, "mod2")
+        mod2.write("class C:\n    attr = 1\n")
+        code = "from mod2 import C\nresult = C().attr\n"
+        mod1.write(code)
+        offset = code.rindex("attr")
+
+        def attribute_definition():
+            pymodule = self.project.get_pymodule(mod1)
+            pyname = evaluate.eval_location(pymodule, offset)
+            return pyname.get_definition_location()
+
+        module, lineno = attribute_definition()
+        self.assertEqual((self.project.get_pymodule(mod2), 2), (module, lineno))
+        mod2.write("class C:\n\n    attr = 1\n")
+        module, lineno = attribute_definition()
+        self.assertEqual((self.project.get_pymodule(mod2), 3), (module, lineno))
 
     def test_module_creation(self):
         new_module = testutils.create_module(self.project, "module")

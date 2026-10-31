@@ -290,6 +290,31 @@ class ScopeNameFinder:
         self,
         offset: int,
     ) -> Tuple[Optional[rope.base.pynames.PyName], Optional[rope.base.pynames.PyName]]:
+        # Occurrence searches resolve the same (module, offset) many times
+        # while the project data does not change.  The memo lives on the
+        # PyModule and is stamped with the project-wide data epoch, so any
+        # resource invalidation (forget_all_data) retires every entry.
+        pymodule = self.module_scope.pyobject
+        cache = getattr(getattr(pymodule, "pycore", None), "module_cache", None)
+        epoch = getattr(cache, "data_epoch", None)
+        memo = getattr(pymodule, "_offset_resolution_memo", None)
+        if epoch is not None and memo is not None and memo[0] == epoch:
+            try:
+                return memo[1][offset]
+            except KeyError:
+                pass
+        result = self._resolve_primary_and_pyname_at(offset)
+        if epoch is not None:
+            if memo is None or memo[0] != epoch:
+                memo = (epoch, {})
+                pymodule._offset_resolution_memo = memo
+            memo[1][offset] = result
+        return result
+
+    def _resolve_primary_and_pyname_at(
+        self,
+        offset: int,
+    ) -> Tuple[Optional[rope.base.pynames.PyName], Optional[rope.base.pynames.PyName]]:
         lineno = self.lines.get_line_number(offset)
         index = self.module_scope.pyobject.get_source_binding_index()
         context = index.context_at(offset)
