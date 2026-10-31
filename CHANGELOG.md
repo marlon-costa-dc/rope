@@ -1,5 +1,10 @@
 # __Upcoming release__
 
+# Release 1.15.0+dc.10
+
+- Tokenize a module once however many names are searched in it, caching the
+  name index by source text.
+
 # Release 1.15.0+dc.9
 
 - Memoize offset resolution on each module until the project data changes,
