@@ -35,6 +35,27 @@ def _mro_holds(mro, target):
     return target in mro
 
 
+def _base_binding_at_position(pyname, base_node):
+    """Resolve a class base against the binding visible at its source position.
+
+    Python evaluates base expressions at class-creation time. A module that
+    rebinds an imported name (``from x import c`` ... ``class F(c)`` ...
+    ``c = F``) resolves the base to the IMPORT binding: every recorded
+    assignment of the rebinding sits after the class statement. Names without
+    a retained pre-assignment binding, and names whose assignments genuinely
+    precede the base, keep the scope binding.
+
+    """
+    prior = getattr(pyname, "pre_assignment_binding", None)
+    if prior is None:
+        return pyname
+    for assignment in getattr(pyname, "assignments", ()) or ():
+        node = getattr(assignment, "type_hint", None) or assignment.ast_node
+        if (node.lineno, node.col_offset) <= (base_node.lineno, base_node.col_offset):
+            return pyname
+    return prior
+
+
 def _base_is_external(cls, base_node):
     """Whether a failing base node lives in an installed third-party module.
 
@@ -398,7 +419,8 @@ class PyClass(pyobjects.PyClass):
                     names.update(scope.get_defined_names())
                 scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
             try:
-                bindings.append(rope.base.evaluate.eval_node(scope, base_node))
+                evaluated = rope.base.evaluate.eval_node(scope, base_node)
+                bindings.append(_base_binding_at_position(evaluated, base_node))
             except Exception as error:
                 try:
                     module = self.get_module()
@@ -966,7 +988,12 @@ class _ScopeVisitor(_ExpressionVisitor):
             # Python rebinds the name on assignment: an earlier import
             # binding (ImportedName/ImportedModule) must not shadow the
             # module's own later assignment (runtime semantics).
-            pyname = pynamesdef.AssignedName(module=self.get_module())
+            replacement = pynamesdef.AssignedName(module=self.get_module())
+            # The replaced binding stays visible for source positions BEFORE
+            # the first assignment (class bases, mid-module lookups): class
+            # creation evaluates the import, not the later rebind.
+            replacement.pre_assignment_binding = pyname
+            pyname = replacement
         if isinstance(pyname, pynamesdef.AssignedName):
             if assignment is not None:
                 node = assignment.type_hint or assignment.ast_node
