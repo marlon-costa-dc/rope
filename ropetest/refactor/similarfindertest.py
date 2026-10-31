@@ -112,6 +112,17 @@ class SimilarFinderTest(unittest.TestCase):
             list(finder.get_match_regions("target")),
         )
 
+    @testutils.only_for_versions_higher("3.12")
+    def test_type_parameter_bounds_have_match_regions(self):
+        source = "class Box[T: int]:\n    pass\ntype Alias[U: int] = list[U]\n"
+        finder = self._create_finder(source)
+        first = source.index("int")
+        second = source.index("int", first + 1)
+        self.assertEqual(
+            [(first, first + len("int")), (second, second + len("int"))],
+            list(finder.get_match_regions("int")),
+        )
+
     def test_interleaved_class_header_names_have_match_regions(self):
         source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
         finder = self._create_finder(source)

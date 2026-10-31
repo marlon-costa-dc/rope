@@ -520,6 +520,18 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 
+    def test_renaming_comprehension_binding_in_f_string_format_spec(self):
+        code = dedent("""\
+            values = [1, 2]
+            result = [f"{item:>{item}}" for item in values]
+        """)
+        expected = dedent("""\
+            values = [1, 2]
+            result = [f"{value:>{value}}" for value in values]
+        """)
+        refactored = self._local_rename(code, code.index("item in"), "value")
+        self.assertEqual(expected, refactored)
+
     def test_renaming_attribute_occurrences_in_f_string(self):
         code = dedent("""\
             class MyClass:
