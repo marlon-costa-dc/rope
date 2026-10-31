@@ -678,6 +678,26 @@ class PyCoreScopesTest(unittest.TestCase):
         with self.assertRaisesRegex(exceptions.RopeError, "complete source positions"):
             child.get_region()
 
+    def test_scope_region_rejects_decorator_without_source_positions(self):
+        code = "@decorator\ndef sample(): pass\n"
+        scope = libutils.get_string_scope(self.project, code)
+        child = scope.get_scopes()[0]
+        child.pyobject.get_ast().decorator_list[0].end_lineno = None
+
+        with self.assertRaisesRegex(exceptions.RopeError, "Decorator AST"):
+            child.get_region()
+
+    def test_scope_region_rejects_decorator_without_source_marker(self):
+        code = "@decorator\ndef sample(): pass\n"
+        scope = libutils.get_string_scope(self.project, code)
+        child = scope.get_scopes()[0]
+        decorator = child.pyobject.get_ast().decorator_list[0]
+        decorator.col_offset = 0
+        decorator.end_col_offset = 0
+
+        with self.assertRaisesRegex(exceptions.RopeError, "source marker"):
+            child.get_region()
+
     def test_scope_decorator_marker_uses_python_line_boundaries(self):
         for prefix in ("\f\n", "# leading\vcomment\n"):
             with self.subTest(prefix=prefix):
