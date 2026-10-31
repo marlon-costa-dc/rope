@@ -50,6 +50,15 @@ class FindItTest(unittest.TestCase):
         )
         self.assertEqual(2, len(result))
 
+    def test_find_occurrences_after_the_module_changes(self):
+        mod = testutils.create_module(self.project, "mod")
+        mod.write("a_var = 1\nprint(a_var)\n")
+        result = find_occurrences(self.project, mod, 1)
+        self.assertEqual([0, 16], [occurrence.offset for occurrence in result])
+        mod.write("\na_var = 1\nb_var = a_var\nprint(a_var)\n")
+        result = find_occurrences(self.project, mod, 2)
+        self.assertEqual([1, 19, 31], [occurrence.offset for occurrence in result])
+
     def test_find_occurrences_resources_parameter(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
