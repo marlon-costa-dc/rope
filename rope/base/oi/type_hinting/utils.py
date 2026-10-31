@@ -68,9 +68,26 @@ def get_lineno_for_node(assign_node):
     return 1
 
 
+def get_mro(pyclass):
+    # FIXME: to use real mro() result
+    class_list = [pyclass]
+    for cls in class_list:
+        for super_cls in cls.get_superclasses():
+            if isinstance(super_cls, PyClass) and super_cls not in class_list:
+                class_list.append(super_cls)
+    return class_list
+
+
 def _source_ancestors(pyclass):
-    """Return the ancestors with source, in method resolution order"""
-    return [cls for cls in pyclass.get_mro()[1:] if isinstance(cls, PyClass)]
+    """Return the ancestors with source, in method resolution order
+
+    A hierarchy Python refuses to create has no method resolution order;
+    its ancestors follow the bases as `get_mro()` lists them.
+
+    """
+    from rope.base.pyobjectsdef import _inheritance_order
+
+    return [cls for cls in _inheritance_order(pyclass)[1:] if isinstance(cls, PyClass)]
 
 
 def resolve_type(

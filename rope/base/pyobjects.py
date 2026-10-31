@@ -167,6 +167,15 @@ class AbstractClass(PyObject):
         """
         return linearize(self, self.get_bases())
 
+    def get_consistent_mro(self):
+        """Return `get_mro()`, or `None` when Python would refuse the class
+
+        Unlike `get_mro()`, this never raises
+        `rope.base.exceptions.InconsistentHierarchyError`.
+
+        """
+        return linearize(self, self.get_bases(), strict=False)
+
     def _get_own_attributes(self):
         """Return the attributes this class defines itself
 
@@ -201,7 +210,13 @@ class ConstructedClass(AbstractClass):
 
     def get_attributes(self):
         result = {}
-        for ancestor in reversed(self.get_mro()):
+        mro = self.get_consistent_mro()
+        if mro is None:
+            for base in reversed(self.get_superclasses()):
+                result.update(base.get_attributes())
+            result.update(self._get_own_attributes())
+            return result
+        for ancestor in reversed(mro):
             result.update(ancestor._get_own_attributes())
         return result
 
@@ -240,23 +255,36 @@ class UnresolvedBase(PyObject):
     def get_mro(self):
         return [self]
 
+    def get_consistent_mro(self):
+        return self.get_mro()
+
     def _get_own_attributes(self):
         return {}
 
 
-def linearize(cls, bases):
+def linearize(cls, bases, strict=True):
     """Return the C3 linearization of `cls` declared with `bases`
 
     Raises `rope.base.exceptions.InconsistentHierarchyError` for repeated
-    bases and for bases whose orders cannot be merged.
+    bases and for bases whose orders cannot be merged.  When `strict` is
+    false, these hierarchies, which Python refuses to create, return
+    `None` instead.
 
     """
     for index, base in enumerate(bases):
         if any(base is previous for previous in bases[:index]):
+            if not strict:
+                return None
             raise exceptions.InconsistentHierarchyError(
                 f"Duplicate base class in {_class_name(cls)}: {_class_name(base)}"
             )
-    sequences = [list(base.get_mro()) for base in bases]
+    if strict:
+        sequences = [list(base.get_mro()) for base in bases]
+    else:
+        sequences = [base.get_consistent_mro() for base in bases]
+        if any(sequence is None for sequence in sequences):
+            return None
+        sequences = [list(sequence) for sequence in sequences]
     sequences.append(list(bases))
     result = [cls]
     while True:
@@ -268,6 +296,8 @@ def linearize(cls, bases):
             if not any(head is item for other in sequences for item in other[1:]):
                 break
         else:
+            if not strict:
+                return None
             # Reporting the current heads identifies the pair of conflicting
             # hierarchies; a bare message would hide which ones dispute the
             # position. The sequence holding the unresolved head points to the

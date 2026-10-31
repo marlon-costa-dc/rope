@@ -16,6 +16,21 @@ from rope.base import (
 )
 
 
+def _inheritance_order(pyclass):
+    """Return the method resolution order of `pyclass`, or its bases walk
+
+    A hierarchy Python refuses to create has no method resolution order;
+    its ancestors then follow the bases.
+
+    """
+    mro = pyclass.get_consistent_mro()
+    if mro is None:
+        from rope.base.oi.type_hinting.utils import get_mro
+
+        mro = get_mro(pyclass)
+    return mro
+
+
 def _mro_holds(mro, target):
     """Tell whether ``mro`` holds the class ``target`` by runtime identity.
 
@@ -295,20 +310,35 @@ class PyClass(pyobjects.PyClass):
         An order containing an unresolved base is partial and is never
         cached as a complete method resolution order.
         """
+        return self._linearize(strict=True)
+
+    def get_consistent_mro(self):
+        """Return `get_mro()`, or `None` when Python would refuse the class
+
+        Cyclic, repeated and unmergeable bases give `None` instead of
+        raising `rope.base.exceptions.InconsistentHierarchyError`.
+        """
+        return self._linearize(strict=False)
+
+    def _linearize(self, strict):
         if self._mro.get() is None:
             # Evaluating the bases may look up attributes of this class;
             # only the linearization of the ancestors can reach it again.
             bases = self.get_bases()
             if self._linearizing:
+                if not strict:
+                    return None
                 raise exceptions.InconsistentHierarchyError(
                     "Cyclic class inheritance: %s" % self.get_name()
                 )
             self._linearizing = True
             try:
-                mro = pyobjects.linearize(self, bases)
+                mro = pyobjects.linearize(self, bases, strict=strict)
             finally:
                 self._linearizing = False
-            if any(isinstance(base, pyobjects.UnresolvedBase) for base in mro):
+            if mro is None or any(
+                isinstance(base, pyobjects.UnresolvedBase) for base in mro
+            ):
                 return mro
             self._mro.set(mro)
         return self._mro.get()
@@ -326,7 +356,6 @@ class PyClass(pyobjects.PyClass):
 
     def get_metaclass(self):
         if self._metaclass.get() is None:
-            self.get_mro()
             winner = super().get_metaclass()
             for keyword in self.ast_node.keywords:
                 if keyword.arg == "metaclass":
@@ -387,7 +416,15 @@ class PyClass(pyobjects.PyClass):
 
     def _create_concluded_attributes(self):
         result = {}
-        for ancestor in reversed(self.get_mro()[1:]):
+        mro = self.get_consistent_mro()
+        if mro is None:
+            # A hierarchy Python refuses to create has no method resolution
+            # order; its attributes are inherited along the bases, as rope
+            # always did for such classes.
+            for base in reversed(self.get_superclasses()):
+                result.update(base.get_attributes())
+            return result
+        for ancestor in reversed(mro[1:]):
             result.update(ancestor._get_own_attributes())
         return result
 
@@ -530,7 +567,8 @@ class PyClass(pyobjects.PyClass):
             if not isinstance(generic, pyobjects.AbstractClass):
                 result.append(pyobjects.UnresolvedBase(self.ast_node, generic))
             elif not any(
-                isinstance(base, pyobjects.AbstractClass) and generic in base.get_mro()
+                isinstance(base, pyobjects.AbstractClass)
+                and generic in _inheritance_order(base)
                 for base in result
             ):
                 result.append(generic)

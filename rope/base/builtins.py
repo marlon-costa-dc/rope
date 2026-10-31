@@ -122,6 +122,9 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
             return [self]
         return [self] + [_runtime_class(cls) for cls in self.builtin.__mro__[1:]]
 
+    def get_consistent_mro(self):
+        return self.get_mro()
+
     def _get_own_attributes(self):
         if not inspect.isclass(self.builtin):
             return self.get_attributes()
@@ -1241,7 +1244,13 @@ def _super_function(args):
         # pyclass = passed_self.get_type()
         pyclass = passed_class
         if isinstance(pyclass, pyobjects.AbstractClass):
-            ancestors = pyclass.get_mro()[1:]
+            mro = pyclass.get_consistent_mro()
+            if mro is None:
+                # Without a method resolution order, super() follows the
+                # declared bases, the first one taking precedence.
+                ancestors = pyclass.get_superclasses()
+            else:
+                ancestors = mro[1:]
             if ancestors:
                 return pyobjects.PyObject(SuperType(pyclass, ancestors, passed_self))
         return passed_self

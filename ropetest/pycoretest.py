@@ -1132,8 +1132,50 @@ class PyCoreTest(unittest.TestCase):
         z = mod["Z"].get_object()
         with self.assertRaises(exceptions.InconsistentHierarchyError):
             z.get_mro()
-        with self.assertRaises(exceptions.InconsistentHierarchyError):
-            z.get_attributes()
+        self.assertIsNone(z.get_consistent_mro())
+
+    def test_inconsistent_mro_keeps_attributes_along_the_bases(self):
+        # Python refuses to create these classes, but rope keeps analysing
+        # them as it always did: only `get_mro()` reports the hierarchy.
+        code = dedent("""\
+            class A(object):
+                def a_method(self):
+                    pass
+            class B(A):
+                def b_method(self):
+                    pass
+            class C(A, B):
+                def c_method(self):
+                    pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        c = mod["C"].get_object()
+        self.assertEqual(
+            {"a_method", "b_method", "c_method"},
+            {name for name in c.get_attributes() if name.endswith("_method")},
+        )
+        self.assertEqual(
+            mod["B"].get_object()["b_method"].get_object(),
+            c["b_method"].get_object(),
+        )
+        self.assertEqual(
+            [mod["A"].get_object(), mod["B"].get_object()], c.get_superclasses()
+        )
+
+    def test_type_hinting_get_mro_walks_the_bases(self):
+        from rope.base.oi.type_hinting.utils import get_mro
+
+        code = dedent("""\
+            class A(object):
+                pass
+            class B(A):
+                pass
+            class C(B, A):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        a, b, c = (mod[name].get_object() for name in ("A", "B", "C"))
+        self.assertEqual([c, b, a], get_mro(c))
 
     def test_duplicate_base_class(self):
         code = dedent("""\

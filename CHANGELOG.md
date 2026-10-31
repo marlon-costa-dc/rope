@@ -1,5 +1,13 @@
 # __Upcoming release__
 
+- Keep analysing classes whose hierarchy Python refuses to create, as upstream
+  does: their attributes, `super()`, `type()` and type hints follow the
+  declared bases. Only `AbstractClass.get_mro()` raises
+  `InconsistentHierarchyError`; the new `get_consistent_mro()` returns `None`
+  for such classes instead.
+- Restore `rope.base.oi.type_hinting.utils.get_mro()`.
+- Infer `super()` along the method resolution order and bind the real
+  receiver of calls made through it.
 - Restore the upstream source form of lines that a linter had rewritten
   without changing behavior, and keep comments in English.
 - Infer assignments without source-index provenance, such as those of an
