@@ -21,7 +21,8 @@ from rope.refactor.introduce_factory import IntroduceFactory
 from rope.refactor.localtofield import LocalToField
 from rope.refactor.method_object import MethodObject
 from ropetest import testutils
-from ropetest.refactor import change_signature_test, similarfindertest
+from ropetest.refactor import change_signature_test as change_signature_test
+from ropetest.refactor import similarfindertest as similarfindertest
 
 
 class MethodObjectTest(unittest.TestCase):

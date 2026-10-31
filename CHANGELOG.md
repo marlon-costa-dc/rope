@@ -1,8 +1,55 @@
-# **Upcoming release**
+# __Upcoming release__
+
+# Release 1.15.0+dc.8
+
+- Type `rope.base.utils.saveit` so decorated methods and properties, such
+  as `Project.pycore`, keep their return type for type checkers.
+- Keep analysing classes whose hierarchy Python refuses to create, as upstream
+  does: their attributes, `super()`, `type()` and type hints follow the
+  declared bases. Only `AbstractClass.get_mro()` raises
+  `InconsistentHierarchyError`; the new `get_consistent_mro()` returns `None`
+  for such classes instead.
+- Restore `rope.base.oi.type_hinting.utils.get_mro()`.
+- Infer `super()` along the method resolution order and bind the real
+  receiver of calls made through it.
+- Restore the upstream source form of lines that a linter had rewritten
+  without changing behavior, and keep comments in English.
+- Infer assignments without source-index provenance, such as those of an
+  independently parsed expression, as unconditional assignments again.
+- Store literal values in the object database the way their builtin base
+  class is stored, by resolving textual transformations along the MRO.
+- Keep static object information for names read through a branch context that
+  does not select any of their assignments, and for value overlays of a
+  source name.
+- Classify evaluated bases by the native `AbstractClass` contract rather than
+  equality with metatype markers. An unresolved base must retain its source
+  witness without being treated as a class supporting method resolution order.
+
+# Release 1.15.0+dc.7
+
+- Resolve class attributes in C3 method resolution order instead of a
+  depth-first walk of the bases, so diamond hierarchies inherit the member
+  Python's `__mro__` selects. `AbstractClass.get_mro()` exposes that order.
+- Model builtin classes with their runtime bases and `__mro__`, so `object`
+  sorts last and a builtin ancestor contributes only the attributes it
+  defines itself.
+- Select inherited docstring and assignment type hints along the same
+  method resolution order instead of a breadth-first walk.
+- Keep bases rope cannot evaluate to a class as `UnresolvedBase` markers in
+  `AbstractClass.get_bases()` and in the method resolution order instead of
+  dropping them; `get_superclasses()` still returns only the classes.
+- Raise `InconsistentHierarchyError` for cyclic, repeated, and unmergeable
+  bases, which Python refuses to create.
+
+# Release 1.15.0+dc.6
 
 - Classify evaluated bases by the native `AbstractClass` contract rather than
   equality with metatype markers. An unresolved base must retain its source
   witness without being treated as a class supporting method resolution order.
+
+- Infer `super(cls, obj)` along the method resolution order of `cls` past
+  `cls` itself instead of as an instance of its first base. Methods and
+  classmethods called through it bind the real receiver.
 
 # Release 1.15.0+dc.7
 

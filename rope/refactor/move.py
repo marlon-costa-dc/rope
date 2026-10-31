@@ -7,10 +7,12 @@ based on inputs.
 
 from __future__ import annotations
 
+import keyword
 import typing
 from typing import List, Optional, Union
 
 from rope.base import (
+    ast,
     codeanalyze,
     evaluate,
     exceptions,
@@ -22,6 +24,7 @@ from rope.base import (
 )
 from rope.base.change import ChangeContents, ChangeSet, MoveResource
 from rope.refactor import functionutils, importutils, occurrences, rename, sourceutils
+from rope.refactor.importutils import importinfo
 from rope.refactor.importutils.module_imports import (
     get_first_decorator_or_function_start_line,
 )
@@ -69,6 +72,13 @@ class MoveMethod:
     the body of the old method to call the new method.  You can
     inline the old method to change all of its occurrences.
 
+    ``get_class_changes()`` explicitly transfers static and class methods
+    together to an existing source class, without forwarding methods. It
+    preserves their declarations and rewrites proven references in the
+    selected resources. Unresolved references, overrides, destination
+    collisions and dependencies on the old class reject the whole plan.
+    Planning never writes resources; callers apply its single ChangeSet.
+
     """
 
     def __init__(self, project, resource, offset):
@@ -79,6 +89,643 @@ class MoveMethod:
         self.pyfunction = pyname.get_object()
         if self.pyfunction.get_kind() != "method":
             raise exceptions.RefactoringError("Only normal methods can be moved.")
+
+    @classmethod
+    def get_class_changes(
+        cls,
+        project,
+        moves,
+        destination_resource,
+        destination_offset,
+        resources=None,
+        task_handle=taskhandle.DEFAULT_TASK_HANDLE,
+    ):
+        """Transfer decorated methods to an existing class in one ChangeSet.
+
+        ``moves`` contains ``(resource, offset, new_name)`` triples. The
+        destination offset identifies a source class. Only native static
+        and class methods with no dependency on the former receiver are
+        admitted. References between transferred methods retain ``cls`` only
+        when it resolves to the exact lexical receiver. Every rewritten
+        destination is proven in its consumer's native lexical environment.
+        Private identifiers must retain their effective lexical spelling;
+        implicit construction and subscription slots are not transferable.
+        Locally defined bindings retain their native lexical identity without
+        requiring inference of their values. Global and imported bindings
+        require resolved values. A private declaration whose effective name
+        is not closed by the native occurrence search is rejected.
+        Overrides, ambiguous references and changed global bindings fail
+        before any resource is written. ``resources`` bounds the reference
+        search and must include all source and destination resources.
+        """
+        destination_module = project.get_pymodule(destination_resource)
+        binding = evaluate.eval_location(destination_module, destination_offset)
+        destination = None if binding is None else binding.get_object()
+        if not isinstance(destination, pyobjects.PyClass):
+            raise exceptions.RefactoringError(
+                "Move destination must be a source class."
+            )
+        if destination.get_module() is not destination_module:
+            raise exceptions.RefactoringError(
+                "Destination must identify its declaration."
+            )
+        selected = list(project.get_python_files() if resources is None else resources)
+        selected = list(dict.fromkeys(selected))
+        methods = {}
+        regions = {}
+        for resource, offset, new_name in moves:
+            module = project.get_pymodule(resource)
+            name = evaluate.eval_location(module, offset)
+            function = None if name is None else name.get_object()
+            if (
+                not isinstance(function, pyobjects.PyFunction)
+                or not isinstance(function.parent, pyobjects.PyClass)
+                or function.get_module() is not module
+            ):
+                raise exceptions.RefactoringError(
+                    "Move source must identify a method declaration."
+                )
+            if (
+                not new_name.isidentifier()
+                or keyword.iskeyword(new_name)
+                or new_name in destination.get_attributes()
+                or new_name in (item[1] for item in methods.values())
+                or function in methods
+            ):
+                raise exceptions.RefactoringError(
+                    "Duplicate or occupied method destination."
+                )
+            cls._check_class_method(function)
+            if (
+                cls._class_move_effective_name(function.get_name(), function.parent)
+                != function.get_name()
+                or cls._class_move_effective_name(new_name, destination) != new_name
+            ):
+                raise exceptions.RefactoringError(
+                    "Private method declaration has references outside the native name search."
+                )
+            cls._check_class_move_lexical(function, destination)
+            cls._check_class_move_slots(function.parent, (function,))
+            methods[function] = (name, new_name)
+            regions[function] = cls._class_method_region(function)
+        if not methods:
+            raise exceptions.RefactoringError("No methods selected for class transfer.")
+        if destination_resource not in selected or any(
+            function.get_module().get_resource() not in selected for function in methods
+        ):
+            raise exceptions.RefactoringError(
+                "Move resources exclude a source or destination."
+            )
+        destination_path = []
+        scope = destination.get_scope()
+        while scope.get_kind() != "Module":
+            if scope.get_kind() != "Class":
+                raise exceptions.RefactoringError(
+                    "Destination class must have a module-owned path."
+                )
+            destination_path.insert(0, scope.pyobject.get_name())
+            scope = scope.parent
+        target = ".".join(destination_path)
+        placeholder = "__rope_class_move_destination__"
+        sources = {resource: resource.read() for resource in selected}
+        if any(placeholder in source for source in sources.values()):
+            raise exceptions.RefactoringError("Move placeholder conflicts with source.")
+        edits = {resource: {} for resource in selected}
+        edges = {function: [] for function in methods}
+        for function, (name, new_name) in methods.items():
+            occurrences.check_opaque_references(
+                project, name, selected, name=function.get_name()
+            )
+            finder = occurrences.create_finder(
+                project,
+                function.get_name(),
+                name,
+                imports=False,
+                in_hierarchy=True,
+                unsure=lambda occurrence: True,
+            )
+            for resource in selected:
+                module = project.get_pymodule(resource)
+                for occurrence in finder.find_occurrences(pymodule=module):
+                    actual = occurrence.get_pyname()
+                    if (
+                        occurrences.unsure_pyname(name, unbound=False)
+                        or occurrences.unsure_pyname(actual, unbound=False)
+                        or not occurrences.same_pyname(name, actual)
+                    ):
+                        raise exceptions.RefactoringError(
+                            f"Unproven reference or override: {resource.path}:{occurrence.lineno}"
+                        )
+                    if occurrence.is_defined():
+                        continue
+                    if occurrence.is_written() or occurrence.is_in_import_statement():
+                        raise exceptions.RefactoringError(
+                            "Cannot transfer a written method reference."
+                        )
+                    start, end = occurrence.get_primary_range()
+                    enclosing = next(
+                        (
+                            owner
+                            for owner, (first, last) in regions.items()
+                            if owner.get_module() is module and first <= start < last
+                        ),
+                        None,
+                    )
+                    words = worder.Worder(module.source_code)
+                    prefix, _, _ = words.get_splitted_primary_before(end)
+                    environment = (
+                        module.get_source_binding_index().context_at(start).environment
+                    )
+                    receiver = (
+                        evaluate.eval_str(environment, prefix) if prefix else None
+                    )
+                    if prefix and occurrences.unsure_pyname(receiver, unbound=False):
+                        raise exceptions.RefactoringError(
+                            "Method receiver has no resolved native binding."
+                        )
+                    parameter = None
+                    if enclosing is not None:
+                        edges[enclosing].append((start, end, function))
+                        if enclosing.get_kind() == "classmethod":
+                            parameter = enclosing.get_scope().get_names()[
+                                enclosing.get_param_names()[0]
+                            ]
+                    if (
+                        parameter is not None
+                        and not occurrences.unsure_pyname(parameter, unbound=False)
+                        and not occurrences.unsure_pyname(receiver, unbound=False)
+                        and occurrences.same_pyname(parameter, receiver)
+                    ):
+                        start, end = occurrence.get_word_range()
+                        replacement = new_name
+                    else:
+                        if prefix and not all(
+                            part.isidentifier() for part in prefix.split(".")
+                        ):
+                            raise exceptions.RefactoringError(
+                                "Effectful method receiver cannot be removed."
+                            )
+                        if "." in prefix:
+                            if occurrences.unsure_pyname(
+                                receiver, unbound=False
+                            ) or not isinstance(
+                                receiver.get_object(),
+                                (pyobjects.AbstractClass, pyobjects.AbstractModule),
+                            ):
+                                raise exceptions.RefactoringError(
+                                    "Unproven method receiver evaluation."
+                                )
+                        replacement = f"{placeholder}.{new_name}"
+                    edits[resource][start, end] = replacement
+        imports = []
+        moved_sources = []
+        for function, (_, new_name) in methods.items():
+            module = function.get_module()
+            resource = module.get_resource()
+            start, end = regions[function]
+            cls._check_class_receiver(function, methods)
+            collector = codeanalyze.ChangeCollector(sources[resource][start:end])
+            words = worder.Worder(module.source_code)
+            first = words.find_function_offset(
+                module.lines.get_line_start(function.get_ast().lineno)
+            )
+            last = first + len(function.get_name())
+            collector.add_change(first - start, last - start, new_name)
+            for (first, last), replacement in edits[resource].items():
+                if start <= first and last <= end:
+                    collector.add_change(first - start, last - start, replacement)
+            moving = sourceutils.fix_indentation(
+                collector.get_changed() or sources[resource][start:end], 0
+            )
+            moving, used_imports = moving_code_with_imports(project, resource, moving)
+            moved_sources.append(moving.rstrip())
+            imports.extend(used_imports)
+        planned = {}
+        for resource, source in sources.items():
+            collector = codeanalyze.ChangeCollector(source)
+            removed = [
+                function
+                for function in methods
+                if function.get_module().get_resource() == resource
+            ]
+            for function in removed:
+                first, last = regions[function]
+                parent = function.parent
+                siblings = [item for item in methods if item.parent is parent]
+                empty = all(
+                    node in [item.get_ast() for item in siblings]
+                    for node in parent.get_ast().body
+                )
+                replacement = ""
+                if empty and function is siblings[0]:
+                    replacement = sourceutils.fix_indentation(
+                        "pass\n",
+                        sourceutils.get_indents(
+                            function.get_module().lines, function.get_ast().lineno
+                        ),
+                    )
+                collector.add_change(first, last, replacement)
+            for (first, last), replacement in edits[resource].items():
+                if not any(
+                    regions[item][0] <= first < regions[item][1] for item in removed
+                ):
+                    collector.add_change(first, last, replacement)
+            result = collector.get_changed()
+            if result is not None:
+                planned[resource] = result
+        module = libutils.get_string_module(
+            project,
+            planned.get(destination_resource, sources[destination_resource]),
+            destination_resource,
+        )
+        scope = module.get_scope()
+        for part in destination_path:
+            matches = [
+                child
+                for child in scope.get_scopes()
+                if child.get_kind() == "Class" and child.pyobject.get_name() == part
+            ]
+            if len(matches) != 1:
+                raise exceptions.RefactoringError(
+                    "Destination class is no longer unique."
+                )
+            scope = matches[0]
+        result = sourceutils.add_methods(module, scope, moved_sources)
+        module = libutils.get_string_module(project, result, destination_resource)
+        cls._check_class_move_imports(project, module, imports)
+        result = _add_imports_to_module(
+            importutils.ImportTools(project), module, imports
+        )
+        planned[destination_resource] = result
+        for resource, source in list(planned.items()):
+            if placeholder in source:
+                module = libutils.get_string_module(project, source, resource)
+                if resource == destination_resource:
+                    imported = target
+                else:
+                    source, imported = importutils.add_import(
+                        project,
+                        module,
+                        libutils.modname(destination_resource),
+                        destination_path[0],
+                    )
+                    imported = ".".join((imported, *destination_path[1:]))
+                imported_module = libutils.get_string_module(project, source, resource)
+                expected = destination
+                if resource == destination_resource:
+                    expected = imported_module
+                    for part in destination_path:
+                        expected = expected[part].get_object()
+                index = imported_module.get_source_binding_index()
+                finder = occurrences.Finder(project, placeholder)
+                for occurrence in finder.find_occurrences(pymodule=imported_module):
+                    environment = index.context_at(occurrence.offset).environment
+                    imported_name = evaluate.eval_str(environment, imported)
+                    if (
+                        occurrences.unsure_pyname(imported_name, unbound=False)
+                        or imported_name.get_object() is not expected
+                    ):
+                        raise exceptions.RefactoringError(
+                            "Destination import conflicts with a consumer binding."
+                        )
+                planned[resource] = source.replace(placeholder, imported)
+        cls._check_class_move_globals(
+            project,
+            destination_resource,
+            planned[destination_resource],
+            destination_path,
+            methods,
+            edges,
+        )
+        changes = ChangeSet("Moving methods to class <{}>".format(target))
+        jobs = task_handle.create_jobset("Collecting Changes", len(planned))
+        for resource, source in planned.items():
+            jobs.started_job(resource.path)
+            if source != sources[resource]:
+                changes.add_change(ChangeContents(resource, source))
+            jobs.finished_job()
+        return changes
+
+    @staticmethod
+    def _check_class_method(function):
+        kind = function.get_kind()
+        if kind not in ("staticmethod", "classmethod") or len(function.decorators) != 1:
+            raise exceptions.RefactoringError(
+                "Only native static and class methods can be transferred."
+            )
+        decorator = evaluate.eval_node(
+            function.parent.get_scope(), function.decorators[0]
+        )
+        expected = staticmethod if kind == "staticmethod" else classmethod
+        if (
+            decorator is None
+            or getattr(decorator.get_object(), "builtin", None) is not expected
+        ):
+            raise exceptions.RefactoringError(
+                "Method decorator has no native identity."
+            )
+        if kind == "classmethod" and not function.get_param_names():
+            raise exceptions.RefactoringError(
+                "Class method has no class receiver parameter."
+            )
+
+    @staticmethod
+    def _class_method_region(function):
+        module = function.get_module()
+        return (
+            module.lines.get_line_start(
+                get_first_decorator_or_function_start_line(function.get_ast())
+            ),
+            min(
+                module.lines.get_line_end(function.get_scope().get_end()) + 1,
+                len(module.source_code),
+            ),
+        )
+
+    @staticmethod
+    def _check_class_move_imports(project, module, imports):
+        context = importinfo.ImportContext(project, module.get_resource().parent)
+        for info in imports:
+            imported_module = libutils.get_string_module(
+                project, info.get_import_statement() + "\n", module.get_resource()
+            )
+            for name in info.get_imported_names(context):
+                existing = module.get_attributes().get(name)
+                incoming = imported_module.get_attributes().get(name)
+                if occurrences.unsure_pyname(incoming, unbound=False) or (
+                    existing is not None
+                    and (
+                        occurrences.unsure_pyname(existing, unbound=False)
+                        or not occurrences.same_pyname(existing, incoming)
+                    )
+                ):
+                    raise exceptions.RefactoringError(
+                        f"Moved import conflicts with destination: {name}"
+                    )
+
+    @staticmethod
+    def _check_class_receiver(function, methods):
+        nodes = tuple(ast.walk(function.get_ast()))
+        index = function.get_module().get_source_binding_index()
+        parameter = None
+        if function.get_kind() == "classmethod":
+            parameter = function.get_scope().get_names()[function.get_param_names()[0]]
+            if occurrences.unsure_pyname(parameter, unbound=False):
+                raise exceptions.RefactoringError(
+                    "Class receiver has no resolved native binding."
+                )
+        allowed = set()
+        for node in nodes:
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                context = index.context_for_node(node.value)
+                name = evaluate.eval_node(context.environment, node.value)
+                if (
+                    parameter is not None
+                    and not occurrences.unsure_pyname(parameter, unbound=False)
+                    and not occurrences.unsure_pyname(name, unbound=False)
+                    and occurrences.same_pyname(parameter, name)
+                ):
+                    value = evaluate.eval_node(
+                        index.context_for_node(node).environment, node
+                    )
+                    if (
+                        not occurrences.unsure_pyname(value, unbound=False)
+                        and getattr(value, "source_pyname", value).get_object()
+                        in methods
+                    ):
+                        allowed.add(id(node.value))
+        for node in nodes:
+            if not isinstance(node, ast.Name):
+                continue
+            if node.id in ("super", "__class__"):
+                raise exceptions.RefactoringError(
+                    "Method depends on its original class closure."
+                )
+            if parameter is not None:
+                context = index.context_for_node(node)
+                name = evaluate.eval_node(context.environment, node)
+                if (
+                    not occurrences.unsure_pyname(parameter, unbound=False)
+                    and not occurrences.unsure_pyname(name, unbound=False)
+                    and occurrences.same_pyname(parameter, name)
+                    and id(node) not in allowed
+                ):
+                    raise exceptions.RefactoringError(
+                        "Method retains a dependency on its original class."
+                    )
+
+    @classmethod
+    def _check_class_move_globals(cls, project, resource, source, path, methods, edges):
+        module = libutils.get_string_module(project, source, resource)
+        owner = module
+        for part in path:
+            owner = owner[part].get_object()
+        candidates = {
+            original: owner[name].get_object()
+            for original, (_, name) in methods.items()
+        }
+        cls._check_class_move_slots(owner, tuple(candidates.values()))
+        for original, (_, new_name) in methods.items():
+            moved = candidates[original]
+            cls._check_class_method(moved)
+            moved_start, moved_end = cls._class_method_region(moved)
+            observed_edges = []
+            for target, (_, target_name) in methods.items():
+                expected = owner[target_name]
+                finder = occurrences.create_finder(
+                    project,
+                    target_name,
+                    expected,
+                    imports=False,
+                    unsure=lambda occurrence: True,
+                )
+                for occurrence in finder.find_occurrences(pymodule=module):
+                    first, last = occurrence.get_primary_range()
+                    if occurrence.is_defined() or not moved_start <= first < moved_end:
+                        continue
+                    actual = occurrence.get_pyname()
+                    if (
+                        occurrences.unsure_pyname(expected, unbound=False)
+                        or occurrences.unsure_pyname(actual, unbound=False)
+                        or not occurrences.same_pyname(expected, actual)
+                    ):
+                        raise exceptions.RefactoringError(
+                            "Transferred callee has no proven native identity."
+                        )
+                    observed_edges.append((first, last, target))
+            original_edges = sorted(edges[original], key=lambda edge: edge[:2])
+            observed_edges.sort(key=lambda edge: edge[:2])
+            if [item[2] for item in original_edges] != [
+                item[2] for item in observed_edges
+            ]:
+                raise exceptions.RefactoringError(
+                    "Transferred method changes its native callee edges."
+                )
+            before_positions = codeanalyze.ASTLinesAdapter(
+                original.get_module().source_code
+            )
+            after_positions = codeanalyze.ASTLinesAdapter(module.source_code)
+            original_names = [
+                node
+                for node in ast.walk(original.get_ast())
+                if isinstance(node, ast.Name)
+                and not any(
+                    first <= before_positions[node][0] < last
+                    for first, last, _ in original_edges
+                )
+            ]
+            moved_names = [
+                node
+                for node in ast.walk(moved.get_ast())
+                if isinstance(node, ast.Name)
+                and not any(
+                    first <= after_positions[node][0] < last
+                    for first, last, _ in observed_edges
+                )
+            ]
+            if len(original_names) != len(moved_names):
+                raise exceptions.RefactoringError(
+                    "Transferred method changed its native name structure."
+                )
+            before = original.get_module().get_source_binding_index()
+            after = module.get_source_binding_index()
+            for old, new in zip(original_names, moved_names):
+                context = before.context_for_node(old)
+                old_name = evaluate.eval_node(context.environment, old)
+                if old_name is None or not getattr(
+                    old_name, "is_refactoring_identity_safe", True
+                ):
+                    raise exceptions.RefactoringError(
+                        f"Unproven method binding: {old.id}"
+                    )
+                if cls._class_move_local_binding(
+                    context, old.id, old_name, original.get_scope()
+                ):
+                    continue
+                if occurrences.unsure_pyname(old_name, unbound=False):
+                    raise exceptions.RefactoringError(
+                        f"Unproven method dependency: {old.id}"
+                    )
+                new_name = evaluate.eval_node(
+                    after.context_for_node(new).environment, new
+                )
+                if occurrences.unsure_pyname(
+                    new_name, unbound=False
+                ) or not occurrences.same_pyname(old_name, new_name):
+                    raise exceptions.RefactoringError(
+                        f"Transferred method changes binding: {old.id}"
+                    )
+
+    @staticmethod
+    def _class_move_local_binding(context, name, binding, root_scope):
+        if isinstance(binding, (pynames.ImportedName, pynames.ImportedModule)):
+            return False
+        scope = context.structural_scope
+        scopes = []
+        while scope is not None and scope.get_kind() != "Module":
+            scopes.append(scope)
+            if scope is root_scope:
+                break
+            scope = scope.parent
+        if not scopes or scopes[-1] is not root_scope:
+            return False
+        for scope in (context.environment, *scopes):
+            if (
+                scope.get_kind() != "Class"
+                and scope.get_defined_names().get(name) is binding
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _check_class_move_slots(owner, functions):
+        # Follow the same selections as evaluate._Call and _Subscript.
+        if "__new__" in owner:
+            name = owner["__new__"]
+            if occurrences.unsure_pyname(name, unbound=False):
+                raise exceptions.RefactoringError("Construction slot is unresolved.")
+            if name.get_object() in functions:
+                raise exceptions.RefactoringError(
+                    "Implicit construction references are not transferable."
+                )
+        metaclass = owner.get_metaclass()
+        if not isinstance(metaclass, pyobjects.AbstractClass):
+            raise exceptions.RefactoringError("Subscription metaclass is unresolved.")
+        if "__getitem__" in metaclass:
+            name = metaclass["__getitem__"]
+        elif "__class_getitem__" in owner:
+            name = owner["__class_getitem__"]
+        else:
+            return
+        if occurrences.unsure_pyname(name, unbound=False):
+            raise exceptions.RefactoringError("Subscription slot is unresolved.")
+        called, _ = evaluate.get_callable(name)
+        if called in functions:
+            raise exceptions.RefactoringError(
+                "Implicit subscription references are not transferable."
+            )
+
+    @staticmethod
+    def _class_move_effective_name(name, owner):
+        prefix = owner.get_name().lstrip("_")
+        if (
+            name.startswith("__")
+            and not name.endswith("__")
+            and "." not in name
+            and prefix
+        ):
+            return f"_{prefix}{name}"
+        return name
+
+    @classmethod
+    def _check_class_move_lexical(cls, function, destination):
+        if function.parent.get_name().lstrip("_") == destination.get_name().lstrip("_"):
+            return
+        module = function.get_module()
+        index = module.get_source_binding_index()
+        positions = codeanalyze.ASTLinesAdapter(module.source_code)
+        imports = {layout.region: layout for layout in index.import_layouts()}
+
+        def check_name(name):
+            old = cls._class_move_effective_name(name, function.parent)
+            new = cls._class_move_effective_name(name, destination)
+            if old != new:
+                raise exceptions.RefactoringError(
+                    f"Transferred method changes private identifier: {name} ({old} -> {new})"
+                )
+
+        pending = [function.get_scope()]
+        visited = set()
+        while pending:
+            scope = pending.pop()
+            if id(scope) in visited or scope.get_kind() == "Class":
+                continue
+            visited.add(id(scope))
+            for name in scope.get_defined_names():
+                check_name(name)
+            pending.extend(scope.get_scopes())
+            pending.extend(scope.get_binding_scopes())
+
+        def check(node):
+            if isinstance(node, ast.Name):
+                check_name(node.id)
+            elif isinstance(node, ast.Attribute):
+                check_name(node.attr)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                layout = imports[positions[node]]
+                for name, alias, _region in layout.aliases:
+                    check_name(name)
+                    if alias is not None:
+                        check_name(alias)
+            if isinstance(node, ast.ClassDef):
+                # Its declaration/header belongs to the enclosing context;
+                # its body keeps the nested class's unchanged private prefix.
+                for header in (*node.decorator_list, *node.bases, *node.keywords):
+                    ast.call_for_nodes(header, check)
+                return True
+            return False
+
+        ast.call_for_nodes(function.get_ast(), check)
 
     def get_changes(
         self,

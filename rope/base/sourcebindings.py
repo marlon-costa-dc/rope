@@ -142,16 +142,30 @@ class _StructuralReference:
                     if attributes is not None:
                         attributes[name] = binding
             binding.binding_scope = self._scope
-            if isinstance(binding, pynames.AssignedName):
+            value_binding = binding
+            if isinstance(binding, pynamesdef.ParameterName):
+                if binding.assigned_value is None:
+                    binding.assigned_value = pynamesdef.AssignedName(
+                        module=self.index.pymodule
+                    )
+                    binding.assigned_value.initial_binding = binding
+                value_binding = binding.assigned_value
+            if isinstance(value_binding, pynames.AssignedName):
                 present = {
-                    id(assignment.ast_node) for assignment in binding.assignments
+                    id(assignment.ast_node) for assignment in value_binding.assignments
                 }
-                binding.assignments.extend(
+                value_binding.assignments.extend(
                     assignment
                     for assignment in assignments
                     if id(assignment.ast_node) not in present
                 )
-                binding.invalidate()
+                if isinstance(binding, pynamesdef.ParameterName):
+                    value_binding.assignments.sort(
+                        key=lambda assignment: self.index._span(
+                            assignment.ast_node or assignment.type_hint
+                        )[0]
+                    )
+                value_binding.invalidate()
         for name, owner in self.redirected_headers.items():
             names[name] = owner.resolve().get_names()[name]
 
@@ -221,6 +235,62 @@ class AnnotationPolicy:
     resolver_contract: str
 
 
+@dataclass(frozen=True)
+class SourceClassLayout:
+    """Source regions and native annotation bindings of one class declaration."""
+
+    region: tuple[int, int]
+    header: tuple[int, int]
+    header_end: int
+    body: tuple[int, int]
+    name_region: tuple[int, int]
+    bases_insertion_offset: int
+    arguments_region: tuple[int, int] | None
+    keywords: tuple[tuple[int, int], ...]
+    bases: tuple[tuple[int, int], ...]
+    base_bindings: tuple[tuple[tuple[int, int], pynames.PyName | None], ...]
+    decorators: tuple[tuple[int, int], ...]
+    type_parameters: tuple[tuple[str, tuple[int, int]], ...]
+    annotated_bindings: tuple[tuple[tuple[int, int], pynames.PyName | None, bool], ...]
+
+
+@dataclass(frozen=True)
+class SourceAssignmentLayout:
+    """Native assignment identity, regions and original value binding."""
+
+    kind: str
+    region: tuple[int, int]
+    targets: tuple[tuple[str, tuple[int, int]], ...]
+    value: tuple[int, int] | None
+    annotation: tuple[int, int] | None
+    value_binding: pynames.PyName | None
+    root_binding: pynames.PyName | None
+    string_sequence: tuple[str, ...] | None
+    type_parameters: tuple[tuple[str, tuple[int, int]], ...]
+
+
+@dataclass(frozen=True)
+class SourceImportLayout:
+    """Existing import declarations and lexical provider/alias regions."""
+
+    region: tuple[int, int]
+    module_region: tuple[int, int] | None
+    module_name: str | None
+    level: int
+    aliases: tuple[tuple[str, str | None, tuple[int, int]], ...]
+    separators: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class SourceStringMapping:
+    """Literal mapping tokens and wrapper provenance from an indexed call."""
+
+    region: tuple[int, int]
+    callee_binding: pynames.PyName | None
+    wrapper_bindings: tuple[pynames.PyName | None, ...]
+    entries: tuple[tuple[str, tuple[str, ...], tuple[tuple[int, int], ...]], ...] | None
+
+
 class SourceContext:
     """A recorded node environment (hand-rolled frozen dataclass equivalent).
 
@@ -236,6 +306,7 @@ class SourceContext:
         "role",
         "annotation_owner",
         "annotation_policy",
+        "branch_context",
     )
 
     def __init__(
@@ -246,6 +317,7 @@ class SourceContext:
         role,
         annotation_owner=None,
         annotation_policy=None,
+        branch_context=(),
     ):
         self._environment = _environment
         self._structural_scope = _structural_scope
@@ -253,6 +325,7 @@ class SourceContext:
         self.role = role
         self.annotation_owner = annotation_owner
         self.annotation_policy = annotation_policy
+        self.branch_context = branch_context
 
     @property
     def environment(self):
@@ -261,6 +334,17 @@ class SourceContext:
     @property
     def structural_scope(self):
         return _resolved(self._structural_scope)
+
+    @property
+    def access(self):
+        context = getattr(self.source_node, "ctx", None)
+        if isinstance(context, ast.Load):
+            return "read"
+        if isinstance(context, ast.Store):
+            return "write"
+        if isinstance(context, ast.Del):
+            return "delete"
+        return None
 
     def __eq__(self, other):
         if other.__class__ is self.__class__:
@@ -271,6 +355,7 @@ class SourceContext:
                 self.role,
                 self.annotation_owner,
                 self.annotation_policy,
+                self.branch_context,
             ) == (
                 other._environment,
                 other._structural_scope,
@@ -278,6 +363,7 @@ class SourceContext:
                 other.role,
                 other.annotation_owner,
                 other.annotation_policy,
+                other.branch_context,
             )
         return NotImplemented
 
@@ -290,6 +376,7 @@ class SourceContext:
                 self.role,
                 self.annotation_owner,
                 self.annotation_policy,
+                self.branch_context,
             )
         )
 
@@ -299,7 +386,8 @@ class SourceContext:
             f"_structural_scope={self._structural_scope!r}, "
             f"source_node={self.source_node!r}, role={self.role!r}, "
             f"annotation_owner={self.annotation_owner!r}, "
-            f"annotation_policy={self.annotation_policy!r})"
+            f"annotation_policy={self.annotation_policy!r}, "
+            f"branch_context={self.branch_context!r})"
         )
 
 
@@ -343,7 +431,7 @@ class SourceLocalName(pynames.AssignedName):
         self.assignments = []
         self._value_name = None
 
-    def get_object(self):
+    def get_object(self, *, branch_context=()):
         if self.assignments:
             if self._value_name is None:
                 from rope.base import pynamesdef
@@ -352,7 +440,7 @@ class SourceLocalName(pynames.AssignedName):
                     self.node.lineno, self.environment.get_module()
                 )
                 self._value_name.assignments.extend(self.assignments)
-            return self._value_name.get_object()
+            return self._value_name.get_object(branch_context=branch_context)
         return pyobjects.get_unknown()
 
     def get_definition_location(self):
@@ -935,9 +1023,12 @@ class SourceLambdaFunction(pyobjects.AbstractFunction):
                 )
             )
         elif arguments is not None:
-            values.update(
-                zip(self.param_names, arguments.get_pynames(self.param_names))
+            names = (
+                self.param_names[1:]
+                if receiver is not None and self.positional
+                else self.param_names
             )
+            values.update(zip(names, arguments.get_pynames(names)))
         else:
             values.update(
                 _LambdaArgumentValues(self, receiver).match(
@@ -964,6 +1055,7 @@ class SourceBindingIndex:
         self.fragments = []
         self._fragment_positions = {}
         self.node_contexts = {}
+        self._branch_context = ()
         self.token_bindings = []
         self.source_callables = {}
         self.comprehensions = {}
@@ -1016,7 +1108,9 @@ class SourceBindingIndex:
         if lineno is _NO_LINENO and not isinstance(node, ast.Module):
             return None
         if annotation is None:
-            context = SourceContext(environment, owner, node, role)
+            context = SourceContext(
+                environment, owner, node, role, branch_context=self._branch_context
+            )
         else:
             context = SourceContext(
                 environment,
@@ -1029,6 +1123,7 @@ class SourceBindingIndex:
                     if isinstance(annotation, _TYPE_ALIAS_TYPES)
                     else self.policy
                 ),
+                self._branch_context,
             )
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 self._annotation_name_contexts[id(node)] = context
@@ -1055,6 +1150,304 @@ class SourceBindingIndex:
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 roots.add(node.module.partition(".")[0])
         return frozenset(roots)
+
+    def class_layout(self, scope):
+        """Read class layout and annotation origins from this indexed module."""
+        from rope.base import evaluate, worder
+
+        owner = scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("class layout scope belongs to another source module")
+        node = owner.get_ast()
+        if not isinstance(node, ast.ClassDef):
+            raise TypeError("class layout requires a source class scope")
+        start, end = self._span(node)
+        body_start, _ = self._span(node.body[0])
+        leading_decorators = getattr(node.body[0], "decorator_list", ())
+        if leading_decorators:
+            body_start = self.pymodule.lines.get_line_start(
+                min(item.lineno for item in leading_decorators)
+            )
+        words = worder.Worder(self.source[start:body_start])
+        name_offset = words.code_finder._find_first_non_space_char(
+            words.get_word_range(0)[1]
+        )
+        name_start, name_end = words.get_word_range(name_offset)
+        type_parameters = getattr(node, "type_params", ())
+        insertion = (
+            words.get_word_parens_range(name_start, "[", "]")[1]
+            if type_parameters
+            else name_end
+        )
+        next_token = words.code_finder._find_first_non_space_char(insertion)
+        arguments = None
+        if words.code_finder.code[next_token : next_token + 1] == "(":
+            first, last = words.get_word_parens_range(insertion - 1)
+            arguments = (start + first + 1, start + last - 1)
+        colon_start = arguments[1] - start + 1 if arguments is not None else insertion
+        colon = words.code_finder.code.index(":", colon_start)
+        annotations = []
+        for member in node.body:
+            if not isinstance(member, ast.AnnAssign):
+                continue
+            annotation = member.annotation
+            qualifier = (
+                annotation.value
+                if isinstance(annotation, ast.Subscript)
+                else annotation
+            )
+            context = self.node_contexts[id(qualifier)]
+            annotations.append(
+                (
+                    self._span(member),
+                    evaluate.eval_node(context.environment, qualifier),
+                    member.value is not None,
+                )
+            )
+        return SourceClassLayout(
+            region=(start, end),
+            header=(start, body_start),
+            header_end=start + colon + 1,
+            body=(body_start, end),
+            name_region=(start + name_start, start + name_end),
+            bases_insertion_offset=start + insertion,
+            arguments_region=arguments,
+            keywords=tuple(self._span(keyword) for keyword in node.keywords),
+            bases=tuple(self._span(base) for base in node.bases),
+            base_bindings=tuple(
+                (
+                    self._span(base),
+                    evaluate.eval_node(self.node_contexts[id(base)].environment, base),
+                )
+                for base in node.bases
+            ),
+            decorators=tuple(self._span(item) for item in node.decorator_list),
+            type_parameters=tuple(
+                (parameter.name, self._span(parameter)) for parameter in type_parameters
+            ),
+            annotated_bindings=tuple(annotations),
+        )
+
+    def decorator_bindings(self, scope):
+        """Resolve decorator callees in their recorded source environments."""
+        from rope.base import evaluate
+
+        owner = scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("decorator scope belongs to another source module")
+        decorators = getattr(owner.get_ast(), "decorator_list", ())
+        callees = (
+            item.func if isinstance(item, ast.Call) else item for item in decorators
+        )
+        return tuple(
+            evaluate.eval_node(self.node_contexts[id(callee)].environment, callee)
+            for callee in callees
+        )
+
+    def import_layouts(self):
+        """Expose indexed import boundaries without moving or reparsing them."""
+        from rope.base import worder
+
+        layouts = []
+        for fragment in self.fragments:
+            node = fragment.context.source_node
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            start, end = self._span(node)
+            words = worder.Worder(self.source[start:end]).code_finder
+            provider = None
+            if isinstance(node, ast.ImportFrom):
+                # The node already proves the grammar. Use Rope's lexical
+                # source to locate the provider before the import keyword.
+                keyword = words.code.rindex(
+                    "import", 0, self._span(node.names[0])[0] - start
+                )
+                first = words._find_first_non_space_char(4)
+                last = words._find_last_non_space_char(keyword - 1)
+                provider = (start + first, start + last + 1)
+            layouts.append(
+                SourceImportLayout(
+                    (start, end),
+                    provider,
+                    node.module if isinstance(node, ast.ImportFrom) else None,
+                    node.level if isinstance(node, ast.ImportFrom) else 0,
+                    tuple(
+                        (alias.name, alias.asname, self._span(alias))
+                        for alias in node.names
+                    ),
+                    tuple(
+                        (start + comma, start + comma + 1)
+                        for left, right in zip(node.names, node.names[1:])
+                        for comma in (
+                            words.code.index(
+                                ",",
+                                self._span(left)[1] - start,
+                                self._span(right)[0] - start,
+                            ),
+                        )
+                    ),
+                )
+            )
+        return tuple(layouts)
+
+    def string_mapping_arguments(self, callee, position):
+        """Read literal mapping arguments through the existing declaration index."""
+        from rope.base import evaluate
+
+        selected = []
+        for fragment in self.fragments:
+            call = fragment.context.source_node
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == callee
+                and 0 <= position < len(call.args)
+            ):
+                continue
+            value = call.args[position]
+            wrappers = []
+            visited = set()
+            while id(value) not in visited:
+                visited.add(id(value))
+                if isinstance(value, ast.Name):
+                    binding = evaluate.eval_node(
+                        self.node_contexts[id(value)].environment, value
+                    )
+                    if isinstance(binding, SourceValueName):
+                        binding = binding.source_pyname
+                    if not isinstance(binding, pynames.AssignedName):
+                        break
+                    if len(binding.assignments) != 1:
+                        break
+                    assigned = binding.assignments[0].ast_node
+                    if id(assigned) not in self.node_contexts:
+                        break
+                    value = assigned
+                    continue
+                if (
+                    isinstance(value, ast.Call)
+                    and len(value.args) == 1
+                    and not value.keywords
+                ):
+                    wrappers.append(
+                        evaluate.eval_node(
+                            self.node_contexts[id(value.func)].environment, value.func
+                        )
+                    )
+                    value = value.args[0]
+                    continue
+                break
+            entries = []
+            if isinstance(value, ast.Dict):
+                for key, item in zip(value.keys, value.values):
+                    values = item.elts if isinstance(item, ast.Tuple) else (item,)
+                    if not (
+                        isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                        and all(
+                            isinstance(part, ast.Constant)
+                            and isinstance(part.value, str)
+                            for part in values
+                        )
+                    ):
+                        entries = None
+                        break
+                    entries.append(
+                        (
+                            key.value,
+                            tuple(part.value for part in values),
+                            tuple(self._span(part) for part in values),
+                        )
+                    )
+            else:
+                entries = None
+            selected.append(
+                SourceStringMapping(
+                    self._span(value),
+                    evaluate.eval_node(
+                        self.node_contexts[id(call.func)].environment, call.func
+                    ),
+                    tuple(wrappers),
+                    None if entries is None else tuple(entries),
+                )
+            )
+        return tuple(selected)
+
+    def assignment_layouts(self, scope=None, *, name=None, resolve_values=False):
+        """Return direct binding regions without reparsing the module source."""
+        from rope.base import evaluate
+
+        owner = self.pymodule if scope is None else scope.pyobject
+        if owner.get_module() is not self.pymodule:
+            raise ValueError("assignment scope belongs to another source module")
+        assignments = []
+        for node in owner.get_ast().body:
+            if not (
+                isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+                or (_TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES))
+            ):
+                continue
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else (
+                    (node.name,)
+                    if _TYPE_ALIAS_TYPES and isinstance(node, _TYPE_ALIAS_TYPES)
+                    else (node.target,)
+                )
+            )
+            selected = tuple(
+                (target.id, self._span(target))
+                for target in targets
+                if isinstance(target, ast.Name)
+            )
+            if name is not None and all(target != name for target, _ in selected):
+                continue
+            value = node.value
+            annotation = getattr(node, "annotation", None)
+            root = value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            assignments.append(
+                SourceAssignmentLayout(
+                    kind=type(node).__name__,
+                    region=self._span(node),
+                    targets=selected,
+                    value=self._span(value) if value is not None else None,
+                    annotation=(
+                        self._span(annotation) if annotation is not None else None
+                    ),
+                    value_binding=(
+                        evaluate.eval_node(
+                            self.node_contexts[id(value)].environment, value
+                        )
+                        if resolve_values and value is not None
+                        else None
+                    ),
+                    root_binding=(
+                        evaluate.eval_node(
+                            self.node_contexts[id(root)].environment, root
+                        )
+                        if resolve_values and isinstance(root, ast.Name)
+                        else None
+                    ),
+                    string_sequence=(
+                        tuple(item.value for item in value.elts)
+                        if isinstance(value, (ast.List, ast.Tuple, ast.Set))
+                        and all(
+                            isinstance(item, ast.Constant)
+                            and isinstance(item.value, str)
+                            for item in value.elts
+                        )
+                        else None
+                    ),
+                    type_parameters=tuple(
+                        (parameter.name, self._span(parameter))
+                        for parameter in getattr(node, "type_params", ())
+                    ),
+                )
+            )
+        return tuple(assignments)
 
     def assignment_string_sequence(self, name, scope=None, *, class_metadata=False):
         """Read a direct string-sequence declaration from the existing parse."""
@@ -1490,7 +1883,7 @@ class SourceBindingIndex:
     def _register_header_binding(self, owner, target, value):
         declaring = self._header_binding_owner(owner, target.id)
         declaring.header_slots.setdefault(target.id, []).append(
-            pynames.AssignmentValue(value)
+            pynames.AssignmentValue(value, branch_context=self._branch_context)
         )
         if declaring is not owner:
             owner.redirected_headers[target.id] = declaring
@@ -1525,9 +1918,38 @@ class SourceBindingIndex:
         return environment
 
     def _visit(self, node, environment, owner, role, depth, annotation=None):
+        previous = self._branch_context
+        if type(node).__name__ in (
+            "For",
+            "AsyncFor",
+            "While",
+            "Try",
+            "TryStar",
+            "Match",
+        ):
+            self._branch_context = previous + ((node, None),)
+        try:
+            return self._visit_node(node, environment, owner, role, depth, annotation)
+        finally:
+            self._branch_context = previous
+
+    def _visit_node(self, node, environment, owner, role, depth, annotation=None):
         if node is None:
             return
         self._record(node, environment, owner, role, depth, annotation)
+        if isinstance(node, ast.If):
+            self._visit(node.test, environment, owner, role, depth + 1, annotation)
+            previous = self._branch_context
+            try:
+                for arm, statements in ((True, node.body), (False, node.orelse)):
+                    self._branch_context = previous + ((node, arm),)
+                    for statement in statements:
+                        self._visit(
+                            statement, environment, owner, role, depth + 1, annotation
+                        )
+            finally:
+                self._branch_context = previous
+            return
         cls = node.__class__
         kind = _NODE_KINDS.get(cls, -1)
         if kind < 0:
@@ -1699,9 +2121,14 @@ class SourceBindingIndex:
             body_env = self._environment(
                 _GenericOwnerEnvironment(self, node, generic, owner, "Function")
             )
-        self._record(node, body_env, owner, "function-body", depth)
-        for statement in node.body:
-            self._visit(statement, body_env, owner, "function-body", depth + 1)
+        previous = self._branch_context
+        self._branch_context = ()
+        try:
+            self._record(node, body_env, owner, "function-body", depth)
+            for statement in node.body:
+                self._visit(statement, body_env, owner, "function-body", depth + 1)
+        finally:
+            self._branch_context = previous
 
     def _lambda(self, node, entry, owner, depth, annotation):
         environment = self._environment(
@@ -1722,14 +2149,25 @@ class SourceBindingIndex:
                 parameter, environment, owner, "lambda-formal", depth + 1, annotation
             )
             self._token(parameter, parameter.arg, binding)
-        self._predeclare_walrus(node.body, environment)
+        previous = self._branch_context
+        self._branch_context = ()
+        try:
+            self._predeclare_walrus(node.body, environment)
+        finally:
+            self._branch_context = previous
         for expression in node.args.defaults + [
             value for value in node.args.kw_defaults if value is not None
         ]:
             self._visit(
                 expression, entry, owner, "lambda-default", depth + 1, annotation
             )
-        self._visit(node.body, environment, owner, "lambda-body", depth + 1, annotation)
+        self._branch_context = ()
+        try:
+            self._visit(
+                node.body, environment, owner, "lambda-body", depth + 1, annotation
+            )
+        finally:
+            self._branch_context = previous
 
     def _predeclare_walrus(self, node, environment):
         if isinstance(node, ast.Lambda):
@@ -1741,7 +2179,11 @@ class SourceBindingIndex:
                 )
             binding = environment.names[node.target.id]
             if isinstance(binding, SourceLocalName):
-                binding.assignments.append(pynames.AssignmentValue(node.value))
+                binding.assignments.append(
+                    pynames.AssignmentValue(
+                        node.value, branch_context=self._branch_context
+                    )
+                )
         for child in ast.iter_child_nodes(node):
             self._predeclare_walrus(child, environment)
 
@@ -1764,7 +2206,10 @@ class SourceBindingIndex:
             for name, levels in nameanalyze.get_name_levels(generator.target):
                 environment.names[name].assignments.append(
                     pynames.AssignmentValue(
-                        generator.iter, levels, ".__iter__().next()"
+                        generator.iter,
+                        levels,
+                        ".__iter__().next()",
+                        branch_context=self._branch_context,
                     )
                 )
         for number, generator in enumerate(node.generators):

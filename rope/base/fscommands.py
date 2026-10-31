@@ -278,8 +278,7 @@ def read_str_coding(source):
     for line in source.split(newline, 2)[:2]:
         if re.match(CODING_LINE_PATTERN, line):
             return _find_coding(line)
-    else:
-        return
+    return
 
 
 def _find_coding(text):

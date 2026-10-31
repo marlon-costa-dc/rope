@@ -65,6 +65,25 @@ class BuiltinTypesTest(unittest.TestCase):
         a_var = pymod["a_var"].get_object()
         self.assertEqual(c_class, a_var.get_type())
 
+    def test_get_items_passes_the_subscript_argument(self):
+        code = dedent("""\
+            class Value:
+                pass
+            class Container:
+                def __getitem__(self, item):
+                    return item
+            value = Value()
+            selected = Container()[value]
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertIs(namespace["value"], namespace["selected"])
+        self.mod.write(code)
+        pymod = self.project.get_pymodule(self.mod)
+        self.assertIs(
+            pymod["value"].get_object(), pymod["selected"].get_object()
+        )
+
     def test_get_items_from_slices(self):
         self.mod.write(dedent("""\
             class C(object):
@@ -406,6 +425,83 @@ class BuiltinTypesTest(unittest.TestCase):
         c_class = pymod["C"].get_object()
         a_var = pymod["a_var"].get_object()
         self.assertEqual(c_class, a_var.get_type())
+
+    def test_super_follows_the_method_resolution_order(self):
+        self.mod.write(dedent("""\
+            class C1(object):
+                pass
+            class C2(object):
+                pass
+            class Base(object):
+                def a_f(self):
+                    return C1()
+            class Left(Base):
+                pass
+            class Right(Base):
+                def a_f(self):
+                    return C2()
+            class Derived(Left, Right):
+                def b_f(self):
+                    return super(Derived, self).a_f()
+            a_var = Derived().b_f()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        c2_class = pymod["C2"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(c2_class, a_var.get_type())
+
+    def test_super_binds_the_receiver(self):
+        self.mod.write(dedent("""\
+            class Base(object):
+                def get_self(self):
+                    return self
+            class Derived(Base):
+                def get(self):
+                    return super(Derived, self).get_self()
+            a_var = Derived().get()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        derived = pymod["Derived"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(derived, a_var.get_type())
+
+    def test_super_classmethod_binds_the_receiver_class(self):
+        self.mod.write(dedent("""\
+            class Base(object):
+                @classmethod
+                def make(cls):
+                    return cls()
+            class Derived(Base):
+                @classmethod
+                def build(cls):
+                    return super(Derived, cls).make()
+            a_var = Derived.build()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        derived = pymod["Derived"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(derived, a_var.get_type())
+
+    def test_super_skips_the_class_itself(self):
+        self.mod.write(dedent("""\
+            class C1(object):
+                pass
+            class C2(object):
+                pass
+            class Base(object):
+                def a_f(self):
+                    return C1()
+            class Derived(Base):
+                def a_f(self):
+                    return C2()
+                def b_f(self):
+                    return super(Derived, self).a_f()
+            a_var = Derived().b_f()
+        """))
+        pymod = self.project.get_pymodule(self.mod)
+        c1_class = pymod["C1"].get_object()
+        a_var = pymod["a_var"].get_object()
+        self.assertEqual(c1_class, a_var.get_type())
 
     def test_file_builtin_type(self):
         self.mod.write(dedent("""\

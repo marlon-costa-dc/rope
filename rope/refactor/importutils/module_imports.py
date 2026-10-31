@@ -247,8 +247,7 @@ class ModuleImports:
             for added_import in added_imports:
                 if added_import.accept(visitor):
                     import_stmt.empty_import()
-            else:
-                added_imports.append(import_stmt)
+            added_imports.append(import_stmt)
 
     def force_single_imports(self):
         """force a single import per statement"""

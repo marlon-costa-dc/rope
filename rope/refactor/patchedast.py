@@ -966,8 +966,7 @@ class _Source:
 
     def consume_node(self, node):
         start, end = self.ast_adapter[node]
-        if self.offset < end:
-            self.offset = end
+        self.offset = max(self.offset, end)
         return start, end
 
     def _good_token(self, token, offset):

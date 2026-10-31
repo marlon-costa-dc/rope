@@ -2,13 +2,19 @@
 
 import inspect
 import io
+import sys
+import types
+import typing
+from functools import partial
 
 import rope.base.evaluate
 from rope.base import arguments, ast, pynames, pyobjects, utils
 
 
 class BuiltinModule(pyobjects.AbstractModule):
-    def __init__(self, name, pycore=None, initial={}):
+    def __init__(self, name, pycore=None, initial=None):
+        if initial is None:
+            initial = {}
         super().__init__()
         self.name = name
         self.pycore = pycore
@@ -86,6 +92,21 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
     @utils.saveit
     def get_attributes(self):
         result = _object_attributes(self.builtin, self)
+        typing_alias = any(
+            self.builtin is owner for owner in (typing.Generic, typing.Protocol)
+        )
+        if typing_alias or (
+            inspect.isclass(self.builtin)
+            and self.builtin.__module__ == "builtins"
+            and hasattr(self.builtin, "__class_getitem__")
+        ):
+            parent = self.parent
+            project = (
+                parent.pycore.project
+                if isinstance(parent, BuiltinModule) and parent.pycore
+                else None
+            )
+            result["__class_getitem__"] = _class_getitem(self, project, typing_alias)
         result.update(self.initial)
         return result
 
@@ -101,6 +122,9 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
             return [self]
         return [self] + [_runtime_class(cls) for cls in self.builtin.__mro__[1:]]
 
+    def get_consistent_mro(self):
+        return self.get_mro()
+
     def _get_own_attributes(self):
         if not inspect.isclass(self.builtin):
             return self.get_attributes()
@@ -113,6 +137,9 @@ class BuiltinClass(_BuiltinElement, pyobjects.AbstractClass):
 
     def get_module(self):
         return builtins
+
+    def get_metaclass(self):
+        return _runtime_class(type(self.builtin))
 
 
 _runtime_classes = {}
@@ -136,10 +163,229 @@ def _runtime_class(cls):
     return _runtime_classes[cls]
 
 
+def _is_runtime_class(value, runtime_class):
+    """Authenticate a native class against its runtime library declaration."""
+    if isinstance(value, BuiltinClass):
+        return value.builtin is runtime_class
+    if not isinstance(value, pyobjects.PyClass):
+        return False
+    module = value.get_module()
+    resource = module.get_resource()
+    runtime_module = inspect.getmodule(runtime_class)
+    return (
+        value.parent is module
+        and value.get_name() == runtime_class.__name__
+        and resource is not None
+        and runtime_module is not None
+        and resource.real_path == runtime_module.__file__
+    )
+
+
+def _is_runtime_form(value, runtime_form):
+    """Authenticate a typing special form against its runtime declaration.
+
+    ``typing.Unpack`` is a ``_SpecialForm``-decorated function, not a class,
+    so class authentication does not apply: builtin-side values match by
+    identity, source-side functions by their declaring module and name.
+    """
+    if isinstance(value, (BuiltinFunction, BuiltinUnknown)):
+        return value.builtin is runtime_form
+    if not isinstance(value, pyobjects.PyFunction):
+        return False
+    module = value.get_module()
+    resource = module.get_resource()
+    runtime_module = inspect.getmodule(runtime_form)
+    return (
+        value.parent is module
+        and value.get_name() == getattr(runtime_form, "__name__", None)
+        and resource is not None
+        and runtime_module is not None
+        and resource.real_path == runtime_module.__file__
+    )
+
+
+def _runtime_unpack(value):
+    """Return the runtime ``Unpack`` form `value` stands for, if any."""
+    for form in (
+        getattr(typing, "Unpack", None),
+        getattr(sys.modules.get("typing_extensions"), "Unpack", None),
+    ):
+        if form is not None and _is_runtime_form(value, form):
+            return form
+    return None
+
+
+def _class_getitem(owner, project, typing_alias):
+    return BuiltinName(
+        BuiltinFunction(
+            function=partial(
+                _generic_alias, project=project, typing_alias=typing_alias
+            ),
+            argnames=["cls", "key"],
+            parent=owner,
+        )
+    )
+
+
+def _generic_alias(context, project, typing_alias):
+    origin = context.get_argument("cls")
+    key = context.get_argument("key")
+    if origin is None or key is None:
+        # A subscript whose origin or key could not be inferred yields no
+        # alias and raises nothing; callers handle the absence.
+        return None
+    arguments_ = (
+        key.get_type().get_holding_objects()
+        if key is not None and isinstance(key.get_type(), Tuple)
+        else (key,)
+    )
+    if any(
+        _is_runtime_class(origin, owner) for owner in (typing.Generic, typing.Protocol)
+    ):
+        variables = tuple(
+            typing.__dict__[name]
+            for name in ("TypeVar", "ParamSpec", "TypeVarTuple")
+            if name in typing.__dict__
+        )
+        direct = tuple(
+            typing.__dict__[name]
+            for name in ("TypeVar", "ParamSpec")
+            if name in typing.__dict__
+        )
+        unwrapped = []
+        invalid = None
+        for argument in arguments_:
+            # PEP 646: a TypeVarTuple parameter enters only unpacked — the
+            # ``*Ts`` subscription marker or an explicit ``Unpack[Ts]``
+            # alias; a raw ``Cls[Ts]`` subscript is the TypeError the
+            # runtime raises.
+            if isinstance(argument, UnpackedTypeVarTuple):
+                allowed = variables
+                argument = argument.target
+            elif (
+                isinstance(argument, GenericAlias)
+                and argument.typing_alias
+                and len(argument.arguments) == 1
+                and _runtime_unpack(argument.origin) is not None
+            ):
+                allowed = variables
+                argument = argument.arguments[0]
+            else:
+                allowed = direct
+            if argument is None or not any(
+                _is_runtime_class(argument.get_type(), variable) for variable in allowed
+            ):
+                invalid = argument
+                break
+            unwrapped.append(argument)
+        if invalid is not None or not unwrapped:
+            error = TypeError(f"{origin.get_name()} parameters must be type variables")
+            notes = [
+                (
+                    f"alias origin={type(origin).__name__}@{id(origin):x} "
+                    f"key={type(key).__name__}@{id(key):x}"
+                )
+            ]
+            try:
+                for index, argument in enumerate(arguments_):
+                    if argument is None:
+                        notes.append(f"argument[{index}]=None")
+                        continue
+                    for label, value in (
+                        ("object", argument),
+                        ("type", argument.get_type()),
+                    ):
+                        module = value.get_module()
+                        resource = module.get_resource() if module is not None else None
+                        module_name = module.get_name() if module is not None else None
+                        resource_path = (
+                            resource.real_path if resource is not None else None
+                        )
+                        name = (
+                            value.get_name()
+                            if isinstance(value, pyobjects.AbstractClass)
+                            else None
+                        )
+                        notes.append(
+                            f"argument[{index}].{label}="
+                            f"{type(value).__name__}@{id(value):x} name={name!r} "
+                            f"module={module_name!r} resource={resource_path!r}"
+                        )
+            except Exception as diagnostic_error:
+                notes.append(f"generic argument context failed: {diagnostic_error!r}")
+            error.__dict__["__notes__"] = notes
+            raise error
+        if len({id(argument) for argument in unwrapped}) != len(unwrapped):
+            raise TypeError(f"{origin.get_name()} parameters must be unique")
+        # The alias keeps the arguments as subscribed, like the runtime's
+        # ``__args__``; unwrapping is validation-internal.
+    return GenericAlias(origin, arguments_, project, typing_alias)
+
+
+class GenericAlias(pyobjects.PyObject):
+    """The native value of a standard-library class subscription."""
+
+    def __init__(self, origin, arguments_, project, typing_alias):
+        super().__init__(
+            _runtime_class(typing._GenericAlias if typing_alias else types.GenericAlias)
+        )
+        self.origin = origin
+        self.arguments = arguments_
+        self.project = project
+        self.typing_alias = typing_alias
+
+    def __eq__(self, other):
+        if not isinstance(other, GenericAlias):
+            return NotImplemented
+        return (
+            self.origin is other.origin
+            and len(self.arguments) == len(other.arguments)
+            and all(
+                left is right for left, right in zip(self.arguments, other.arguments)
+            )
+        )
+
+    def __hash__(self):
+        return hash(
+            (id(self.origin), tuple(id(argument) for argument in self.arguments))
+        )
+
+    def get_attributes(self):
+        return {
+            "__origin__": BuiltinName(self.origin),
+            "__args__": BuiltinName(get_tuple(*self.arguments)),
+            "__mro_entries__": BuiltinName(
+                BuiltinFunction(function=self._mro_entries, argnames=["self", "bases"])
+            ),
+        }
+
+    def _mro_entries(self, context):
+        original = context.get_argument("bases").get_type().get_holding_objects()
+        if _is_runtime_class(self.origin, typing.Generic):
+            protocol = self.project.get_module("typing")["Protocol"].get_object()
+            if any(base is protocol for base in original):
+                return get_tuple()
+            # Alias equality is origin plus arguments: an instance rebuilt
+            # from the same signature is not found by identity, and a
+            # missing alias must not leak StopIteration.
+            position = next(
+                (index for index, base in enumerate(original) if base == self),
+                None,
+            )
+            if position is not None and any(
+                isinstance(base, GenericAlias) and base.typing_alias and base != self
+                for base in original[position + 1 :]
+            ):
+                return get_tuple()
+        return get_tuple(self.origin)
+
+
 class BuiltinFunction(_BuiltinElement, pyobjects.AbstractFunction):
     def __init__(
-        self, returned=None, function=None, builtin=None, argnames=[], parent=None
+        self, returned=None, function=None, builtin=None, argnames=None, parent=None
     ):
+        if argnames is None:
+            argnames = []
         _BuiltinElement.__init__(self, builtin, parent)
         pyobjects.AbstractFunction.__init__(self)
         self.argnames = argnames
@@ -196,9 +442,15 @@ def _create_builtin_type_getter(cls):
     def _get_builtin(*args):
         if not hasattr(cls, "_generated"):
             cls._generated = {}
-        if args not in cls._generated:
-            cls._generated[args] = cls(*args)
-        return cls._generated[args]
+        # Identity-keyed: plain ``PyObject``s hash and compare by type,
+        # so a value-keyed cache collapses distinct inferred objects
+        # (each module's own ``TypeVar``/``TypeVarTuple``) onto one
+        # cached builtin.  The cached instance holds its arguments
+        # strongly, so an id cannot be reused while its entry lives.
+        key = tuple(id(arg) for arg in args)
+        if key not in cls._generated:
+            cls._generated[key] = cls(*args)
+        return cls._generated[key]
 
     return _get_builtin
 
@@ -218,6 +470,11 @@ class _CallContext:
         self.args = args
 
     def _get_scope_and_pyname(self, pyname):
+        # A value overlay keeps the source name its per-name data belongs to.
+        from rope.base.sourcebindings import SourceValueName
+
+        if isinstance(pyname, SourceValueName):
+            pyname = pyname.source_pyname
         if pyname is not None and isinstance(pyname, pynames.AssignedName):
             pymodule, lineno = pyname.get_definition_location()
             if pymodule is None:
@@ -285,10 +542,12 @@ class _AttributeCollector:
         name,
         returned=None,
         function=None,
-        argnames=["self"],
+        argnames=None,
         check_existence=True,
         parent=None,
     ):
+        if argnames is None:
+            argnames = ["self"]
         try:
             builtin = getattr(self.type, name)
         except AttributeError:
@@ -389,6 +648,78 @@ class List(BuiltinClass):
 
 get_list = _create_builtin_getter(List)
 get_list_type = _create_builtin_type_getter(List)
+
+
+class LiteralString(pyobjects.PyObject):
+    """A known string value retaining the canonical builtin string class."""
+
+    def __init__(self, value):
+        super().__init__(get_str_type())
+        self.value = value
+
+    def __eq__(self, obj):
+        # Literal values are value objects: two known strings with the same
+        # text are the same object, unlike reference-like builtin types.
+        if isinstance(obj, LiteralString):
+            return self.value == obj.value
+        return NotImplemented
+
+    def __ne__(self, obj):
+        result = self.__eq__(obj)
+        if result is NotImplemented:
+            return result
+        return not result
+
+    def __hash__(self):
+        return hash((LiteralString, self.value))
+
+
+class UnpackedTypeVarTuple(pyobjects.PyObject):
+    """PEP 646 ``*Ts`` subscription marker holding the parameter target.
+
+    The starred subscription syntax exists only at the expression level;
+    this marker carries the unpack fact from the evaluator into the typing
+    alias validation, which accepts a TypeVarTuple parameter only through
+    it (a raw ``Cls[Ts]`` subscript is the runtime ``TypeError``).
+    """
+
+    def __init__(self, target):
+        super().__init__(pyobjects.get_base_type("Unknown"))
+        self.target = target
+
+
+class LiteralDict(pyobjects.PyObject):
+    """A literal namespace whose exact entries remain known until mutation."""
+
+    def __init__(self, keys, values, entries):
+        super().__init__(get_dict_type(keys, values))
+        self.entries = entries
+
+    def get_attributes(self):
+        result = dict(super().get_attributes())
+        for name in (
+            "__setitem__",
+            "__delitem__",
+            "clear",
+            "pop",
+            "popitem",
+            "setdefault",
+            "update",
+            "__ior__",
+        ):
+            if name in result:
+                function = result[name].get_object()
+                result[name] = BuiltinName(
+                    BuiltinFunction(
+                        function=partial(self._mutate, function=function),
+                        argnames=function.get_param_names(),
+                    )
+                )
+        return result
+
+    def _mutate(self, context, function):
+        self.entries = None
+        return function.get_returned_object(context.args)
 
 
 class Dict(BuiltinClass):
@@ -504,6 +835,10 @@ class Tuple(BuiltinClass):
 
     def get_holding_objects(self):
         return self.objects
+
+    def get_item(self, index):
+        if -len(self.objects) <= index < len(self.objects):
+            return self.objects[index]
 
     def _new_tuple(self, args):
         return _create_builtin(args, get_tuple)
@@ -785,7 +1120,77 @@ class BuiltinObject(BuiltinClass):
 
 class BuiltinType(BuiltinClass):
     def __init__(self):
-        super().__init__(type, {})
+        constructor = BuiltinFunction(
+            function=self._new_type,
+            argnames=["metaclass", "name", "bases", "namespace"],
+            parent=self,
+        )
+        super().__init__(type, {"__new__": BuiltinName(constructor)})
+
+    @staticmethod
+    def is_constructor(function):
+        return (
+            isinstance(function, BuiltinFunction)
+            and getattr(function.function, "__func__", None) is BuiltinType._new_type
+        )
+
+    def _new_type(self, context):
+        supplied = context.get_arguments(["metaclass", "name", "bases", "namespace"])
+        if len(supplied) != 4:
+            return pyobjects.get_unknown()
+        metaclass, name, bases, namespace = supplied
+        if not isinstance(metaclass, pyobjects.AbstractClass):
+            return pyobjects.get_unknown()
+        if self not in metaclass.get_mro():
+            raise TypeError("type.__new__ requires a subtype of type")
+        if not isinstance(name, LiteralString):
+            return pyobjects.get_unknown()
+        if bases is None or not isinstance(bases.get_type(), Tuple):
+            return pyobjects.get_unknown()
+        parents = bases.get_type().get_holding_objects()
+        if any(base is None or base == pyobjects.get_unknown() for base in parents):
+            return pyobjects.get_unknown()
+        if any(not isinstance(base, pyobjects.AbstractClass) for base in parents):
+            raise TypeError("type.__new__ bases must be classes")
+        if not isinstance(namespace, LiteralDict) or namespace.entries is None:
+            return pyobjects.get_unknown()
+        winner = metaclass
+        for base in parents:
+            candidate = base.get_metaclass()
+            if not isinstance(candidate, pyobjects.AbstractClass):
+                return pyobjects.get_unknown()
+            if winner in candidate.get_mro():
+                winner = candidate
+            elif candidate not in winner.get_mro():
+                raise TypeError("metaclass conflict")
+        if winner is not metaclass and not self.is_constructor(
+            winner["__new__"].get_object()
+        ):
+            return pyobjects.get_unknown()
+        result = pyobjects.ConstructedClass(
+            name.value,
+            parents or (builtins["object"].get_object(),),
+            winner,
+            namespace.entries,
+        )
+        result.get_mro()
+        return result
+
+    @staticmethod
+    def type_of(value):
+        """Resolve the one-argument operation without exposing kind markers."""
+        if isinstance(value, pyobjects.AbstractClass):
+            return value.get_metaclass()
+        if isinstance(value, pyobjects.UnresolvedBase):
+            return value
+        if value is not None:
+            value_type = value.get_type()
+            if isinstance(value_type, BuiltinClass):
+                if inspect.isclass(value_type.builtin):
+                    return _runtime_class(value_type.builtin)
+            elif isinstance(value_type, pyobjects.AbstractClass):
+                return value_type
+        return pyobjects.get_unknown()
 
 
 def _infer_sequence_for_pyname(pyname):
@@ -839,10 +1244,53 @@ def _super_function(args):
         # pyclass = passed_self.get_type()
         pyclass = passed_class
         if isinstance(pyclass, pyobjects.AbstractClass):
-            supers = pyclass.get_superclasses()
-            if supers:
-                return pyobjects.PyObject(supers[0])
+            mro = pyclass.get_consistent_mro()
+            if mro is None:
+                # Without a method resolution order, super() follows the
+                # declared bases, the first one taking precedence.
+                ancestors = pyclass.get_superclasses()
+            else:
+                ancestors = mro[1:]
+            if ancestors:
+                return pyobjects.PyObject(SuperType(pyclass, ancestors, passed_self))
         return passed_self
+
+
+class SuperType(pyobjects.AbstractClass):
+    """The type of ``super(cls, receiver)``
+
+    Attribute lookups follow the method resolution order of `cls` past
+    `cls` itself, as Python's ``super`` does.  Methods reached through it
+    bind `receiver`, see `bound_receiver()`.
+
+    """
+
+    def __init__(self, pyclass, ancestors, receiver):
+        super().__init__()
+        self.pyclass = pyclass
+        self.ancestors = ancestors
+        self.receiver = receiver
+
+    def get_name(self):
+        return "super"
+
+    def get_attributes(self):
+        result = {}
+        for ancestor in reversed(self.ancestors):
+            result.update(ancestor._get_own_attributes())
+        return result
+
+
+def bound_receiver(pyobject):
+    """Return the object a method called on `pyobject` binds
+
+    A method reached through ``super(cls, receiver)`` binds `receiver`;
+    every other object binds itself.
+
+    """
+    if isinstance(pyobject.get_type(), SuperType):
+        return pyobject.get_type().receiver
+    return pyobject
 
 
 def _zip_function(args):

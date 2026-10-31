@@ -118,14 +118,11 @@ def test_multithreading(
     mod1: File,
 ):
     mod1_init = pkg1.get_child("__init__.py")
-    mod1_init.write(
-        dedent("""\
+    mod1_init.write(dedent("""\
         def foo():
             pass
-    """)
-    )
-    mod1.write(
-        dedent("""\
+    """))
+    mod1.write(dedent("""\
         foo
     """)
     )

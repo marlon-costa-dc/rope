@@ -72,7 +72,7 @@ class SourceLinesAdapter:
 
 
 class ASTLinesAdapter:
-    """
+    r"""
     Convert between stdlib's ast `col_offset` and rope's `region` offsets.
 
     ast `col_offset` are given in byte offset of the utf-8 source code from
@@ -351,7 +351,7 @@ class LogicalLineFinder:
             except IndentationError as e:
                 tries += 1
                 if tries == 5:
-                    raise e
+                    raise
                 lineno = e.lineno + block_start - 1
                 indents = count_line_indents(self.lines.get_line(lineno))
 

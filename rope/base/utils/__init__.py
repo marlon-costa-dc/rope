@@ -1,13 +1,20 @@
 import sys
 import warnings
+from typing import Callable, Concatenate, ParamSpec, TypeVar
+
+_Self = TypeVar("_Self")
+_Params = ParamSpec("_Params")
+_Result = TypeVar("_Result")
 
 
-def saveit(func):
+def saveit(
+    func: Callable[Concatenate[_Self, _Params], _Result],
+) -> Callable[Concatenate[_Self, _Params], _Result]:
     """A decorator that caches the return value of a function"""
 
     name = "_" + func.__name__
 
-    def _wrapper(self, *args, **kwds):
+    def _wrapper(self: _Self, *args: _Params.args, **kwds: _Params.kwargs) -> _Result:
         if not hasattr(self, name):
             setattr(self, name, func(self, *args, **kwds))
         return getattr(self, name)
@@ -74,7 +81,7 @@ def cached(size):
 
     def decorator(func):
         cached_func = _Cached(func, size)
-        return lambda *a, **kw: cached_func(*a, **kw)
+        return cached_func
 
     return decorator
 
@@ -95,6 +102,23 @@ class _Cached:
         if len(self.cache) > self.count:
             del self.cache[0]
         return result
+
+    def __get__(self, instance, owner=None):
+        # Decorating a method needs instance binding; otherwise the method's
+        # ``self`` would be consumed as the first positional cache argument
+        # and the real signature would lose a parameter.
+        if instance is None:
+            return self
+        return _CachedBound(self, instance)
+
+
+class _CachedBound:
+    def __init__(self, cached, instance):
+        self.cached = cached
+        self.instance = instance
+
+    def __call__(self, *args, **kwds):
+        return self.cached(self.instance, *args, **kwds)
 
 
 def resolve(str_or_obj):

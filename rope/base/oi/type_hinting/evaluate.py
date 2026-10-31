@@ -48,6 +48,7 @@ class SymbolBase:
 
 
 class SymbolTable:
+    @staticmethod
     def multi(func):
         def _inner(self, names, *a, **kw):
             for name in names.split():
@@ -133,8 +134,6 @@ class SymbolTable:
         def led(self, left, parser):
             self.first = left
             return self
-
-    multi = staticmethod(multi)  # Just for code checker
 
 
 symbol_table = SymbolTable()

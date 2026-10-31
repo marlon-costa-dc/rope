@@ -1,3 +1,6 @@
+import operator
+import sys
+import typing
 from operator import itemgetter
 from typing import Optional, Tuple
 
@@ -20,20 +23,154 @@ from rope.base import (
 BadIdentifierError = exceptions.BadIdentifierError
 
 
+def _has_stdlib_import_prelude(module, node):
+    """Certify a direct header without loading its imported modules."""
+    project = module.pycore.project
+    resource = module.get_resource()
+    folder = resource.parent if resource is not None else None
+    for statement in module.get_ast().body:
+        if statement is node:
+            return True
+        if (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        if isinstance(statement, ast.Import):
+            imported = [alias.name for alias in statement.names]
+        elif isinstance(statement, ast.ImportFrom) and not statement.level:
+            if any(alias.name == "*" for alias in statement.names):
+                return False
+            imported = [statement.module]
+        else:
+            return False
+        for name in imported:
+            if not name or name.partition(".")[0] not in sys.stdlib_module_names:
+                return False
+            runtime = sys.modules.get(name)
+            if type(runtime) is not type(sys):
+                return False
+            if name in sys.builtin_module_names:
+                continue
+            runtime_file = vars(runtime).get("__file__")
+            origin = project.find_module(name, folder)
+            if origin is None:
+                return False
+            if origin.is_folder():
+                if not origin.has_child("__init__.py"):
+                    return False
+                origin = origin.get_child("__init__.py")
+            if not isinstance(runtime_file, str) or origin.real_path != runtime_file:
+                return False
+    return False
+
+
+def _header_version_guard(module, names, node):
+    """Prove a header sys.version_info comparison; return None when unproved.
+
+    The current native bindings and an authenticated standard-library prelude
+    supply the runtime. No target package or expression is executed. Other
+    guards, scopes and comparison domains keep their existing treatment.
+    """
+    if module is None:
+        return None
+    if not all(
+        isinstance(statement, (ast.Import, ast.ImportFrom))
+        for statement in node.body + node.orelse
+    ):
+        return None
+    test = node.test
+    if not (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == len(test.comparators) == 1
+        and isinstance(test.left, ast.Attribute)
+        and test.left.attr == "version_info"
+        and isinstance(test.left.value, ast.Name)
+        and isinstance(test.comparators[0], ast.Tuple)
+    ):
+        return None
+    binding = names.get(test.left.value.id)
+    if not (
+        isinstance(binding, rope.base.pynames.ImportedModule)
+        and binding.importing_module is module
+        and binding.module_name == "sys"
+        and binding.level == 0
+        and _has_stdlib_import_prelude(module, node)
+    ):
+        return None
+    namespace = binding.get_object()
+    if not (
+        isinstance(namespace, rope.base.builtins.BuiltinModule)
+        and namespace.name == "sys"
+        and namespace.module is sys
+    ):
+        return None
+    version = namespace.get_attribute("version_info").get_object()
+    if not (
+        isinstance(version, rope.base.builtins.BuiltinUnknown)
+        and version.builtin is sys.version_info
+    ):
+        return None
+    try:
+        compared = ast.literal_eval(test.comparators[0])
+    except (TypeError, ValueError):
+        return None
+    if any(
+        type(value) is not type(actual)
+        for value, actual in zip(compared, version.builtin)
+    ):
+        return None
+    comparison = {
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+    }.get(type(test.ops[0]))
+    if comparison is None:
+        return None
+    return comparison(version.builtin, compared)
+
+
 class SourceValueScope(pyscopes.TemporaryScope):
     """A call's value overlay, without replacing canonical source binders."""
 
-    def __init__(self, canonical_scope, capture_scope, names):
+    def __init__(self, canonical_scope, capture_scope, names, *, branch_context=()):
         super().__init__(canonical_scope.pycore, canonical_scope, names)
         self.pyobject = canonical_scope.pyobject
         self.canonical_scope = canonical_scope
         self.capture_scope = capture_scope
+        self.branch_context = branch_context
 
-    def lookup(self, name):
+    def lookup(self, name, *, read_node=None):
         if name in self.names:
             return self.names[name]
         if name in self.canonical_scope.get_names():
-            return self.canonical_scope.get_names()[name]
+            binding = self.canonical_scope.get_names()[name]
+            from rope.base import pynamesdef
+            from rope.base.sourcebindings import SourceLocalName, SourceValueName
+
+            if (
+                isinstance(binding, pynamesdef.ParameterName)
+                and binding.assigned_value is not None
+                and read_node is not None
+            ):
+                return SourceValueName(
+                    binding,
+                    binding.assigned_value.get_object(
+                        branch_context=self.branch_context, read_node=read_node
+                    ),
+                )
+            if self.branch_context and isinstance(
+                binding, (pynamesdef.AssignedName, SourceLocalName)
+            ):
+                return SourceValueName(
+                    binding,
+                    binding.get_object(branch_context=self.branch_context),
+                )
+            return binding
         return self.capture_scope.lookup(name)
 
     def _propagated_lookup(self, name):
@@ -64,9 +201,44 @@ def eval_node2(scope, node):
     context = module.get_source_binding_index().context_for_node(node)
     if context is not None and scope.get_kind() != "Temporary":
         scope = context.environment
+    parameter_facts = False
+    owner = context.structural_scope.pyobject if context is not None else scope.pyobject
+    if isinstance(owner, pyobjectsdef.PyFunction):
+        owner.get_scope().get_names()
+        parameter_facts = any(
+            parameter.assigned_value is not None
+            for parameter in owner.get_parameters().values()
+        )
+    if context is not None and (context.branch_context or parameter_facts):
+        if isinstance(scope, SourceValueScope):
+            if scope.pyobject is context.environment.pyobject:
+                branches = dict(scope.branch_context)
+                branches.update(context.branch_context)
+                scope = SourceValueScope(
+                    scope.canonical_scope,
+                    scope.capture_scope,
+                    scope.names,
+                    branch_context=tuple(branches.items()),
+                )
+        elif scope.get_kind() != "Temporary":
+            scope = SourceValueScope(
+                scope, scope, {}, branch_context=context.branch_context
+            )
     evaluator = StatementEvaluator(scope)
     evaluator.visit(node)
     return evaluator.old_result, evaluator.result
+
+
+def get_callable(pyname):
+    """Return the function and receiver selected by a callable value."""
+    value = pyname.get_object()
+    if isinstance(value, pyobjects.AbstractFunction):
+        return value, None
+    if "__call__" in value:
+        function = value["__call__"].get_object()
+        if isinstance(function, pyobjects.AbstractFunction):
+            return function, pyname
+    return None, None
 
 
 def eval_str(holding_scope, name):
@@ -263,7 +435,10 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         self.old_result = None
 
     def _Name(self, node):
-        self.result = self.scope.lookup(node.id)
+        if isinstance(self.scope, SourceValueScope):
+            self.result = self.scope.lookup(node.id, read_node=node)
+        else:
+            self.result = self.scope.lookup(node.id)
 
     def _Attribute(self, node):
         pyname = eval_node(self.scope, node.value)
@@ -303,16 +478,25 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         if pyobject is None:
             return
 
-        def _get_returned(pyobject, receiver=None):
+        if (
+            isinstance(pyobject, rope.base.builtins.BuiltinType)
+            and len(node.args) == 1
+            and not node.keywords
+            and not isinstance(node.args[0], ast.Starred)
+        ):
+            binding = eval_node(self.scope, node.args[0])
+            self.result = rope.base.pynames.UnboundName(
+                pyobject.type_of(binding.get_object() if binding is not None else None)
+            )
+            return
+
+        def _get_returned(pyobject):
             args = arguments.create_arguments(
                 primary,
                 pyobject,
                 node,
                 self.scope,
-                ignore_instance=receiver is not None,
             )
-            if receiver is not None:
-                args = arguments.MixedArguments(receiver, args, self.scope)
             return pyobject.get_returned_object(args)
 
         if isinstance(pyobject, rope.base.pyobjects.AbstractClass):
@@ -334,36 +518,47 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             result = None
             if "__new__" in pyobject:
                 new_function = pyobject["__new__"].get_object()
+                if rope.base.builtins.BuiltinType.is_constructor(new_function) or (
+                    isinstance(new_function, rope.base.pyobjects.PyFunction)
+                    and new_function.get_kind() != "classmethod"
+                ):
+                    args = arguments.create_arguments(
+                        None, new_function, node, self.scope, ignore_instance=True
+                    )
+                    args = arguments.MixedArguments(
+                        rope.base.pynames.UnboundName(pyobject), args, self.scope
+                    )
+                    self.result = rope.base.pynames.UnboundName(
+                        new_function.get_returned_object(args)
+                    )
+                    return
                 result = _get_returned(new_function)
             if result is None or result == rope.base.pyobjects.get_unknown():
                 result = rope.base.pyobjects.PyObject(pyobject)
             self.result = rope.base.pynames.UnboundName(pyobject=result)
             return
 
-        pyfunction = None
-        receiver = None
-        if isinstance(pyobject, rope.base.pyobjects.AbstractFunction):
-            pyfunction = pyobject
-        elif "__call__" in pyobject:
-            pyfunction = pyobject["__call__"].get_object()
-            from rope.base.sourcebindings import SourceLambdaFunction
-
-            if isinstance(pyfunction, SourceLambdaFunction):
-                pyfunction = pyfunction.bind_receiver(
-                    rope.base.pynames.UnboundName(pyobject)
-                )
-            else:
-                # The receiver of an instance __call__ is the callable
-                # value itself, not the receiver of the attribute access.
-                receiver = func_pyname
+        pyfunction, receiver = get_callable(func_pyname)
         if pyfunction is not None:
-            self.result = rope.base.pynames.UnboundName(
-                pyobject=_get_returned(pyfunction, receiver)
-            )
+            if receiver is None:
+                result = _get_returned(pyfunction)
+            else:
+                args = arguments.create_arguments(
+                    None, pyfunction, node, self.scope, ignore_instance=True
+                )
+                args = arguments.bind_method(
+                    receiver,
+                    pyfunction,
+                    args,
+                    self.scope,
+                    owner=receiver.get_object().get_type(),
+                )
+                result = pyfunction.get_returned_object(args)
+            self.result = rope.base.pynames.UnboundName(pyobject=result)
 
     def _Str(self, node):
         self.result = rope.base.pynames.UnboundName(
-            pyobject=rope.base.builtins.get_str()
+            pyobject=rope.base.builtins.LiteralString(node.s)
         )
 
     def _Num(self, node):
@@ -371,6 +566,11 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         self.result = self._get_builtin_name(type_name)
 
     def _Constant(self, node):
+        if isinstance(node.value, str):
+            self.result = rope.base.pynames.UnboundName(
+                rope.base.builtins.LiteralString(node.value)
+            )
+            return
         type_name = type(node.value).__name__
         try:
             self.result = self._get_builtin_name(type_name)
@@ -415,8 +615,24 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                 keys = self._get_object_for_node(keys)
             if values:
                 values = self._get_object_for_node(values)
+        entries = {}
+        for key, value in zip(node.keys, node.values):
+            if key is None:
+                entries = None
+                break
+            key_object = self._get_object_for_node(key)
+            if not isinstance(key_object, rope.base.builtins.LiteralString):
+                entries = None
+                break
+            binding = eval_node(self.scope, value)
+            if binding is None:
+                entries = None
+                break
+            entries[key_object.value] = rope.base.pynames.UnboundName(
+                binding.get_object()
+            )
         self.result = rope.base.pynames.UnboundName(
-            pyobject=rope.base.builtins.get_dict(keys, values)
+            pyobject=rope.base.builtins.LiteralDict(keys, values, entries)
         )
 
     def _List(self, node):
@@ -520,13 +736,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         return rope.base.pyscopes.TemporaryScope(scope.pycore, scope, names)
 
     def _Tuple(self, node):
-        objects = []
-        if len(node.elts) < 4:
-            for stmt in node.elts:
-                pyobject = self._get_object_for_node(stmt)
-                objects.append(pyobject)
-        else:
-            objects.append(self._get_object_for_node(node.elts[0]))
+        objects = [self._get_object_for_node(stmt) for stmt in node.elts]
         self.result = rope.base.pynames.UnboundName(
             pyobject=rope.base.builtins.get_tuple(*objects)
         )
@@ -539,12 +749,93 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         return pyobject
 
     def _Subscript(self, node):
-        if isinstance(node.slice, ast.Index):
-            self._call_function(node.value, "__getitem__", [node.slice.value])
-        elif isinstance(node.slice, ast.Slice):
-            self._call_function(node.value, "__getitem__", [node.slice])
-        elif isinstance(node.slice, ast.expr):
-            self._call_function(node.value, "__getitem__", [node.value])
+        receiver = eval_node(self.scope, node.value)
+        if receiver is None:
+            return
+        value = receiver.get_object()
+        is_class = isinstance(value, pyobjects.AbstractClass)
+        owner = value.get_metaclass() if is_class else value.get_type()
+        if is_class and not isinstance(owner, pyobjects.AbstractClass):
+            self.result = rope.base.pynames.UnboundName(owner)
+            return
+        if rope.base.builtins._runtime_unpack(value) is not None:
+            # PEP 646: an explicit ``Unpack[Ts]`` evaluates to the typing
+            # alias carrying the parameter, mirroring the runtime's
+            # ``_GenericAlias``; the generic-alias validation recognizes
+            # the form through its origin.
+            key = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            if isinstance(key, ast.Starred):
+                # The runtime rejects starred subscripting of ``Unpack``;
+                # rope models that failure as no result.
+                return
+            target = eval_node(self.scope, key)
+            if target is None:
+                return
+            module = self.scope.pyobject.get_module()
+            self.result = rope.base.pynames.UnboundName(
+                rope.base.builtins.GenericAlias(
+                    value, (target.get_object(),), module.pycore.project, True
+                )
+            )
+            return
+        if isinstance(owner, rope.base.builtins.Tuple) and (
+            isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, int)
+            or isinstance(node.slice, ast.UnaryOp)
+            and isinstance(node.slice.op, (ast.UAdd, ast.USub))
+            and isinstance(node.slice.operand, ast.Constant)
+            and isinstance(node.slice.operand.value, int)
+        ):
+            self.result = rope.base.pynames.UnboundName(
+                owner.get_item(ast.literal_eval(node.slice))
+            )
+            return
+        if "__getitem__" in owner:
+            called, callable_receiver = get_callable(owner["__getitem__"])
+            descriptor_owner = owner
+        elif is_class and "__class_getitem__" in value:
+            called, callable_receiver = get_callable(value["__class_getitem__"])
+            descriptor_owner = value
+        else:
+            return
+        if called is None:
+            return
+        if callable_receiver is not None:
+            receiver = callable_receiver
+            descriptor_owner = receiver.get_object().get_type()
+        key = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+        starred = isinstance(key, ast.Starred)
+        if starred:
+            # PEP 646: the starred subscription syntax exists only at the
+            # expression level; evaluate the target so the typing alias
+            # validation receives the unpack fact, not the star node.
+            key = key.value
+        args = arguments.Arguments([key], self.scope, called)
+        args = arguments.bind_method(
+            receiver, called, args, self.scope, owner=descriptor_owner
+        )
+        if starred:
+            target = eval_node(self.scope, key)
+            if target is None or not rope.base.builtins._is_runtime_class(
+                target.get_object().get_type(), typing.TypeVarTuple
+            ):
+                # Runtime rejects every non-TypeVarTuple starred subscript;
+                # rope models that failure as no result.
+                return
+            args = arguments.bind_method(
+                receiver,
+                called,
+                arguments.ObjectArguments(
+                    [
+                        rope.base.pynames.UnboundName(
+                            rope.base.builtins.UnpackedTypeVarTuple(target.get_object())
+                        )
+                    ]
+                ),
+                self.scope,
+                owner=descriptor_owner,
+            )
+        self.result = rope.base.pynames.UnboundName(called.get_returned_object(args))
 
     def _Slice(self, node):
         self.result = self._get_builtin_name("slice")

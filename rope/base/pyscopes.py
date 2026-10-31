@@ -29,13 +29,22 @@ class Scope:
         """The same as ``key in self.get_names()``"""
         return key in self.get_names()
 
-    @utils.saveit
     def get_scopes(self):
         """Return the subscopes of this scope
 
         The returned scopes should be sorted by the order they appear.
         """
-        return self._create_scopes()
+        scopes = getattr(self, "_scopes", None)
+        if scopes is None:
+            scopes = self._create_scopes()
+            # While the owner is being created, the recursion guard in
+            # _get_structural_attributes returns a temporary empty set; caching
+            # that answer (saveit) would leave a permanent empty list for
+            # structural references. The cache is only stored once the owner's
+            # defined objects exist.
+            if getattr(self.pyobject, "defineds", None) is not None:
+                self._scopes = scopes
+        return scopes
 
     def lookup(self, name):
         if name in self.get_names():
@@ -85,6 +94,7 @@ class Scope:
             return body[0].lineno
         return self.get_start()
 
+    @utils.saveit
     def get_end(self):
         pymodule = self._get_global_scope().pyobject
         return pymodule.logical_lines.logical_line_in(self.logical_end)[1]
@@ -130,6 +140,7 @@ class GlobalScope(Scope):
     def __init__(self, pycore, module):
         super().__init__(pycore, module, None)
         self.names = module._get_concluded_data()
+        self._inner_scopes_for_lines = {}
 
     def get_start(self):
         return 1
@@ -172,7 +183,16 @@ class GlobalScope(Scope):
         return self.names.get()
 
     def get_inner_scope_for_line(self, lineno, indents=None):
-        return self._scope_finder.get_holding_scope(self, lineno, indents)
+        # The holding scope for a (line, indents) pair is a structural
+        # property of the module: inference follows thousands of name paths
+        # through the same lines, so the tree walk runs once per pair for the
+        # lifetime of this module scope (rebuilt with its pymodule).
+        key = (lineno, indents)
+        cached = self._inner_scopes_for_lines.get(key)
+        if cached is None:
+            cached = self._scope_finder.get_holding_scope(self, lineno, indents)
+            self._inner_scopes_for_lines[key] = cached
+        return cached
 
     def get_inner_scope_for_offset(self, offset):
         return self._scope_finder.get_holding_scope_for_offset(self, offset)
@@ -260,7 +280,7 @@ class FunctionScope(Scope):
         if self.names is None:
             self._visit_function()
         module = self.pyobject.get_module()
-        if ":=" in module.source_code:
+        if module.requires_header_bindings():
             module.get_source_binding_index().prepare_header_bindings(self)
         return self.names
 
@@ -270,7 +290,13 @@ class FunctionScope(Scope):
             for n in self.pyobject.get_ast().body:
                 new_visitor.visit(n)
             self.names = new_visitor.names
-            self.names.update(self.pyobject.get_parameters())
+            parameters = self.pyobject.get_parameters()
+            for name, parameter in parameters.items():
+                assigned = self.names.get(name)
+                if isinstance(assigned, pynames.AssignedName):
+                    assigned.initial_binding = parameter
+                    parameter.assigned_value = assigned
+            self.names.update(parameters)
             self.returned_asts = new_visitor.returned_asts
             self.is_generator = new_visitor.generator
             self.defineds = new_visitor.defineds
