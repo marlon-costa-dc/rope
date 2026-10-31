@@ -1,5 +1,7 @@
 # __Upcoming release__
 
+- Type `rope.base.utils.saveit` so decorated methods and properties, such
+  as `Project.pycore`, keep their return type for type checkers.
 - Keep analysing classes whose hierarchy Python refuses to create, as upstream
   does: their attributes, `super()`, `type()` and type hints follow the
   declared bases. Only `AbstractClass.get_mro()` raises
