@@ -1,5 +1,11 @@
 # __Upcoming release__
 
+# Release 1.15.0+dc.9
+
+- Memoize offset resolution on each module until the project data changes,
+  so repeated occurrence searches no longer re-resolve the same offset. Any
+  change to a loaded resource retires every memo.
+
 # Release 1.15.0+dc.8
 
 - Type `rope.base.utils.saveit` so decorated methods and properties, such
