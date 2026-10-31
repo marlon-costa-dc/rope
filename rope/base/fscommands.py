@@ -126,6 +126,8 @@ class MercurialCommands(FileSystemCommands):
 
     def _import_mercurial(self):
         import mercurial.commands  # type: ignore
+        import mercurial.hg  # type: ignore
+        import mercurial.ui  # type: ignore
 
         return mercurial
 

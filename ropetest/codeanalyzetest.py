@@ -117,7 +117,8 @@ class WordRangeFinderTest(unittest.TestCase):
             ):
                 msg.append("  " + line + "\n")
                 if line_exp != line_actual:
-                    msg.extend(("e " + line_exp + "\n", "a " + line_actual + "\n"))
+                    msg.append("e " + line_exp + "\n")
+                    msg.append("a " + line_actual + "\n")
             self.fail("".join(msg))
 
     def test_keyword_before_parens(self):
@@ -283,8 +284,7 @@ class WordRangeFinderTest(unittest.TestCase):
         self.assertEqual("var3", self._find_primary(code, 21))
 
     def test_is_import_statement(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             import a.b.c.d
                    ++++++++
             from a.b import c
@@ -301,8 +301,7 @@ class WordRangeFinderTest(unittest.TestCase):
 
             result = a.b.c.d.f()
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -458,8 +457,7 @@ class WordRangeFinderTest(unittest.TestCase):
         self.assertTrue(word_finder.is_assigned_here(0))
 
     def test_is_from_statement(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             import a.b.c.d
 
             from a.b import c
@@ -476,8 +474,7 @@ class WordRangeFinderTest(unittest.TestCase):
             ++
             result = a.b.c.d.f()
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -486,8 +483,7 @@ class WordRangeFinderTest(unittest.TestCase):
         )
 
     def test_is_from_statement_module(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             import a.b.c.d
 
             from a.b import c
@@ -504,8 +500,7 @@ class WordRangeFinderTest(unittest.TestCase):
 
             result = a.b.c.d.f()
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -514,8 +509,7 @@ class WordRangeFinderTest(unittest.TestCase):
         )
 
     def test_is_import_statement_aliased_module(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             import a.b.c.d
 
             from a.b import c
@@ -536,8 +530,7 @@ class WordRangeFinderTest(unittest.TestCase):
                +++++            +++++
             result = a.b.c.d.f()
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -548,8 +541,7 @@ class WordRangeFinderTest(unittest.TestCase):
         )
 
     def test_is_from_aliased(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             import a.b.c.d
 
             from a.b import c
@@ -570,8 +562,7 @@ class WordRangeFinderTest(unittest.TestCase):
                +++++            +++++
             result = a.b.c.d.f()
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -590,8 +581,7 @@ class WordRangeFinderTest(unittest.TestCase):
         self.assertTrue(word_finder.is_from_statement(code.rindex("g")))
 
     def test_is_function_keyword_parameter(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             func(param=1)
                 ++++++
             func(
@@ -604,8 +594,7 @@ class WordRangeFinderTest(unittest.TestCase):
                     ++++++
                 pass
 
-        """)
-        )
+        """))
         word_finder = worder.Worder(code)
         self.assert_equal_annotation(
             code,
@@ -660,12 +649,10 @@ class WordRangeFinderTest(unittest.TestCase):
         )
 
     def test_is_on_function_call_keyword(self):
-        code, annotations = self._annotated_code(
-            annotated_code=dedent("""\
+        code, annotations = self._annotated_code(annotated_code=dedent("""\
             myfunc(va
                   +++
-        """)
-        )
+        """))
 
         finder = worder.Worder(code)
         self.assert_equal_annotation(
@@ -786,12 +773,10 @@ class ScopeNameFinderTest(unittest.TestCase):
     def test_modules_after_from_statements(self):
         root_folder = self.project.root
         mod = testutils.create_module(self.project, "mod", root_folder)
-        mod.write(
-            dedent("""\
+        mod.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         code = "from mod import a_func\n"
         scope = libutils.get_string_scope(self.project, code)
         name_finder = rope.base.evaluate.ScopeNameFinder(scope.pyobject)
@@ -801,12 +786,10 @@ class ScopeNameFinderTest(unittest.TestCase):
 
     def test_renaming_functions_with_from_import_and_parens(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def afunc():
                 pass
-        """)
-        )
+        """))
         code = dedent("""\
             from mod1 import (
                 afunc as func)
@@ -823,12 +806,10 @@ class ScopeNameFinderTest(unittest.TestCase):
         pkg2 = testutils.create_package(self.project, "pkg2", pkg1)
         mod1 = testutils.create_module(self.project, "mod1", pkg1)
         mod2 = testutils.create_module(self.project, "mod2", pkg2)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         code = "from ..mod1 import a_func\n"
         mod2.write(code)
         mod2_scope = self.project.get_pymodule(mod2).get_scope()
@@ -1133,24 +1114,24 @@ class TestASTLinesAdapter:
         # Deliberately full of unicode corner cases
         UNICODE_EDGE_SOURCE = (
             "def f1():\n"
-            '    party = "\U0001f389\U0001f389\U0001f389" + "test"\n'
-            '    combining = "e\u0301\u0301 vs \u00e9"\n'
+            "    party = \"\U0001F389\U0001F389\U0001F389\" + \"test\"\n"
+            "    combining = \"e\u0301\u0301 vs \u00e9\"\n"
             "    return party, combining\n"
             "\n"
             "def f2(\u0627\u0633\u0645):\n"  # Arabic identifier (RTL script)
-            '    greeting = "\u0645\u0631\u062d\u0628\u0627 " + \u0627\u0633\u0645\n'
+            "    greeting = \"\u0645\u0631\u062d\u0628\u0627 \" + \u0627\u0633\u0645\n"
             "    return greeting\n"
             "\r\n"  # CRLF blank line
             "def f3():\r\n"  # rest of this function uses CRLF endings
-            '    zwj = "\U0001f9d1\u200d\U0001f680"\r\n'  # person + ZWJ + rocket
+            "    zwj = \"\U0001F9D1\u200d\U0001F680\"\r\n"  # person + ZWJ + rocket
             "    multi = {\r\n"
-            '        "\u05d0": 1,\r\n'  # Hebrew (RTL script) as dict key
-            '        "\u05d1": 2,\r\n'
+            "        \"\u05d0\": 1,\r\n"  # Hebrew (RTL script) as dict key
+            "        \"\u05d1\": 2,\r\n"
             "    }\r\n"
             "    return zwj, multi\r\n"
             "\r"  # bare-CR blank line
             "def f4():\r"  # rest of this function uses bare-CR endings
-            '    variation = "\u2764\ufe0f"\r'  # heart + variation selector-16
+            "    variation = \"\u2764\ufe0f\"\r"  # heart + variation selector-16
             "    return variation\r"
             "\n"
             "def f5():\n"
@@ -1178,9 +1159,7 @@ class TestASTLinesAdapter:
 
         def test_unpadded_segment_matches(self, source, ast_adapter, nodes):
             for node in nodes:
-                assert ast_adapter.get_source_segment(node) == ast.get_source_segment(
-                    source, node
-                )
+                assert ast_adapter.get_source_segment(node) == ast.get_source_segment(source, node)
 
         def test_padded_segment_matches(self, source, ast_adapter, nodes):
             for node in nodes:
@@ -1188,9 +1167,7 @@ class TestASTLinesAdapter:
                 actual = ast_adapter.get_source_segment(node, padded=True)
                 assert actual == expected
 
-        def test_offsets_slice_source_to_unpadded_segment(
-            self, source, ast_adapter, nodes
-        ):
+        def test_offsets_slice_source_to_unpadded_segment(self, source, ast_adapter, nodes):
             for node in nodes:
                 start, end = ast_adapter[node]
                 expected = ast.get_source_segment(source, node)
@@ -1273,43 +1250,40 @@ class TestASTLinesAdapter:
         @pytest.fixture(scope="class")
         @classmethod
         def dict_node(self, tree) -> ast.Dict:
-            node = next(n for n in ast.walk(tree) if isinstance(n, ast.Dict))
-            assert node.lineno != node.end_lineno, (
-                "expected a multi-line node for this test to mean anything"
+            node = next(
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Dict)
             )
+            assert node.lineno != node.end_lineno, "expected a multi-line node for this test to mean anything"
             return node
 
-        def test_unpadded_get_source_segment_of_node_with_mixed_line_endings(
-            self, dict_node, ast_adapter
-        ):
+        def test_unpadded_get_source_segment_of_node_with_mixed_line_endings(self, dict_node, ast_adapter):
             assert ast_adapter.get_source_segment(dict_node) == ast.get_source_segment(
                 self.SOURCE, dict_node
             )
 
-        def test_padded_get_source_segment_of_node_with_mixed_line_endings(
-            self, dict_node, ast_adapter
-        ):
+        def test_padded_get_source_segment_of_node_with_mixed_line_endings(self, dict_node, ast_adapter):
             assert ast_adapter.get_source_segment(
                 dict_node, padded=True
-            ) == ast.get_source_segment(self.SOURCE, dict_node, padded=True)
+            ) == ast.get_source_segment(
+                self.SOURCE, dict_node, padded=True
+            )
 
         def test_line_starts_found_for_every_ending_style(self, ast_adapter):
             assert len(ast_adapter) == 8
 
         def test_get_line(self, ast_adapter):
-            lines = [
-                ast_adapter.get_line(line_idx + 1)
-                for line_idx in range(len(ast_adapter))
-            ]
+            lines = [ast_adapter.get_line(line_idx + 1) for line_idx in range(len(ast_adapter))]
             expected = [
-                "s = 1",
-                "café = {",
+                's = 1',
+                'café = {',
                 "    '你': 100,",
                 "    '好': 200,",
-                "    30: 300,",
-                "    40: 400,",
-                "}",
-                "print(café)",
+                '    30: 300,',
+                '    40: 400,',
+                '}',
+                'print(café)',
             ]
             assert lines == expected
 
@@ -1320,9 +1294,7 @@ class TestASTLinesAdapter:
         def dict_node(self, tree) -> ast.Dict:
             dict_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Dict))
             assert dict_node.lineno != dict_node.end_lineno
-            assert dict_node.col_offset > 0, (
-                "col_offset must be non-zero for this test to mean anything"
-            )
+            assert dict_node.col_offset > 0, "col_offset must be non-zero for this test to mean anything"
             return dict_node
 
         def test_padded_segment_matches_ast(self, dict_node, ast_adapter):
@@ -1330,38 +1302,32 @@ class TestASTLinesAdapter:
             actual = ast_adapter.get_source_segment(dict_node, padded=True)
             assert actual == expected
 
-        def test_padding_length_is_char_count_not_byte_count(
-            self, dict_node, ast_adapter
-        ):
+        def test_padding_length_is_char_count_not_byte_count(self, dict_node, ast_adapter):
             segment = ast_adapter.get_source_segment(dict_node, padded=True)
             first_line_of_segment = segment.splitlines()[0]
-            leading_spaces = len(first_line_of_segment) - len(
-                first_line_of_segment.lstrip(" ")
-            )
+            leading_spaces = len(first_line_of_segment) - len(first_line_of_segment.lstrip(" "))
             # 'x = "你好" + ' is 11 characters (5 ASCII + 2 CJK chars + 4 ASCII),
             # despite being 15 UTF-8 bytes.
             assert leading_spaces == 11
 
     class TestMissingLocationInfoTest:
-        SOURCE = "abc = def"
+        SOURCE = 'abc = def'
 
         def test_get_source_segment_returns_none_without_location(self, ast_adapter):
             node = ast.Module(body=[], type_ignores=[])
-            assert not hasattr(node, "lineno")
-            assert not hasattr(node, "col_offset")
+            assert not hasattr(node, 'lineno')
+            assert not hasattr(node, 'col_offset')
 
             assert ast_adapter.get_source_segment(node) is None
 
         def test_get_source_region_returns_none_without_location(self, ast_adapter):
             node = ast.Module(body=[], type_ignores=[])
-            assert not hasattr(node, "lineno")
-            assert not hasattr(node, "col_offset")
+            assert not hasattr(node, 'lineno')
+            assert not hasattr(node, 'col_offset')
 
             assert ast_adapter[node] == (None, None)
 
-        def test_get_source_segment_returns_none_without_end_location(
-            self, ast_adapter
-        ):
+        def test_get_source_segment_returns_none_without_end_location(self, ast_adapter):
             node = ast.Add()
             node.lineno = 1
             node.col_offset = 1
@@ -1416,9 +1382,9 @@ class TestASTLinesAdapter:
         def test_full_line_byte_length_matches_full_line_char_length(self, ast_adapter):
             for line_idx in range(len(ast_adapter)):
                 line_bytes = ast_adapter._get_line_bytes(line_idx)
-                assert ast_adapter._line_region_offset(
-                    line_idx, len(line_bytes)
-                ) == len(ast_adapter._get_line_text(line_idx))
+                assert ast_adapter._line_region_offset(line_idx, len(line_bytes)) == len(
+                    ast_adapter._get_line_text(line_idx)
+                )
 
         @pytest.mark.parametrize(
             "line_text, byte_col, expected_char_col",
@@ -1427,15 +1393,9 @@ class TestASTLinesAdapter:
                 ("你好世界\n", 3, 1),  # first char is 3 bytes -> 1 char consumed
                 ("你好世界\n", 6, 2),  # first two chars are 6 bytes -> 2 chars
                 ('"héllo"\n', 2, 2),  # ASCII prefix before the accented char
-                (
-                    '"héllo"\n',
-                    4,
-                    3,
-                ),  # 'é' (2 bytes) fully consumed -> 3 chars ('"h\u00e9')
+                ('"héllo"\n', 4, 3),  # 'é' (2 bytes) fully consumed -> 3 chars ('"h\u00e9')
             ],
         )
-        def test_known_byte_to_char_conversions(
-            self, line_text, byte_col, expected_char_col
-        ):
+        def test_known_byte_to_char_conversions(self, line_text, byte_col, expected_char_col):
             ast_adapter = ASTLinesAdapter(line_text)
             assert ast_adapter._line_region_offset(0, byte_col) == expected_char_col

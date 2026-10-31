@@ -50,19 +50,19 @@ from rope.refactor.importutils import ImportOrganizer  # noqa
 from rope.refactor.topackage import ModuleToPackage  # noqa
 
 __all__ = [
+    "rename",
+    "move",
+    "inline",
+    "extract",
+    "restructure",
+    "topackage",
+    "importutils",
+    "usefunction",
     "change_signature",
     "encapsulate_field",
-    "extract",
-    "importutils",
-    "inline",
     "introduce_factory",
     "introduce_parameter",
     "localtofield",
     "method_object",
-    "move",
     "multiproject",
-    "rename",
-    "restructure",
-    "topackage",
-    "usefunction",
 ]

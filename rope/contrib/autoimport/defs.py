@@ -2,7 +2,7 @@
 
 import pathlib
 from enum import Enum
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 
 class Source(Enum):
@@ -21,7 +21,7 @@ class Source(Enum):
 class ModuleInfo(NamedTuple):
     """Descriptor of information to get names from a module."""
 
-    filepath: pathlib.Path | None
+    filepath: Optional[pathlib.Path]
     modname: str
     underlined: bool
     process_imports: bool
@@ -89,7 +89,7 @@ class Package(NamedTuple):
 
     name: str
     source: Source
-    path: pathlib.Path | None
+    path: Optional[pathlib.Path]
     type: PackageType
 
 

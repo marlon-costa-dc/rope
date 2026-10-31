@@ -6,6 +6,8 @@ import rope.base.pyobjects
 from rope.base import exceptions, utils
 
 if typing.TYPE_CHECKING:
+    from typing import Union
+
     from rope.base import pyobjectsdef
 
 
@@ -113,14 +115,17 @@ class ParameterName(PyName):
 class ImportedModule(PyName):
     def __init__(
         self,
-        importing_module: pyobjectsdef.PyModule | pyobjectsdef.PyPackage,
+        importing_module: Union[
+            pyobjectsdef.PyModule,
+            pyobjectsdef.PyPackage,
+        ],
         module_name=None,
         level=0,
         resource=None,
     ):
-        assert module_name is not None or resource is not None, (
-            "At least one of module_name or resource must be set"
-        )
+        assert (
+            module_name is not None or resource is not None
+        ), "At least one of module_name or resource must be set"
         self.importing_module = importing_module
         self.module_name = module_name
         self.level = level

@@ -1,6 +1,6 @@
 import ast
 import sys
-from ast import *
+from ast import *  # noqa: F401,F403
 
 from rope.base import fscommands
 

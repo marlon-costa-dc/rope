@@ -29,7 +29,7 @@ class SimilarFinder:
                 pymodule.source_code, pymodule.get_ast(), self._does_match
             )
         except MismatchedTokenError:
-            print(f"in file {pymodule.resource.path}")
+            print("in file %s" % pymodule.resource.path)
             raise
         self.pymodule = pymodule
         if wildcards is None:
@@ -184,8 +184,9 @@ class _ASTMatcher:
                     self.matches.append(StatementMatch(current_stmts, mapping))
 
     def _match_nodes(self, expected, node, mapping):
-        if isinstance(expected, ast.Name) and self.ropevar.is_var(expected.id):
-            return self._match_wildcard(expected, node, mapping)
+        if isinstance(expected, ast.Name):
+            if self.ropevar.is_var(expected.id):
+                return self._match_wildcard(expected, node, mapping)
         if not isinstance(expected, ast.AST):
             return expected == node
         if expected.__class__ != node.__class__:
@@ -386,9 +387,9 @@ def make_pattern(code, variables):
 
     finder = RawSimilarFinder(code, does_match=does_match)
     for variable in variables:
-        for match in finder.get_matches(f"${{{variable}}}"):
+        for match in finder.get_matches("${%s}" % variable):
             start, end = match.get_region()
-            collector.add_change(start, end, f"${{{variable}}}")
+            collector.add_change(start, end, "${%s}" % variable)
     result = collector.get_changed()
     return result if result is not None else code
 

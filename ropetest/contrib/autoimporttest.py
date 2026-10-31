@@ -1,6 +1,7 @@
 import unittest
 
 from rope.contrib.autoimport import sqlite as autoimport
+from rope.contrib.autoimport.defs import Alias
 from ropetest import testutils
 
 
@@ -133,9 +134,7 @@ class AutoImportTest(unittest.TestCase):
         self.assertEqual([], self.importer.search("noMatch", exact_match=True))
 
         import_statement = ("import pkg.mod2 as hasMatch", "hasMatch")
-        self.assertIn(
-            import_statement, self.importer.search("hasMatch", exact_match=True)
-        )
+        self.assertIn(import_statement, self.importer.search("hasMatch", exact_match=True))
         self.assertIn(import_statement, self.importer.search("hasM"))
         self.assertIn(import_statement, self.importer.search("h"))
 
@@ -145,9 +144,7 @@ class AutoImportTest(unittest.TestCase):
         self.importer.clear_cache()
         self.importer.update_resource(self.mod2)
         import_statement = ("import pkg.mod2 as mod2_alias", "mod2_alias")
-        self.assertIn(
-            import_statement, self.importer.search("mod2_alias", exact_match=True)
-        )
+        self.assertIn(import_statement, self.importer.search("mod2_alias", exact_match=True))
         self.assertIn(import_statement, self.importer.search("mod2", exact_match=False))
 
     def test_search(self):
@@ -174,11 +171,10 @@ class AutoImportTest(unittest.TestCase):
         self.importer.generate_modules_cache(single_thread=single_thread)
 
         # Create a temporary directory and set permissions to 000
+        import sys
         import tempfile
-
         with tempfile.TemporaryDirectory() as dir:
             import os
-
             os.chmod(dir, 0o000)
             self.importer.project.prefs.python_path = [dir]
             self.importer.generate_modules_cache(single_thread=single_thread)

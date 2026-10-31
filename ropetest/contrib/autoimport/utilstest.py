@@ -154,9 +154,7 @@ def test_get_package_tuple_compiled(compiled_lib):
 
 def test_get_files(project, mod1, pkg1, mod2):
     root: Package = utils.get_package_tuple(project.root.pathlib)
-    paths = [
-        m.filepath.relative_to(project.root.pathlib) for m in utils.get_files(root)
-    ]
+    paths = [m.filepath.relative_to(project.root.pathlib) for m in utils.get_files(root)]
     assert set(paths) == {
         Path("mod1.py"),
         Path("pkg1/__init__.py"),

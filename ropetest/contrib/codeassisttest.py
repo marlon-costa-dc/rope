@@ -39,23 +39,23 @@ class CodeAssistTest(unittest.TestCase):
                 self.assertEqual(
                     scope,
                     proposal.scope,
-                    f"proposal <{name}> has wrong scope, expected "
-                    f"{scope!r}, got {proposal.scope!r}",
+                    "proposal <%s> has wrong scope, expected "
+                    "%r, got %r" % (name, scope, proposal.scope),
                 )
                 if type is not None:
                     self.assertEqual(
                         type,
                         proposal.type,
-                        f"proposal <{name}> has wrong type, expected "
-                        f"{type!r}, got {proposal.type!r}",
+                        "proposal <%s> has wrong type, expected "
+                        "%r, got %r" % (name, type, proposal.type),
                     )
                 return
-        self.fail(f"completion <{name}> not proposed")
+        self.fail("completion <%s> not proposed" % name)
 
     def assert_completion_not_in_result(self, name, scope, result):
         for proposal in result:
             if proposal.name == name and proposal.scope == scope:
-                self.fail(f"completion <{name}> was proposed")
+                self.fail("completion <%s> was proposed" % name)
 
     def test_completing_global_variables(self):
         code = dedent("""\
@@ -1355,12 +1355,12 @@ class CodeAssistInProjectsTest(unittest.TestCase):
         for proposal in result:
             if proposal.name == name and proposal.scope == scope:
                 return
-        self.fail(f"completion <{name}> not proposed")
+        self.fail("completion <%s> not proposed" % name)
 
     def assert_completion_not_in_result(self, name, scope, result):
         for proposal in result:
             if proposal.name == name and proposal.scope == scope:
-                self.fail(f"completion <{name}> was proposed")
+                self.fail("completion <%s> was proposed" % name)
 
     def test_simple_import(self):
         code = dedent("""\
@@ -1494,12 +1494,10 @@ class CodeAssistInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         code = dedent("""\
             import mod1
             mod1.""")
@@ -1510,12 +1508,10 @@ class CodeAssistInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         code = dedent("""\
             import mod1
             mod1.a_func
@@ -1532,13 +1528,11 @@ class CodeAssistInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(
-            dedent('''\
+        mod1.write(dedent('''\
             def a_func():
                 """hey"""
                 pass
-        ''')
-        )
+        '''))
         code = dedent("""\
             import mod1
             mod1.a_func
@@ -1548,12 +1542,10 @@ class CodeAssistInProjectsTest(unittest.TestCase):
 
     def test_get_doc_on_from_import_module(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent('''\
+        mod1.write(dedent('''\
             """mod1 docs"""
             var = 1
-        ''')
-        )
+        '''))
         code = "from mod1 import var\n"
         result = get_doc(self.project, code, code.index("mod1"))
         result.index("mod1 docs")

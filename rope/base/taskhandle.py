@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from typing import Optional, Sequence
 
 from rope.base import exceptions, utils
 
@@ -25,7 +25,7 @@ class BaseJobSet(ABC):
         pass
 
     @abstractmethod
-    def get_percent_done(self) -> float | None:
+    def get_percent_done(self) -> Optional[float]:
         pass
 
     @utils.deprecated("Just use JobSet.name attribute/property instead")
@@ -39,6 +39,7 @@ class BaseJobSet(ABC):
 
         This is used if the number is not known ahead of time.
         """
+        pass
 
 
 class BaseTaskHandle(ABC):
@@ -47,7 +48,7 @@ class BaseTaskHandle(ABC):
         pass
 
     @abstractmethod
-    def current_jobset(self) -> BaseJobSet | None:
+    def current_jobset(self) -> Optional[BaseJobSet]:
         pass
 
     @abstractmethod
@@ -63,7 +64,7 @@ class BaseTaskHandle(ABC):
         pass
 
     def create_jobset(
-        self, name: str = "JobSet", count: int | None = None
+        self, name: str = "JobSet", count: Optional[int] = None
     ) -> BaseJobSet:
         pass
 
@@ -180,7 +181,7 @@ class NullTaskHandle(BaseTaskHandle):
 
     def current_jobset(self) -> None:
         """Return the current `JobSet`"""
-        return
+        return None
 
 
 class NullJobSet(BaseJobSet):

@@ -212,11 +212,11 @@ call starts from its own native parameter epoch, without ambient transport.
 Decorators, headers and defaults retain their creator's branch context; function
 and lambda bodies begin a separate control context. Assignment metadata comes
 from that same source-index pass, including header, walrus and comprehension
-bindings. Missing or cloned source nodes retain an opaque witness rather than
-being treated as unconditional assignments: missing assignment provenance remains
-unknown even during nonrecursive inference. This differs from a recorded loop,
-exception or pattern-selection context, whose existing nonrecursive inference
-semantics are preserved. This dependency-context
+bindings. An assignment without source-index provenance, such as one in an
+independently parsed expression, carries no branch facts and keeps Rope's
+existing unconditional inference. A recorded loop, exception or
+pattern-selection context likewise keeps its existing nonrecursive inference
+semantics. This dependency-context
 capability is under qualification and does not yet establish consumer acceptance.
 
 Reassigning a formal parameter retains its original ``ParameterName`` in function

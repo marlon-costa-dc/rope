@@ -43,18 +43,19 @@ def expected_encoded_simple_data(version):
     ]
     return [[*d, version] for d in data]
 
-
 @pytest.mark.parametrize(
     "original_data,expected_encoded,version",
     [
         *expected_encoded_simple_data(version=1),
         *expected_encoded_simple_data(version=2),
+
         ((), {"$": "t", "items": []}, 1),
         ([], [], 1),
         (("hello",), {"$": "t", "items": ["hello"]}, 1),
         ((1, [2], "hello"), {"$": "t", "items": [1, [2], "hello"]}, 1),
         ([1, (2,), "hello"], [1, {"$": "t", "items": [2]}, "hello"], 1),
         ({"hello": ("hello", 1)}, {"hello": {"$": "t", "items": ["hello", 1]}}, 1),
+
         ((), [], 2),
         ([], {"$": "l", "items": []}, 2),
         (("hello",), ["hello"], 2),
@@ -105,9 +106,7 @@ def test_expected_encoded_simple(original_data, expected_encoded, version):
         ),
     ],
 )
-def test_expected_encoded_with_references(
-    original_data, expected_encoded, expected_references, version
-):
+def test_expected_encoded_with_references(original_data, expected_encoded, expected_references, version):
     encoded = python_to_json(original_data, version)
     serialized = json.dumps(encoded)
     decoded = json.loads(serialized)
@@ -118,6 +117,7 @@ def test_expected_encoded_with_references(
     assert encoded["data"] == expected_encoded
     assert encoded["references"] == expected_references
     assert rehydrated_data == original_data
+
 
 
 @pytest.mark.parametrize("version", [1, 2])

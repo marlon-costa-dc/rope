@@ -96,7 +96,7 @@ class PythonFileRunner:
         # Disabling FIFO data transfer due to blocking when running
         # unittests in the GUI.
         # XXX: Handle FIFO data transfer for `rope.ui.testview`
-        if True:
+        if True or os.name == "nt":
             self.receiver = _SocketReceiver()
         else:
             self.receiver = _FIFOReceiver()
@@ -165,7 +165,7 @@ class _SocketReceiver(_MessageReceiver):
         return "%d:%s" % (self.data_port, base64.b64encode(self.key).decode("utf-8"))
 
     def receive_data(self):
-        conn, _addr = self.server_socket.accept()
+        conn, addr = self.server_socket.accept()
         self.server_socket.close()
         my_file = conn.makefile("rb")
         while True:

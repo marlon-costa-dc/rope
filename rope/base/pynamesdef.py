@@ -36,6 +36,10 @@ class AssignedName(pynames.AssignedName):
                 self, branch_context=branch_context, read_node=read_node
             )
             return value if value is not None else rope.base.pyobjects.get_unknown()
+        if self.module is not None:
+            branch_context = rope.base.oi.soi.relevant_branch_context(
+                self, branch_context
+            )
         if branch_context or read_node is not None or self.initial_binding is not None:
             value = self._get_inferred(
                 branch_context=branch_context, read_node=read_node

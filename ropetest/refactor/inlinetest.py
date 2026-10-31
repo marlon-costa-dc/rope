@@ -283,24 +283,20 @@ class InlineTest(unittest.TestCase):
         self.assertEqual(expected, refactored)
 
     def test_a_function_with_no_occurrence(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("", self.mod.read())
 
     def test_a_function_with_no_occurrence2(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             a_var = 10
             def a_func():
                 pass
             print(a_var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -311,19 +307,15 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_replacing_calls_with_function_definition_in_other_modules(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 print(1)
-        """)
-        )
+        """))
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             import mod
             mod.a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -334,20 +326,16 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_replacing_calls_with_function_definition_in_other_modules2(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 print(1)
-        """)
-        )
+        """))
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             import mod
             if True:
                 mod.a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -359,21 +347,17 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_replacing_calls_with_method_definition_in_other_modules(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             class A(object):
                 var = 10
                 def a_func(self):
                     print(1)
-        """)
-        )
+        """))
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             import mod
             mod.A().a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -391,25 +375,21 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_replacing_calls_with_function_definition_in_defining_module(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 print(1)
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1)\n", self.mod.read())
 
     def test_replac_calls_with_function_definition_in_defining_module2(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 for i in range(10):
                     print(1)
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -420,14 +400,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_replacing_calls_with_method_definition_in_defining_modules(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             class A(object):
                 var = 10
                 def a_func(self):
                     print(1)
-            A().a_func()""")
-        )
+            A().a_func()"""))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -439,14 +417,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_with_the_same_name_as_passed(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var):
                 print(var)
             var = 1
             a_func(var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -457,14 +433,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_with_the_same_name_as_passed2(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var):
                 print(var)
             var = 1
             a_func(var=var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -475,14 +449,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_parameters_renaming(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param):
                 print(param)
             var = 1
             a_func(var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -493,15 +465,13 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_parameters_renaming_for_multiple_params(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(var1, var2)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -513,13 +483,11 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_renaming_for_passed_constants(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param):
                 print(param)
             a_func(1)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1)\n", self.mod.read())
 
@@ -544,13 +512,11 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_renaming_for_passed_statements(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param):
                 print(param)
             a_func((1 + 2) / 3)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -560,15 +526,13 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_parameters_renam_for_multiple_params_using_keywords(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(param2=var1, param1=var2)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -580,15 +544,13 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_params_renam_for_multi_params_using_mixed_keywords(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(var2, param2=var1)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -600,47 +562,39 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_putting_in_default_arguments(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param=None):
                 print(param)
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(None)\n", self.mod.read())
 
     def test_overriding_default_arguments(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1=1, param2=2):
                 print(param1, param2)
             a_func(param2=3)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1, 3)\n", self.mod.read())
 
     def test_arguments_containing_comparisons(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2, param3):
                 param2.name
             a_func(2 <= 1, item, True)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("item.name\n", self.mod.read())
 
     def test_badly_formatted_text(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func  (  param1 =  1 ,param2 = 2 )  :
                 print(param1, param2)
             a_func  ( param2
                 = 3 )
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1, 3)\n", self.mod.read())
 
@@ -779,36 +733,30 @@ class InlineTest(unittest.TestCase):
         self.assertEqual(expected, self.mod.read())
 
     def test_simple_return_values_and_inlining_functions(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 return 1
             a = a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("a = 1\n", self.mod.read())
 
     def test_simple_return_values_and_inlining_lonely_functions(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 return 1
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("1\n", self.mod.read())
 
     def test_empty_returns_and_inlining_lonely_functions(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 if True:
                     return
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -819,28 +767,24 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_multiple_returns(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def less_than_five(var):
                 if var < 5:
                     return True
                 return False
             a = less_than_five(2)
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("less") + 1)
 
     def test_multiple_returns_and_not_using_the_value(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def less_than_five(var):
                 if var < 5:
                     return True
                 return False
             less_than_five(2)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("less") + 1)
         self.assertEqual(
             dedent("""\
@@ -852,24 +796,20 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_raising_exception_for_list_arguments(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(*args):
                 print(args)
             a_func(1)
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("a_func") + 1)
 
     def test_raising_exception_for_list_keywods(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(**kwds):
                 print(kwds)
             a_func(n=1)
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("a_func") + 1)
 
@@ -884,45 +824,37 @@ class InlineTest(unittest.TestCase):
         self.assertEqual("range(20 + abs(10))\n", self.mod.read())
 
     def test_function_references_other_than_call(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param):
                 print(param)
             f = a_func
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("a_func") + 1)
 
     def test_function_referencing_itself(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var):
                 func = a_func
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("a_func") + 1)
 
     def test_recursive_functions(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var):
                 a_func(var)
-        """)
-        )
+        """))
         with self.assertRaises(rope.base.exceptions.RefactoringError):
             self._inline2(self.mod, self.mod.read().index("a_func") + 1)
 
     # TODO: inlining on function parameters
     def xxx_test_inlining_function_default_parameters(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(p1=1):
                 pass
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("p1") + 1)
         self.assertEqual(
             dedent("""\
@@ -934,16 +866,14 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_inlining_after_extra_indented_lines(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 for i in range(10):
                     pass
             if True:
                 pass
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -956,27 +886,23 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_inlining_a_function_with_pydoc(self):
-        self.mod.write(
-            dedent('''\
+        self.mod.write(dedent('''\
             def a_func():
                 """docs"""
                 a = 1
-            a_func()''')
-        )
+            a_func()'''))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("a = 1\n", self.mod.read())
 
     def test_inlining_methods(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             class A(object):
                 name = 'hey'
                 def get_name(self):
                     return self.name
             a = A()
             name = a.get_name()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().rindex("get_name") + 1)
         self.assertEqual(
             dedent("""\
@@ -989,14 +915,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_returns_with_backslashes(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 return 1\\
                     + 2
             a = a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             "a = 1\\\n    + 2\n",
@@ -1008,13 +932,11 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_a_function_with_pass_body(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 print(1)
             a = a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1025,13 +947,11 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_inlining_the_last_method_of_a_class(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             class A(object):
                 def a_func(self):
                     pass
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().rindex("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1042,20 +962,16 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_adding_needed_imports_in_the_dest_module(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             import sys
 
             def ver():
                 print(sys.version)
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             import mod
 
-            mod.ver()""")
-        )
+            mod.ver()"""))
         self._inline2(self.mod, self.mod.read().index("ver") + 1)
         self.assertEqual(
             dedent("""\
@@ -1068,22 +984,18 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_adding_needed_imports_in_the_dest_module_removing_selfs(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             import mod2
 
             def f():
                 print(mod2.var)
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             import mod
 
             var = 1
             mod.f()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("f(") + 1)
         self.assertEqual(
             dedent("""\
@@ -1100,41 +1012,33 @@ class InlineTest(unittest.TestCase):
         mod3 = testutils.create_module(self.project, "mod3", pkg)
         mod4 = testutils.create_module(self.project, "mod4", pkg)
         mod4.write("var = 1\n")
-        mod3.write(
-            dedent("""\
+        mod3.write(dedent("""\
             from . import mod4
 
             def f():
                 print(mod4.var)
-        """)
-        )
-        self.mod.write(
-            dedent("""\
+        """))
+        self.mod.write(dedent("""\
             import pkg.mod3
 
             pkg.mod3.f()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("f(") + 1)
         # Cannot determine the exact import
         self.assertTrue("\n\nprint(mod4.var)\n" in self.mod.read())
 
     def test_adding_needed_imports_for_elements_in_source(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def f1():
                 return f2()
             def f2():
                 return 1
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             import mod
 
             print(mod.f1())
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("f1") + 1)
         self.assertEqual(
             dedent("""\
@@ -1151,21 +1055,17 @@ class InlineTest(unittest.TestCase):
         mod3 = testutils.create_module(self.project, "mod3", pkg)
         mod4 = testutils.create_module(self.project, "mod4", pkg)
         mod4.write("var = 1\n")
-        mod3.write(
-            dedent("""\
+        mod3.write(dedent("""\
             import mod4
 
             def f():
                 print(mod4.var)
-        """)
-        )
-        self.mod.write(
-            dedent("""\
+        """))
+        self.mod.write(dedent("""\
             import pkg.mod3
 
             pkg.mod3.f()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("f(") + 1)
         self.assertEqual(
             dedent("""\
@@ -1178,15 +1078,13 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_inlining_with_different_returns(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def f(p):
                 return p
             print(f(1))
             print(f(2))
             print(f(1))
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("f(") + 1)
         self.assertEqual(
             dedent("""\
@@ -1298,19 +1196,15 @@ class InlineTest(unittest.TestCase):
         self.assertEqual("var = 1\n", refactored)
 
     def test_resources_parameter(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func():
                 print(1)
-        """)
-        )
+        """))
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             import mod
             mod.a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func"), resources=[self.mod])
         self.assertEqual("", self.mod.read())
         self.assertEqual(
@@ -1353,12 +1247,10 @@ class InlineTest(unittest.TestCase):
 
     def test_inlining_variables_in_other_modules(self):
         self.mod.write("myvar = 1\n")
-        self.mod2.write(
-            dedent("""\
+        self.mod2.write(dedent("""\
             import mod
             print(mod.myvar)
-        """)
-        )
+        """))
         self._inline2(self.mod, 2)
         self.assertEqual(
             dedent("""\
@@ -1369,18 +1261,14 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_inlining_variables_and_back_importing(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             mainvar = 1
             myvar = mainvar
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             import mod
             print(mod.myvar)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("myvar"))
         expected = dedent("""\
             import mod
@@ -1390,18 +1278,14 @@ class InlineTest(unittest.TestCase):
         self.assertEqual(expected, self.mod2.read())
 
     def test_inlining_variables_and_importing_used_imports(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             import sys
             myvar = sys.argv
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             import mod
             print(mod.myvar)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("myvar"))
         expected = dedent("""\
             import mod
@@ -1412,27 +1296,21 @@ class InlineTest(unittest.TestCase):
 
     def test_inlining_variables_and_removing_old_froms(self):
         self.mod.write("var = 1\n")
-        self.mod2.write(
-            dedent("""\
+        self.mod2.write(dedent("""\
             from mod import var
             print(var)
-        """)
-        )
+        """))
         self._inline2(self.mod2, self.mod2.read().rindex("var"))
         self.assertEqual("print(1)\n", self.mod2.read())
 
     def test_inlining_method_and_removing_old_froms(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def f():    return 1
-        """)
-        )
-        self.mod2.write(
-            dedent("""\
+        """))
+        self.mod2.write(dedent("""\
             from mod import f
             print(f())
-        """)
-        )
+        """))
         self._inline2(self.mod2, self.mod2.read().rindex("f"))
         self.assertEqual("print(1)\n", self.mod2.read())
 
@@ -1475,7 +1353,7 @@ class InlineTest(unittest.TestCase):
         self._inline2(
             self.mod2, self.mod2.read().rindex("var"), remove=False, only_current=True
         )
-        expected2 = "import mod\nprint(mod.var)\nprint(1)\n"
+        expected2 = "import mod\n" "print(mod.var)\n" "print(1)\n"
         self.assertEqual(code1, self.mod.read())
         self.assertEqual(expected2, self.mod2.read())
 
@@ -1544,14 +1422,12 @@ class InlineTest(unittest.TestCase):
         self.assertEqual(expected, refactored)
 
     def test_parameters_with_the_same_name_as_passed_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var: int):
                 print(var)
             var = 1
             a_func(var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1562,14 +1438,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_with_the_same_name_as_passed_as_kwargs_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(var: int):
                 print(var)
             var = 1
             a_func(var=var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1580,14 +1454,12 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_parameters_renaming_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param: int):
                 print(param)
             var = 1
             a_func(var)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1598,15 +1470,13 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_parameters_renaming_for_multiple_params_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2: int):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(var1, var2)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1618,24 +1488,20 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_parameters_renaming_for_passed_constants_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param: int):
                 print(param)
             a_func(1)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1)\n", self.mod.read())
 
     def test_parameters_renaming_for_passed_statements_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param: int):
                 print(param)
             a_func((1 + 2) / 3)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1647,15 +1513,13 @@ class InlineTest(unittest.TestCase):
     def test_simple_parameters_renaming_for_multiple_params_using_keywords_with_type_hints(
         self,
     ):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2: int):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(param2=var1, param1=var2)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1669,15 +1533,13 @@ class InlineTest(unittest.TestCase):
     def test_simple_params_renaming_for_multi_params_using_mixed_keywords_with_type_hints(
         self,
     ):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1, param2: int):
                 p = param1 + param2
             var1 = 1
             var2 = 1
             a_func(var2, param2=var1)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual(
             dedent("""\
@@ -1689,24 +1551,20 @@ class InlineTest(unittest.TestCase):
         )
 
     def test_simple_putting_in_default_arguments_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param: Optional[int] = None):
                 print(param)
             a_func()
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(None)\n", self.mod.read())
 
     def test_overriding_default_arguments_with_type_hints(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def a_func(param1=1, param2: int = 2):
                 print(param1, param2)
             a_func(param2=3)
-        """)
-        )
+        """))
         self._inline2(self.mod, self.mod.read().index("a_func") + 1)
         self.assertEqual("print(1, 3)\n", self.mod.read())
 
@@ -1810,7 +1668,7 @@ class InlineTest(unittest.TestCase):
             myvar = a_func(1, arg2=2)
         """)
         with self.assertRaises(rope.base.exceptions.RefactoringError):
-            self._inline(code, code.index("a_func") + 1)
+            refactored = self._inline(code, code.index("a_func") + 1)
 
     def test_function_call_with_kwonlyargs2(self):
         code = dedent("""\
@@ -1819,4 +1677,4 @@ class InlineTest(unittest.TestCase):
             myvar = a_func(1)
         """)
         with self.assertRaises(rope.base.exceptions.RefactoringError):
-            self._inline(code, code.index("a_func") + 1)
+            refactored = self._inline(code, code.index("a_func") + 1)

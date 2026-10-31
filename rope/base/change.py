@@ -2,6 +2,7 @@ import datetime
 import difflib
 import os
 import time
+from typing import Union
 
 import rope.base.fscommands
 from rope.base import exceptions, taskhandle, utils
@@ -88,7 +89,8 @@ class ChangeSet(Change):
     def get_description(self):
         result = [str(self) + ":\n\n\n"]
         for change in self.changes:
-            result.extend((change.get_description(), "\n"))
+            result.append(change.get_description())
+            result.append("\n")
         return "".join(result)
 
     def __str__(self):
@@ -157,7 +159,7 @@ class ChangeContents(Change):
         self._operations.write_file(self.resource, self.old_contents)
 
     def __str__(self):
-        return f"Change <{self.resource.path}>"
+        return "Change <%s>" % self.resource.path
 
     def get_description(self):
         new = self.new_contents
@@ -208,10 +210,13 @@ class MoveResource(Change):
         self._operations.move(self.new_resource, self.resource)
 
     def __str__(self):
-        return f"Move <{self.resource.path}>"
+        return "Move <%s>" % self.resource.path
 
     def get_description(self):
-        return f"rename from {self.resource.path}\nrename to {self.new_resource.path}"
+        return "rename from {}\nrename to {}".format(
+            self.resource.path,
+            self.new_resource.path,
+        )
 
     def get_changed_resources(self):
         return [self.resource, self.new_resource]
@@ -237,10 +242,10 @@ class CreateResource(Change):
         self._operations.remove(self.resource)
 
     def __str__(self):
-        return f"Create Resource <{self.resource.path}>"
+        return "Create Resource <%s>" % (self.resource.path)
 
     def get_description(self):
-        return f"new file {self.resource.path}"
+        return "new file %s" % (self.resource.path)
 
     def get_changed_resources(self):
         return [self.resource]
@@ -295,7 +300,7 @@ class RemoveResource(Change):
         raise NotImplementedError("Undoing `RemoveResource` is not implemented yet.")
 
     def __str__(self):
-        return f"Remove <{self.resource.path}>"
+        return "Remove <%s>" % (self.resource.path)
 
     def get_changed_resources(self):
         return [self.resource]
@@ -326,7 +331,7 @@ class _ResourceOperations:
             return self.direct_commands
         return self.fscommands
 
-    def write_file(self, resource, contents: str | FileContent):
+    def write_file(self, resource, contents: Union[str, FileContent]):
         data: FileContent
         if not isinstance(contents, bytes):
             data = rope.base.fscommands.unicode_to_file_data(
@@ -363,11 +368,11 @@ class _ResourceOperations:
     def _create_resource(self, file_name, kind="file"):
         resource_path = self.project._get_resource_path(file_name)
         if os.path.exists(resource_path):
-            raise exceptions.RopeError(f"Resource <{resource_path}> already exists")
+            raise exceptions.RopeError("Resource <%s> already exists" % resource_path)
         resource = self.project.get_file(file_name)
         if not resource.parent.exists():
             raise exceptions.ResourceNotFoundError(
-                f"Parent folder of <{resource.path}> does not exist"
+                "Parent folder of <%s> does not exist" % resource.path
             )
         fscommands = self._get_fscommands(resource)
         try:

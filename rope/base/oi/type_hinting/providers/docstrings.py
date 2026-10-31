@@ -145,8 +145,8 @@ class DocstringParamParser(IParamParser):
 
 class DocstringReturnParser(IReturnParser):
     DOCSTRING_RETURN_PATTERNS = [
-        re.compile(r"\s*:rtype:\s*([^\n]+)", re.MULTILINE),  # Sphinx
-        re.compile(r"\s*@rtype:\s*([^\n]+)", re.MULTILINE),  # Epydoc
+        re.compile(r"\s*:rtype:\s*([^\n]+)", re.M),  # Sphinx
+        re.compile(r"\s*@rtype:\s*([^\n]+)", re.M),  # Epydoc
     ]
 
     def __init__(self):

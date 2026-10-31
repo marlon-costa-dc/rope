@@ -171,11 +171,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_defined_names()),
+            list(sorted(scope.get_defined_names())),
             ["a_var"],
         )
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
 
@@ -184,7 +184,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
 
@@ -193,7 +193,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
 
@@ -202,7 +202,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
 
@@ -211,7 +211,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
 
@@ -221,7 +221,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_defined_names()),
+            list(sorted(scope.get_defined_names())),
             ["a_var", "values"],
         )
 
@@ -254,11 +254,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["a_var", "b_var", "f_var"],
         )
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names())),
             ["i_var", "j_var"],
         )
 
@@ -273,11 +273,11 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = libutils.get_string_scope(self.project, code)
 
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_defined_names())),
             ["b_var", "c_var"],
         )
         self.assertEqual(
-            sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names()),
+            list(sorted(scope.get_scopes()[0].get_scopes()[0].get_defined_names())),
             ["e_var"],
         )
 

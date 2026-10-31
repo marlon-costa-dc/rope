@@ -1,4 +1,3 @@
-
 import rope.base.builtins
 import rope.base.codeanalyze
 import rope.base.evaluate
@@ -72,8 +71,8 @@ def _base_is_external(cls, base_node):
         return False
     project = resource.project
     if not hasattr(project, "address"):
-        # NoProject: recurso fora de qualquer projeto aberto — biblioteca
-        # instalada, definicionalmente externa à árvore governada.
+        # NoProject resources live outside any open project, such as
+        # installed libraries, so they are external by definition.
         return True
     return not str(resource.real_path).startswith(str(project.address))
 
@@ -275,9 +274,9 @@ class PyClass(pyobjects.PyClass):
                 isinstance(base, pyobjects.UnresolvedBase) and base.pyobject is None
                 for base in bases
             ):
-                # Base que ainda não pôde ser avaliada é resposta transitória
-                # (inferência incompleta no momento da pergunta); publicar
-                # cache envenenaria o MRO com um UnresolvedBase permanente.
+                # A base that cannot be evaluated yet is a transient answer
+                # (inference is incomplete at that point); caching it would leave
+                # a permanent UnresolvedBase in the MRO.
                 return bases
             self._bases.set(bases)
         return self._bases.get()
@@ -434,11 +433,11 @@ class PyClass(pyobjects.PyClass):
                 except Exception as diagnostic_error:
                     note = f"base evaluation context failed: {diagnostic_error!r}"
                 error.__dict__.setdefault("__notes__", []).append(note)
-                # Base EXTERNA ao projeto cuja avaliação a análise não
-                # reproduz (ex.: alias genérico de biblioteca instalada):
-                # vira UnresolvedBase — os consumidores já tratam bases
-                # não resolvidas — em vez de derrubar a indexação inteira.
-                # Classe autoral continua propagando: defeito real.
+                # A base outside the project that analysis cannot evaluate (for
+                # instance a generic alias from an installed library) becomes an
+                # UnresolvedBase, which callers already handle, instead of failing
+                # the whole indexing. Classes of the project still propagate the
+                # error, since it is a real defect there.
                 if _base_is_external(self, base_node):
                     bindings.append(None)
                     continue
@@ -518,12 +517,11 @@ class PyClass(pyobjects.PyClass):
                             else None
                         )
                         if isinstance(origin, pyobjects.AbstractClass):
-                            # PEP 560: uma base parametrizada contribui com a
-                            # ancestralidade da classe de origem. Quando o
-                            # __class_getitem__ do dono é opaco (ex.: pydantic
-                            # constrói submodelos dinâmicos), o valor não é
-                            # classe nem expõe __mro_entries__; a origem é o
-                            # limite inferior correto para o MRO.
+                            # PEP 560: a parameterized base contributes the ancestry of its
+                            # origin class. When the owner's __class_getitem__ is opaque (for
+                            # instance pydantic builds dynamic submodels), the value is neither
+                            # a class nor exposes __mro_entries__, and the origin is the correct
+                            # lower bound for the MRO.
                             result.append(origin)
                             continue
                     result.append(pyobjects.UnresolvedBase(base_node, value))
@@ -579,10 +577,10 @@ class PyModule(pyobjects.PyModule):
         except SyntaxError as e:
             raise exceptions.ModuleSyntaxError(filename, e.lineno, e.msg)
         except UnicodeDecodeError as e:
-            raise exceptions.ModuleSyntaxError(filename, 1, f"{e.reason}")
+            raise exceptions.ModuleSyntaxError(filename, 1, "%s" % (e.reason))
         return source_code, ast_node
 
-    @utils.prevent_recursion(dict)
+    @utils.prevent_recursion(lambda: {})
     def _create_concluded_attributes(self):
         result = {}
         for star_import in self.star_imports:

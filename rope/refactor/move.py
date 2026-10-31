@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import keyword
 import typing
+from typing import List, Optional, Union
 
 from rope.base import (
     ast,
@@ -45,7 +46,9 @@ def create_move(project, resource, offset=None):
     pyname = evaluate.eval_location(this_pymodule, offset)
     if pyname is not None:
         pyobject = pyname.get_object()
-        if isinstance(pyobject, (pyobjects.PyModule, pyobjects.PyPackage)):
+        if isinstance(pyobject, pyobjects.PyModule) or isinstance(
+            pyobject, pyobjects.PyPackage
+        ):
             return MoveModule(project, pyobject.get_resource())
         if isinstance(pyobject, pyobjects.PyFunction) and isinstance(
             pyobject.parent, pyobjects.PyClass
@@ -727,8 +730,8 @@ class MoveMethod:
     def get_changes(
         self,
         dest_attr: str,
-        new_name: str | None = None,
-        resources: list[resources.File] | None = None,
+        new_name: Optional[str] = None,
+        resources: Optional[List[resources.File]] = None,
         task_handle=taskhandle.DEFAULT_TASK_HANDLE,  # FIXME: this is unused
     ):
         """Return the changes needed for this refactoring
@@ -789,7 +792,11 @@ class MoveMethod:
     def _get_changes_made_by_old_class(self, dest_attr, new_name):
         pymodule = self.pyfunction.get_module()
         indents = self._get_scope_indents(self.pyfunction)
-        body = f"return self.{dest_attr}.{new_name}({self._get_passed_arguments_string()})\n"
+        body = "return self.{}.{}({})\n".format(
+            dest_attr,
+            new_name,
+            self._get_passed_arguments_string(),
+        )
         region = sourceutils.get_body_region(self.pyfunction)
         return (
             pymodule.get_resource(),
@@ -808,12 +815,12 @@ class MoveMethod:
         old_pyclass = self.pyfunction.parent
         if dest_attr not in old_pyclass:
             raise exceptions.RefactoringError(
-                f"Destination attribute <{dest_attr}> not found"
+                "Destination attribute <%s> not found" % dest_attr
             )
         pyclass = old_pyclass[dest_attr].get_object().get_type()
         if not isinstance(pyclass, pyobjects.PyClass):
             raise exceptions.RefactoringError(
-                f"Unknown class type for attribute <{dest_attr}>"
+                "Unknown class type for attribute <%s>" % dest_attr
             )
         pymodule = pyclass.get_module()
         resource = pyclass.get_module().get_resource()
@@ -854,7 +861,7 @@ class MoveMethod:
         return self.pyfunction.get_param_names()[0]
 
     def _get_new_header(self, name):
-        header = f"def {name}(self"
+        header = "def %s(self" % name
         if self._is_host_used():
             header += ", host"
         definition_info = functionutils.DefinitionInfo.read(self.pyfunction)
@@ -953,8 +960,8 @@ class MoveGlobal:
 
     def get_changes(
         self,
-        dest: str | resources.Resource | None,
-        resources: list[resources.File] | None = None,
+        dest: Optional[Union[str, resources.Resource]],
+        resources: Optional[List[resources.File]] = None,
         task_handle=taskhandle.DEFAULT_TASK_HANDLE,
     ):
         """Return the changes needed for this refactoring
@@ -992,7 +999,7 @@ class MoveGlobal:
         return self._calculate_changes(dest, resources, task_handle)
 
     def _calculate_changes(self, dest, resources, task_handle):
-        changes = ChangeSet(f"Moving global <{self.old_name}>")
+        changes = ChangeSet("Moving global <%s>" % self.old_name)
         job_set = task_handle.create_jobset("Collecting Changes", len(resources))
         for file_ in resources:
             job_set.started_job(file_.path)
@@ -1003,7 +1010,7 @@ class MoveGlobal:
             elif self.tools.occurs_in_module(resource=file_):
                 pymodule = self.project.get_pymodule(file_)
                 # Changing occurrences
-                placeholder = f"__rope_renaming_{self.old_name}_"
+                placeholder = "__rope_renaming_%s_" % self.old_name
                 source = self.tools.rename_in_module(placeholder, resource=file_)
                 should_import = source is not None
                 # Removing out of date imports
@@ -1025,7 +1032,7 @@ class MoveGlobal:
         return changes
 
     def _source_module_changes(self, dest):
-        placeholder = f"__rope_moving_{self.old_name}_"
+        placeholder = "__rope_moving_%s_" % self.old_name
         handle = _ChangeMoveOccurrencesHandle(placeholder)
         occurrence_finder = occurrences.create_finder(
             self.project, self.old_name, self.old_pyname
@@ -1054,7 +1061,7 @@ class MoveGlobal:
         pymodule = self.tools.new_pymodule(pymodule, source)
 
         moving, imports = self._get_moving_element_with_imports()
-        pymodule, _has_changed = self._add_imports2(pymodule, imports)
+        pymodule, has_changed = self._add_imports2(pymodule, imports)
 
         module_with_imports = self.import_tools.module_imports(pymodule)
         source = pymodule.source_code
@@ -1163,7 +1170,7 @@ class MoveModule:
     def get_changes(
         self,
         dest: resources.Resource,
-        resources: list[resources.File] | None = None,
+        resources: Optional[List[resources.File]] = None,
         task_handle=taskhandle.DEFAULT_TASK_HANDLE,
     ):
         if resources is None:
@@ -1175,7 +1182,7 @@ class MoveModule:
         return self._calculate_changes(dest, resources, task_handle)
 
     def _calculate_changes(self, dest, resources, task_handle):
-        changes = ChangeSet(f"Moving module <{self.old_name}>")
+        changes = ChangeSet("Moving module <%s>" % self.old_name)
         job_set = task_handle.create_jobset("Collecting changes", len(resources))
         for module in resources:
             job_set.started_job(module.path)
@@ -1512,7 +1519,7 @@ class ModuleSkipRenamer:
                 self.skip_start, self.skip_end, self.replacement
             )
         for occurrence in self.occurrence_finder.find_occurrences(self.resource):
-            start, _end = occurrence.get_primary_range()
+            start, end = occurrence.get_primary_range()
             if self.skip_start <= start < self.skip_end:
                 self.handle.occurred_inside_skip(change_collector, occurrence)
             else:

@@ -80,7 +80,7 @@ class _PatchingASTWalker:
             return method(node)
         # ???: Unknown node; what should we do here?
         warnings.warn(
-            f"Unknown node type <{node.__class__.__name__}>; please report!",
+            "Unknown node type <%s>; please report!" % node.__class__.__name__,
             RuntimeWarning,
         )
         node.region = (self.source.offset, self.source.offset)
@@ -91,7 +91,8 @@ class _PatchingASTWalker:
         if hasattr(node, "region"):
             # ???: The same node was seen twice; what should we do?
             warnings.warn(
-                f"Node <{node.__class__.__name__}> has been already patched; please report!",
+                "Node <%s> has been already patched; please report!"
+                % node.__class__.__name__,
                 RuntimeWarning,
             )
             return
@@ -173,7 +174,7 @@ class _PatchingASTWalker:
             if self.children:
                 children.appendleft(self.source[start + 1 : old_start])
                 children.appendleft("(")
-            token_start, _token_end = self.source.consume(")")
+            token_start, token_end = self.source.consume(")")
             if self.children:
                 children.append(self.source[old_offset:token_start])
                 children.append(")")
@@ -271,7 +272,8 @@ class _PatchingASTWalker:
     def _Assert(self, node):
         children = ["assert", node.test]
         if node.msg:
-            children.extend((",", node.msg))
+            children.append(",")
+            children.append(node.msg)
         self._handle(node, children)
 
     def _Assign(self, node):
@@ -285,7 +287,8 @@ class _PatchingASTWalker:
     def _AnnAssign(self, node):
         children = [node.target, ":", node.annotation]
         if node.value is not None:
-            children.extend(("=", node.value))
+            children.append("=")
+            children.append(node.value)
         self._handle(node, children)
 
     def _BinOp(self, node):
@@ -408,7 +411,8 @@ class _PatchingASTWalker:
             )
         self.source.offset = field_start
         children = []
-        children.extend(("{", node.value))
+        children.append("{")
+        children.append(node.value)
         if node.format_spec:
             children.append(":")
             for val in node.format_spec.values:
@@ -583,7 +587,7 @@ class _PatchingASTWalker:
     def _is_elif(self, node):
         if not isinstance(node, ast.If):
             return False
-        start, _end = self.ast_adapter[node]
+        start, end = self.ast_adapter[node]
         return "elif" in self.source[start : start + 4]
 
     def _IfExp(self, node):
@@ -651,7 +655,8 @@ class _PatchingASTWalker:
         if node.exc:
             children.append(node.exc)
         if node.cause:
-            children.extend(("from", node.cause))
+            children.append("from")
+            children.append(node.cause)
         self._handle(node, children)
 
     def _Return(self, node):
@@ -671,7 +676,8 @@ class _PatchingASTWalker:
         if node.upper:
             children.append(node.upper)
         if node.step:
-            children.extend((":", node.step))
+            children.append(":")
+            children.append(node.step)
         self._handle(node, children)
 
     def _TryFinally(self, node):
@@ -724,7 +730,8 @@ class _PatchingASTWalker:
         if node.type:
             children.append(node.type)
         if node.name:
-            children.extend(("as", node.name))
+            children.append("as")
+            children.append(node.name)
         children.append(":")
         children.extend(node.body)
 

@@ -25,13 +25,14 @@ class AbstractHintingTest(unittest.TestCase):
             if proposal.name == name and proposal.scope == scope:
                 return
         self.fail(
-            f"completion <{name}> in scope {scope!r} not proposed, available names: {[(i.name, i.scope) for i in result]!r}"
+            "completion <%s> in scope %r not proposed, available names: %r"
+            % (name, scope, [(i.name, i.scope) for i in result])
         )
 
     def assert_completion_not_in_result(self, name, scope, result):
         for proposal in result:
             if proposal.name == name and proposal.scope == scope:
-                self.fail(f"completion <{name}> was proposed")
+                self.fail("completion <%s> was proposed" % name)
 
     def run(self, result=None):
         if self.__class__.__name__.startswith("Abstract"):

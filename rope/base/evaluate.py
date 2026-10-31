@@ -2,6 +2,7 @@ import operator
 import sys
 import typing
 from operator import itemgetter
+from typing import Optional, Tuple
 
 import rope.base.builtins
 import rope.base.pynames
@@ -247,7 +248,7 @@ def eval_str(holding_scope, name):
 def eval_str2(holding_scope, name):
     try:
         # parenthesizing for handling cases like 'a_var.\nattr'
-        node = ast.parse(f"({name})")
+        node = ast.parse("(%s)" % name)
     except SyntaxError:
         raise BadIdentifierError("Not a resolvable python identifier selected.")
     return eval_node2(holding_scope, node)
@@ -267,11 +268,13 @@ class ScopeNameFinder:
             and self.worder.is_a_class_or_function_name_in_header(offset)
         ):
             return True
-        return bool(
+        if (
             lineno != holding_scope.get_start()
             and holding_scope.get_kind() == "Class"
             and self.worder.is_name_assigned_in_class_body(offset)
-        )
+        ):
+            return True
+        return False
 
     def _is_function_name_in_function_header(self, scope, offset, lineno):
         return (
@@ -286,7 +289,7 @@ class ScopeNameFinder:
     def get_primary_and_pyname_at(
         self,
         offset: int,
-    ) -> tuple[rope.base.pynames.PyName | None, rope.base.pynames.PyName | None]:
+    ) -> Tuple[Optional[rope.base.pynames.PyName], Optional[rope.base.pynames.PyName]]:
         lineno = self.lines.get_line_number(offset)
         index = self.module_scope.pyobject.get_source_binding_index()
         context = index.context_at(offset)

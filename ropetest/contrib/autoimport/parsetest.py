@@ -9,9 +9,7 @@ def test_typing_names(typing_path):
     assert PartialName("Text", NameType.Variable) in names
 
 
-def test_invalid_source_file_is_skipped_without_writing_to_stdout(
-    tmp_path, caplog, capsys
-):
+def test_invalid_source_file_is_skipped_without_writing_to_stdout(tmp_path, caplog, capsys):
     source = tmp_path / "invalid.py"
     source.write_text("€ = 2\n", encoding="utf-8")
 

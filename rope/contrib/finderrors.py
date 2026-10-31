@@ -89,15 +89,12 @@ class _BadAccessFinder(ast.RopeNodeVisitor):
         }:
             return False
         location = pyname.get_definition_location()
-        if (
-            location is not None
-            and location[1] is not None
-            and (
+        if location is not None and location[1] is not None:
+            if (
                 location[0] == self.pymodule
                 and lineno <= location[1] <= scope.get_end()
-            )
-        ):
-            return True
+            ):
+                return True
 
 
 class Error:

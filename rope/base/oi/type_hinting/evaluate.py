@@ -31,10 +31,10 @@ class SymbolBase:
         self.third = None  # used by tree nodes
 
     def nud(self, parser):
-        raise SyntaxError(f"Syntax error ({self.name!r}).")
+        raise SyntaxError("Syntax error (%r)." % self.name)
 
     def led(self, left, parser):
-        raise SyntaxError(f"Unknown operator ({self.name!r}).")
+        raise SyntaxError("Unknown operator (%r)." % self.name)
 
     def evaluate(self, pyobject):
         raise NotImplementedError(self.name, self)
@@ -152,7 +152,7 @@ class Lexer:
             | ([a-zA-Z](?:\w|\.)*)  # name
         )
         """,
-        re.UNICODE | re.DOTALL | re.VERBOSE,
+        re.U | re.S | re.X,
     )
 
     def __init__(self, symbol_table):
@@ -169,7 +169,9 @@ class Lexer:
                 s.value = value
             else:
                 raise SyntaxError(
-                    f"Unknown operator ({value}). Possible operators are {list(self.symbol_table)!r}"
+                    "Unknown operator ({}). Possible operators are {!r}".format(
+                        value, list(self.symbol_table)
+                    )
                 )
 
             yield s
@@ -265,7 +267,7 @@ def led(self, left, parser):
     self.first = left
     self.second = []
     if parser.token.name != "]":
-        while True:
+        while 1:
             if parser.token.name == "]":
                 break
             self.second.append(parser.expression())
@@ -288,7 +290,7 @@ def evaluate(self, pyobject):
 def nud(self, parser):
     self.second = []
     if parser.token.name != ")":
-        while True:
+        while 1:
             self.second.append(parser.expression())
             if parser.token.name != ",":
                 break
@@ -305,7 +307,7 @@ def led(self, left, parser):
     self.first = left
     self.second = []
     if parser.token.name != ")":
-        while True:
+        while 1:
             self.second.append(parser.expression())
             if parser.token.name != ",":
                 break

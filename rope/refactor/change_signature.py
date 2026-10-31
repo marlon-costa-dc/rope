@@ -53,7 +53,7 @@ class ChangeSignature:
     ):
         if resources is None:
             resources = self.project.get_python_files()
-        changes = ChangeSet(f"Changing signature of <{self.name}>")
+        changes = ChangeSet("Changing signature of <%s>" % self.name)
         job_set = handle.create_jobset("Collecting Changes", len(resources))
         finder = occurrences.create_finder(
             self.project,
@@ -259,7 +259,7 @@ class ArgumentAdder(_ArgumentChanger):
         for pair in definition_info.args_with_defaults:
             if pair[0] == self.name:
                 raise rope.base.exceptions.RefactoringError(
-                    f"Adding duplicate parameter: <{self.name}>."
+                    "Adding duplicate parameter: <%s>." % self.name
                 )
         definition_info.args_with_defaults.insert(self.index, (self.name, self.default))
 
@@ -346,7 +346,7 @@ class _ChangeCallsInModule:
                 if isinstance(pyfunction, pyobjects.PyFunction):
                     functionutils._check_signature_parameters(pyfunction)
             start, end = occurrence.get_primary_range()
-            _begin_parens, end_parens = word_finder.get_word_parens_range(end - 1)
+            begin_parens, end_parens = word_finder.get_word_parens_range(end - 1)
             if occurrence.is_called():
                 changed_call = self.call_changer.change_call(
                     primary, pyname, self.source[start:end_parens]

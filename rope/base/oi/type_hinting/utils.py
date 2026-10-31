@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import TYPE_CHECKING, Optional, Union
 
 import rope.base.utils as base_utils
 from rope.base import evaluate
@@ -74,8 +75,8 @@ def _source_ancestors(pyclass):
 
 def resolve_type(
     type_name: str,
-    pyobject: PyDefinedObject | PyObject,
-) -> PyDefinedObject | PyObject | None:
+    pyobject: Union[PyDefinedObject, PyObject],
+) -> Optional[Union[PyDefinedObject, PyObject]]:
     """
     Find proper type object from its name.
     """
@@ -142,7 +143,10 @@ class ParametrizeType:
         return pyobject
 
     def _get_type_factory(self, pyobject):
-        type_str = f"{pyobject.get_module().get_name()}.{pyobject.get_name()}"
+        type_str = "{}.{}".format(
+            pyobject.get_module().get_name(),
+            pyobject.get_name(),
+        )
         if type_str in self._supported_mapping:
             return base_utils.resolve(self._supported_mapping[type_str])
 

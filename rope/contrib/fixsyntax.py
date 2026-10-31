@@ -134,7 +134,11 @@ class _Commenter:
                 last_indents = indents
                 block_end = self._find_matching_deindent(block_start)
                 line = self.lines[block_end].strip()
-                if not (line.startswith(("finally:", "except ", "except:"))):
+                if not (
+                    line.startswith("finally:")
+                    or line.startswith("except ")
+                    or line.startswith("except:")
+                ):
                     self._insert(block_end, " " * indents + "finally:")
                     self._insert(block_end + 1, " " * indents + "    pass")
 
@@ -143,7 +147,7 @@ class _Commenter:
         current_line = line_number + 1
         while current_line < len(self.lines):
             line = self.lines[current_line]
-            if not line.strip().startswith("#") and line.strip() != "":
+            if not line.strip().startswith("#") and not line.strip() == "":
                 # HACK: We should have used logical lines here
                 if _get_line_indents(self.lines[current_line]) <= indents:
                     return current_line

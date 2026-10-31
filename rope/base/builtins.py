@@ -228,8 +228,8 @@ def _generic_alias(context, project, typing_alias):
     origin = context.get_argument("cls")
     key = context.get_argument("key")
     if origin is None or key is None:
-        # Leitura de um subscrito cuja origem ou chave não pôde ser
-        # inferida: sem alias, sem exceção — o consumidor trata ausência.
+        # A subscript whose origin or key could not be inferred yields no
+        # alias and raises nothing; callers handle the absence.
         return None
     arguments_ = (
         key.get_type().get_holding_objects()
@@ -362,9 +362,9 @@ class GenericAlias(pyobjects.PyObject):
             protocol = self.project.get_module("typing")["Protocol"].get_object()
             if any(base is protocol for base in original):
                 return get_tuple()
-            # A igualdade do alias é origem+argumentos: uma instância
-            # reconstruída da mesma assinatura não se localiza por
-            # identidade, e a ausência não pode vazar StopIteration.
+            # Alias equality is origin plus arguments: an instance rebuilt
+            # from the same signature is not found by identity, and a
+            # missing alias must not leak StopIteration.
             position = next(
                 (index for index, base in enumerate(original) if base == self),
                 None,
@@ -467,6 +467,11 @@ class _CallContext:
         self.args = args
 
     def _get_scope_and_pyname(self, pyname):
+        # A value overlay keeps the source name its per-name data belongs to.
+        from rope.base.sourcebindings import SourceValueName
+
+        if isinstance(pyname, SourceValueName):
+            pyname = pyname.source_pyname
         if pyname is not None and isinstance(pyname, pynames.AssignedName):
             pymodule, lineno = pyname.get_definition_location()
             if pymodule is None:
@@ -516,7 +521,7 @@ class _CallContext:
 
     def save_per_name(self, value):
         if self.args is None:
-            return
+            return None
         pyname = self.args.get_instance_pyname()
         scope, name = self._get_scope_and_pyname(pyname)
         if name is not None:

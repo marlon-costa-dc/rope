@@ -61,6 +61,21 @@ def _handle_first_parameter(pyobject, parameters):
         parameters[0] = pyobject.parent
 
 
+def relevant_branch_context(pyname, branch_context):
+    """Return the part of `branch_context` that selects `pyname` assignments
+
+    Branches that contain none of the assignments of `pyname` cannot change
+    its value and are dropped.
+
+    """
+    relevant = set()
+    for assignment in pyname.assignments:
+        assignment_context = _assignment_branch_context(assignment, pyname.module)
+        if assignment_context is not None:
+            relevant.update(branch for branch, _ in assignment_context)
+    return tuple((branch, arm) for branch, arm in branch_context if branch in relevant)
+
+
 @_ignore_inferred
 def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
     read_point = None
@@ -74,12 +89,7 @@ def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
         ):
             return pyobjects.get_unknown()
         read_point = source_index._span(read_node)[0]
-    relevant = set()
-    for assignment in pyname.assignments:
-        assignment_context = _assignment_branch_context(assignment, pyname.module)
-        if assignment_context is not None:
-            relevant.update(branch for branch, _ in assignment_context)
-    context = {branch: arm for branch, arm in branch_context if branch in relevant}
+    context = dict(relevant_branch_context(pyname, branch_context))
     context.update(pyname._inference_assignment_context)
     limit = pyname._inference_assignment_limit
     if limit is None:
@@ -204,7 +214,10 @@ def _assignment_branch_context(assignment, pymodule):
         return context.branch_context
     if assignment.branch_context is not None:
         return assignment.branch_context
-    return None
+    # Assignments outside the source binding index (for instance those of an
+    # independently parsed expression) carry no branch information; like
+    # upstream, they are inferred as unconditional assignments.
+    return ()
 
 
 def get_passed_objects(pyfunction, parameter_index):

@@ -2509,9 +2509,8 @@ class ExtractMethodTest(unittest.TestCase):
                 print(i)
         """)
         extract_target = "i := a == 5"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "new_func")
         expected = dedent("""\
@@ -2535,9 +2534,8 @@ class ExtractMethodTest(unittest.TestCase):
                 print(i)
         """)
         extract_target = "i := a == (c := 5)"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         with self.assertRaisesRegex(
             rope.base.exceptions.RefactoringError,
@@ -2556,9 +2554,8 @@ class ExtractMethodTest(unittest.TestCase):
                 print(i)
         """)
         extract_target = "a == (c := 5)"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         with self.assertRaisesRegex(
             rope.base.exceptions.RefactoringError,
@@ -2724,9 +2721,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(
             code, start, end, "second_method", kind="staticmethod"
@@ -2751,9 +2747,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = self.a_var + 1
         """)
         extract_target = "self.a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(
             code, start, end, "second_method", kind="staticmethod"
@@ -2777,9 +2772,8 @@ class ExtractMethodTest(unittest.TestCase):
                 b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         with self.assertRaisesRegex(
             rope.base.exceptions.RefactoringError,
@@ -2817,9 +2811,8 @@ class ExtractMethodTest(unittest.TestCase):
                 b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         with self.assertRaisesRegex(
             rope.base.exceptions.RefactoringError,
@@ -2837,9 +2830,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = self.a_var + 1
         """)
         extract_target = "self.a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(
             code, start, end, "second_method", kind="classmethod"
@@ -2864,9 +2856,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(
             code, start, end, "second_method", kind="classmethod"
@@ -2891,9 +2882,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "@second_method")
         expected = dedent("""\
@@ -2916,9 +2906,8 @@ class ExtractMethodTest(unittest.TestCase):
                     b_var = a_var + 1
         """)
         extract_target = "a_var + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "$second_method")
         expected = dedent("""\
@@ -2948,9 +2937,8 @@ class ExtractMethodTest(unittest.TestCase):
             """)
 
         extract_target = "someargs + 1"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "second_method")
         expected = dedent("""\
@@ -2978,9 +2966,8 @@ class ExtractMethodTest(unittest.TestCase):
             f()
         """)
         extract_target = "    a = sum([x for x in y])\n"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_a")
         expected = dedent("""\
@@ -3011,9 +2998,8 @@ class ExtractMethodTest(unittest.TestCase):
             f()
         """)
         extract_target = "    a = sum(x for x in y)\n"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_a")
         expected = dedent("""\
@@ -3039,9 +3025,8 @@ class ExtractMethodTest(unittest.TestCase):
                 a = sum(x for x in y)
         """)
         extract_target = "x for x in y"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_a")
         expected = dedent("""\
@@ -3066,9 +3051,8 @@ class ExtractMethodTest(unittest.TestCase):
             f()
         """)
         extract_target = "    a = sum({x for x in y})\n"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_a")
         expected = dedent("""\
@@ -3099,9 +3083,8 @@ class ExtractMethodTest(unittest.TestCase):
             f()
         """)
         extract_target = "    a = sum({x: x for x in y})\n"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_a")
         expected = dedent("""\
@@ -3183,9 +3166,8 @@ class ExtractMethodTest(unittest.TestCase):
             print(g)
         """)
         extract_target = "g = 2"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_g")
         expected = dedent("""\
@@ -3281,9 +3263,8 @@ class ExtractMethodTest(unittest.TestCase):
             print(g)
         """)
         extract_target = "g := 4"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_g")
         expected = dedent("""\
@@ -3319,9 +3300,8 @@ class ExtractMethodTest(unittest.TestCase):
             print(g)
         """)
         extract_target = "g := 4"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_g")
         expected = dedent("""\
@@ -3351,9 +3331,8 @@ class ExtractMethodTest(unittest.TestCase):
                     a = 3
         """)
         extract_target = "a = 3"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "extracted")
         expected = dedent("""\
@@ -3450,9 +3429,8 @@ class ExtractMethodTest(unittest.TestCase):
                 print(g)
         """)
         extract_target = "g := 4"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_g")
         expected = dedent("""\
@@ -3490,9 +3468,8 @@ class ExtractMethodTest(unittest.TestCase):
                 print(g)
         """)
         extract_target = "g := 4"
-        start, end = (
-            code.index(extract_target),
-            code.index(extract_target) + len(extract_target),
+        start, end = code.index(extract_target), code.index(extract_target) + len(
+            extract_target
         )
         refactored = self.do_extract_method(code, start, end, "_g")
         expected = dedent("""\

@@ -364,12 +364,10 @@ class GenerateTest(unittest.TestCase):
         )
 
     def test_generating_calls_in_other_modules(self):
-        self.mod2.write(
-            dedent("""\
+        self.mod2.write(dedent("""\
             class C(object):
                 pass
-        """)
-        )
+        """))
         code = dedent("""\
             import mod2
             c = mod2.C()

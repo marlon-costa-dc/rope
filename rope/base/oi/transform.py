@@ -22,9 +22,15 @@ class PyObjectToTextual:
         """Transform a `PyObject` to textual form"""
         if pyobject is None:
             return ("none",)
-        object_type = type(pyobject)
+        # Subclasses without their own transformation, like literal
+        # values, are stored the way their nearest base class is.
+        for object_type in type(pyobject).__mro__:
+            method = getattr(self, object_type.__name__ + "_to_textual", None)
+            if method is not None:
+                break
+        else:
+            return ("unknown",)
         try:
-            method = getattr(self, object_type.__name__ + "_to_textual")
             return method(pyobject)
         except AttributeError:
             return ("unknown",)
@@ -136,7 +142,7 @@ class TextualToPyObject:
             return None
 
     def builtin_to_pyobject(self, textual):
-        method = getattr(self, f"builtin_{textual[1]}_to_pyobject", None)
+        method = getattr(self, "builtin_%s_to_pyobject" % textual[1], None)
         if method is not None:
             return method(textual)
 

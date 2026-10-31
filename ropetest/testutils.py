@@ -16,7 +16,7 @@ RUN_TMP_DIR = tempfile.mkdtemp(prefix="ropetest-run-")
 
 def sample_project(foldername=None, **kwds):
     root = Path(tempfile.mkdtemp(prefix="project-", dir=RUN_TMP_DIR))
-    root /= foldername or "sample_project"
+    root /= foldername if foldername else "sample_project"
     logging.debug("Using %s as root of the project.", root)
     # Using these prefs for faster tests
     prefs = {

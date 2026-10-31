@@ -71,7 +71,7 @@ def starting_offset(source_code, offset):
 
     """
     word_finder = worder.Worder(source_code, True)
-    _expression, _starting, starting_offset = word_finder.get_splitted_primary_before(
+    expression, starting, starting_offset = word_finder.get_splitted_primary_before(
         offset
     )
     return starting_offset
@@ -271,11 +271,15 @@ class CompletionProposal:
                 return "function"
             elif isinstance(pyobject, builtins.BuiltinClass):
                 return "class"
-            elif isinstance(pyobject, (builtins.BuiltinObject, builtins.BuiltinName)):
+            elif isinstance(pyobject, builtins.BuiltinObject) or isinstance(
+                pyobject, builtins.BuiltinName
+            ):
                 return "instance"
         elif isinstance(pyname, pynames.ImportedModule):
             return "module"
-        elif isinstance(pyname, (pynames.ImportedName, pynames.DefinedName)):
+        elif isinstance(pyname, pynames.ImportedName) or isinstance(
+            pyname, pynames.DefinedName
+        ):
             pyobject = pyname.get_object()
             if isinstance(pyobject, pyobjects.AbstractFunction):
                 return "function"
@@ -286,7 +290,9 @@ class CompletionProposal:
     def _get_scope(self, scope):
         if isinstance(self.pyname, builtins.BuiltinName):
             return "builtin"
-        if isinstance(self.pyname, (pynames.ImportedModule, pynames.ImportedName)):
+        if isinstance(self.pyname, pynames.ImportedModule) or isinstance(
+            self.pyname, pynames.ImportedName
+        ):
             return "imported"
         return scope
 
@@ -305,7 +311,7 @@ class CompletionProposal:
     @property
     def kind(self):
         warnings.warn(
-            "the proposal's `kind` property is deprecated, use `scope` instead"
+            "the proposal's `kind` property is deprecated, " "use `scope` instead"
         )
         return self.scope
 
@@ -324,7 +330,7 @@ class NamedParamProposal(CompletionProposal):
 
     def __init__(self, name, function):
         self.argname = name
-        name = f"{name}="
+        name = "%s=" % name
         super().__init__(name, "parameter_keyword")
         self._function = function
 
@@ -367,7 +373,7 @@ def sorted_proposals(proposals, scopepref=None, typepref=None):
 def starting_expression(source_code, offset):
     """Return the expression to complete"""
     word_finder = worder.Worder(source_code, True)
-    expression, starting, _starting_offset = word_finder.get_splitted_primary_before(
+    expression, starting, starting_offset = word_finder.get_splitted_primary_before(
         offset
     )
     if expression:
@@ -403,7 +409,7 @@ class _PythonCodeAssist:
     def _find_starting_offset(self, source_code, offset):
         current_offset = offset - 1
         while current_offset >= 0 and (
-            source_code[current_offset].isalnum() or source_code[current_offset] == "_"
+            source_code[current_offset].isalnum() or source_code[current_offset] in "_"
         ):
             current_offset -= 1
         return current_offset + 1
@@ -484,15 +490,12 @@ class _PythonCodeAssist:
         }:
             return False
         location = pyname.get_definition_location()
-        if (
-            location is not None
-            and location[1] is not None
-            and (
+        if location is not None and location[1] is not None:
+            if (
                 location[0] == scope.pyobject.get_module()
                 and lineno <= location[1] <= scope.get_end()
-            )
-        ):
-            return True
+            ):
+                return True
 
     def _code_completions(self):
         lineno = self.code.count("\n", 0, self.offset) + 1
@@ -790,7 +793,8 @@ class PyDocExtractor:
         location = []
         parent = pyobject.parent
         while parent and not isinstance(parent, pyobjects.AbstractModule):
-            location.extend((parent.get_name(), "."))
+            location.append(parent.get_name())
+            location.append(".")
             parent = parent.parent
         if add_module:
             if isinstance(pyobject, pyobjects.PyFunction):

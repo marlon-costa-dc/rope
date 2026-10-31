@@ -1,3 +1,5 @@
+from typing import Optional
+
 from rope.base import ast, exceptions, utils
 
 
@@ -14,7 +16,7 @@ class PyObject:
 
     def get_attribute(self, name):
         if name not in self.get_attributes():
-            raise exceptions.AttributeNotFoundError(f"Attribute {name} not found")
+            raise exceptions.AttributeNotFoundError("Attribute %s not found" % name)
         return self.get_attributes()[name]
 
     def get_module(self):
@@ -266,11 +268,10 @@ def linearize(cls, bases):
             if not any(head is item for other in sequences for item in other[1:]):
                 break
         else:
-            # O bloqueio com as cabeças correntes identifica o par de
-            # hierarquias conflitantes; sem isto, a mensagem nua esconde
-            # quem disputa a posição. A sequência que contém a cabeça não
-            # resolvida aponta a base transitória; módulos identificam de
-            # onde cada sequência veio.
+            # Reporting the current heads identifies the pair of conflicting
+            # hierarchies; a bare message would hide which ones dispute the
+            # position. The sequence holding the unresolved head points to the
+            # transient base, and the modules tell where each sequence came from.
             heads = []
             for sequence in sequences:
                 head = _class_name(sequence[0])
@@ -349,7 +350,12 @@ class PyDefinedObject:
         self.defineds = None
 
     def __repr__(self):
-        return f'<{self.__class__.__module__}.{self.__class__.__name__} "{self.absolute_name}" at {hex(id(self))}>'
+        return '<{}.{} "{}" at {}>'.format(
+            self.__class__.__module__,
+            self.__class__.__name__,
+            self.absolute_name,
+            hex(id(self)),
+        )
 
     @property
     def absolute_name(self):
@@ -358,16 +364,15 @@ class PyDefinedObject:
 
     visitor_class = None
 
-    @utils.prevent_recursion(dict)
+    @utils.prevent_recursion(lambda: {})
     def _get_structural_attributes(self):
         if self.structural_attributes is None:
             self.structural_attributes = self._create_structural_attributes()
-            # Um cache publicado antes da criação estrutural completar só
-            # pode ter sido computado sob a guarda de recursão (conjunto
-            # temporário vazio ou hierarquia avaliada sob mundo parcial):
-            # stale por definição. Invalidar na completude devolve ao
-            # consumidor posterior o conjunto real — padrão já usado pelo
-            # visitante de atributos de função.
+            # A cache published before structural creation completes can only
+            # have been computed under the recursion guard (an empty temporary
+            # set or a hierarchy evaluated against a partial world), so it is
+            # stale. Invalidating it on completion gives later callers the real
+            # set, as the function attribute visitor already does.
             if self.attributes.get() is not None:
                 self.attributes.set(None)
             if self.concluded_attributes.get() is not None:
@@ -380,7 +385,7 @@ class PyDefinedObject:
                 mro.set(None)
         return self.structural_attributes
 
-    @utils.prevent_recursion(dict)
+    @utils.prevent_recursion(lambda: {})
     def _get_concluded_attributes(self):
         if self.concluded_attributes.get() is None:
             self._get_structural_attributes()
@@ -399,7 +404,7 @@ class PyDefinedObject:
             return self._get_structural_attributes()[name]
         if name in self._get_concluded_attributes():
             return self._get_concluded_attributes()[name]
-        raise exceptions.AttributeNotFoundError(f"Attribute {name} not found")
+        raise exceptions.AttributeNotFoundError("Attribute %s not found" % name)
 
     def get_scope(self):
         if self.scope is None:
@@ -415,7 +420,7 @@ class PyDefinedObject:
     def get_name(self):
         return None
 
-    def get_doc(self) -> str | None:
+    def get_doc(self) -> Optional[str]:
         if len(self.get_ast().body) > 0:
             expr = self.get_ast().body[0]
             if (
@@ -429,17 +434,17 @@ class PyDefinedObject:
     def _get_defined_objects(self):
         if self.defineds is None:
             self._get_structural_attributes()
-        # A guarda de recursao em _get_structural_attributes devolve {} sem
-        # completar a criacao; objetos sem visitor (ex.: PyComprehension)
-        # tambem deixam defineds None. Consumidores iteram o retorno: None
-        # aqui e crash — vazio e o conjunto correto nesses caminhos.
+        # The recursion guard in _get_structural_attributes returns {} without
+        # completing creation, and objects without a visitor (for instance
+        # PyComprehension) also leave defineds as None. Callers iterate the
+        # result, so an empty mapping is the correct value on these paths.
         return self.defineds if self.defineds is not None else {}
 
     def _create_structural_attributes(self):
         if self.visitor_class is None:
-            # Objetos sem visitor (ex.: PyComprehension) nao definem nada:
-            # sem isto, defineds permanece None e _get_defined_objects
-            # devolve None, crashando a iteracao de scopes.
+            # Objects without a visitor (for instance PyComprehension) define
+            # nothing; otherwise defineds stays None and _get_defined_objects
+            # returns None, which breaks scope iteration.
             self.defineds = {}
             return {}
         new_visitor = self.visitor_class(self.pycore, self)
@@ -463,6 +468,8 @@ class PyFunction(PyDefinedObject, AbstractFunction):
 
 
 class PyComprehension(PyDefinedObject, PyObject):
+    pass
+
     def get_name(self):
         return "<comprehension>"
 

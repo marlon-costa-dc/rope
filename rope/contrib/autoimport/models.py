@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Dict, List
 
 
 class FinalQuery:
@@ -13,7 +14,7 @@ class FinalQuery:
 
 
 class Query:
-    def __init__(self, query: str, columns: list[str]):
+    def __init__(self, query: str, columns: List[str]):
         self.query = query
         self.columns = columns
 
@@ -59,7 +60,7 @@ class Model(ABC):
 
     @property
     @abstractmethod
-    def schema(self) -> dict[str, str]: ...
+    def schema(self) -> Dict[str, str]: ...
 
     @classmethod
     def create_table(cls, connection):

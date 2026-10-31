@@ -510,7 +510,7 @@ def get_block_start_patterns():
             "^\\s*(((def|class|if|elif|except|for|while|with)\\s)|"
             "((try|else|finally|except)\\s*:))"
         )
-        _block_start_pattern = re.compile(pattern, re.MULTILINE)
+        _block_start_pattern = re.compile(pattern, re.M)
     return _block_start_pattern
 
 
@@ -530,7 +530,7 @@ def get_string_pattern_with_prefix(prefix, prefix_group_name=None):
     longstr = r'"""(\\.|"(?!"")|\\\n|[^"\\])*"""'
     shortstr = r'"(\\.|\\\n|[^"\\\n])*"'
     if prefix_group_name is not None:
-        pattern = f"(?P<{prefix_group_name}>%s)(%s)"
+        pattern = "(?P<%s>%%s)(%%s)" % prefix_group_name
     else:
         pattern = "%s(%s)"
     return pattern % (

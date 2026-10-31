@@ -18,7 +18,7 @@ class Scope:
     def get_name(self, name):
         """Return name `PyName` defined in this scope"""
         if name not in self.get_names():
-            raise exceptions.NameNotFoundError(f"name {name} not found")
+            raise exceptions.NameNotFoundError("name %s not found" % name)
         return self.get_names()[name]
 
     def __getitem__(self, key):
@@ -37,12 +37,11 @@ class Scope:
         scopes = getattr(self, "_scopes", None)
         if scopes is None:
             scopes = self._create_scopes()
-            # Durante a criação estrutural do dono, a guarda de recursão em
-            # _get_structural_attributes devolve um conjunto vazio
-            # temporário; cachear essa resposta (saveit) envenenaria o
-            # resolve das referências estruturais com uma lista vazia
-            # permanente. Só publica cache quando os objetos definidos do
-            # dono já existem.
+            # While the owner is being created, the recursion guard in
+            # _get_structural_attributes returns a temporary empty set; caching
+            # that answer (saveit) would leave a permanent empty list for
+            # structural references. The cache is only stored once the owner's
+            # defined objects exist.
             if getattr(self.pyobject, "defineds", None) is not None:
                 self._scopes = scopes
         return scopes
@@ -155,7 +154,7 @@ class GlobalScope(Scope):
         except exceptions.AttributeNotFoundError:
             if name in self.builtin_names:
                 return self.builtin_names[name]
-            raise exceptions.NameNotFoundError(f"name {name} not found")
+            raise exceptions.NameNotFoundError("name %s not found" % name)
 
     @property
     @utils.saveit

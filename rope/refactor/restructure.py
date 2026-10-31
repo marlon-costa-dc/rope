@@ -290,8 +290,9 @@ class _ChangeComputer:
             last_end = -1
             for match in self.matches:
                 start, end = match.get_region()
-                if start < last_end and not self._is_expression():
-                    continue
+                if start < last_end:
+                    if not self._is_expression():
+                        continue
                 last_end = end
                 replacement = self._get_matched_text(match)
                 collector.add_change(start, end, replacement)
@@ -307,7 +308,7 @@ class _ChangeComputer:
         for name in self.goal.get_names():
             node = match.get_ast(name)
             if node is None:
-                raise similarfinder.BadNameInCheckError(f"Unknown name <{name}>")
+                raise similarfinder.BadNameInCheckError("Unknown name <%s>" % name)
             force = self._is_expression() and match.ast == node
             mapping[name] = self._get_node_text(node, force)
         unindented = self.goal.substitute(mapping)

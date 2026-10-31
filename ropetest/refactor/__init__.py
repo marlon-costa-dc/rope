@@ -370,7 +370,7 @@ class IntroduceFactoryTest(unittest.TestCase):
                 def create(*args, **kwds):
                     return AClass(*args, **kwds)
         """)
-        expected2 = "import mod1\na_var = mod1.AClass.create()\n"
+        expected2 = "import mod1\n" "a_var = mod1.AClass.create()\n"
         self.assertEqual(expected1, mod1.read())
         self.assertEqual(expected2, mod2.read())
 
@@ -473,7 +473,7 @@ class IntroduceFactoryTest(unittest.TestCase):
             def create(*args, **kwds):
                 return AClass(*args, **kwds)
         """)
-        expected2 = "import mod1\na_var = mod1.create()\n"
+        expected2 = "import mod1\n" "a_var = mod1.create()\n"
         self.assertEqual(expected1, mod1.read())
         self.assertEqual(expected2, mod2.read())
 
@@ -710,11 +710,11 @@ class EncapsulateFieldTest(unittest.TestCase):
         self.assertEqual(expected, self.mod1.read())
 
     def test_changing_main_module_occurrences(self):
-        code = self.a_class + "a_var = A()\na_var.attr = a_var.attr * 2\n"
+        code = self.a_class + "a_var = A()\n" "a_var.attr = a_var.attr * 2\n"
         self.mod1.write(code)
         self._encapsulate(self.mod1, self.mod1.read().index("attr") + 1)
         expected = (
-            self.encapsulated + "a_var = A()\na_var.set_attr(a_var.get_attr() * 2)\n"
+            self.encapsulated + "a_var = A()\n" "a_var.set_attr(a_var.get_attr() * 2)\n"
         )
         self.assertEqual(expected, self.mod1.read())
 
@@ -784,7 +784,7 @@ class EncapsulateFieldTest(unittest.TestCase):
         self.assertEqual(expected, self.mod1.read())
 
     def test_changing_augmented_assignments(self):
-        code = "import mod\na_var = mod.A()\na_var.attr += 1\n"
+        code = "import mod\n" "a_var = mod.A()\n" "a_var.attr += 1\n"
         self.mod1.write(code)
         self.mod.write(self.a_class)
         self._encapsulate(self.mod, self.mod.read().index("attr") + 1)
@@ -812,7 +812,9 @@ class EncapsulateFieldTest(unittest.TestCase):
         self.assertEqual(expected, self.mod1.read())
 
     def test_changing_occurrences_inside_the_class(self):
-        new_class = self.a_class + "\n    def a_func(self):\n        self.attr = 1\n"
+        new_class = (
+            self.a_class + "\n" "    def a_func(self):\n" "        self.attr = 1\n"
+        )
         self.mod.write(new_class)
         self._encapsulate(self.mod, self.mod.read().index("attr") + 1)
         expected = (

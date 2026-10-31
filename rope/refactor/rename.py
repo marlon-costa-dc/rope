@@ -86,7 +86,7 @@ class Rename:
         """
         if unsure in (True, False):
             warnings.warn(
-                "unsure parameter should be a function that returns True or False",
+                "unsure parameter should be a function that returns " "True or False",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -97,7 +97,7 @@ class Rename:
             unsure = unsure_func
         if in_file is not None:
             warnings.warn(
-                "`in_file` argument has been deprecated; use `resources` instead. ",
+                "`in_file` argument has been deprecated; use `resources` " "instead. ",
                 DeprecationWarning,
                 stacklevel=2,
             )

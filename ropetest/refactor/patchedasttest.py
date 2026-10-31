@@ -15,30 +15,24 @@ class PatchedASTTest(unittest.TestCase):
         super().tearDown()
 
     def assert_single_case_match_block(self, checker, match_type):
-        checker.check_children(
-            "Match",
-            [
-                "match",
-                " ",
-                "Name",
-                "",
-                ":",
-                "\n    ",
-                "match_case",
-            ],
-        )
-        checker.check_children(
+        checker.check_children("Match", [
+            "match",
+            " ",
+            "Name",
+            "",
+            ":",
+            "\n    ",
             "match_case",
-            [
-                "case",
-                " ",
-                match_type,
-                "",
-                ":",
-                "\n        ",
-                "Expr",
-            ],
-        )
+        ])
+        checker.check_children("match_case", [
+            "case",
+            " ",
+            match_type,
+            "",
+            ":",
+            "\n        ",
+            "Expr",
+        ])
 
     def assert_function_def_has_one_type_var(self, checker):
         checker.check_children(
@@ -48,17 +42,9 @@ class PatchedASTTest(unittest.TestCase):
                 " ",
                 "foo",
                 "",
-                "[",
+                "[", "", "TypeVar", "", "]",
                 "",
-                "TypeVar",
-                "",
-                "]",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
+                "(", "", "arguments", "", ")",
                 "",
                 ":",
                 "\n    ",
@@ -74,17 +60,9 @@ class PatchedASTTest(unittest.TestCase):
                 " ",
                 "foo",
                 "",
-                "[",
+                "[", "", "TypeVarTuple", "", "]",
                 "",
-                "TypeVarTuple",
-                "",
-                "]",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
+                "(", "", "arguments", "", ")",
                 "",
                 ":",
                 "\n    ",
@@ -100,17 +78,9 @@ class PatchedASTTest(unittest.TestCase):
                 " ",
                 "foo",
                 "",
-                "[",
+                "[", "", "ParamSpec", "", "]",
                 "",
-                "ParamSpec",
-                "",
-                "]",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
+                "(", "", "arguments", "", ")",
                 "",
                 ":",
                 "\n    ",
@@ -451,7 +421,8 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "TypeAlias",
-            ["type", " ", "Name", "", "[", "", "TypeVar", "", "]", " = ", "Subscript"],
+            ["type", " ", "Name", "", "[", "", "TypeVar", "", "]", " = ",
+             "Subscript"],
         )
 
     @testutils.only_for_versions_higher("3.12")
@@ -466,27 +437,8 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "FunctionDef",
-            [
-                "def",
-                " ",
-                "f",
-                "",
-                "[",
-                "",
-                "TypeVar",
-                "",
-                "]",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Return",
-            ],
+            ["def", " ", "f", "", "[", "", "TypeVar", "", "]", "", "(", "",
+             "arguments", "", ")", "", ":", "\n    ", "Return"],
         )
         start = source.index("TP")
         checker.check_region("TypeVar", start, start + len("TP"))
@@ -501,21 +453,8 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "ClassDef",
-            [
-                "class",
-                " ",
-                "C",
-                "",
-                "[",
-                "",
-                "TypeVar",
-                "",
-                "]",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["class", " ", "C", "", "[", "", "TypeVar", "", "]", "", ":",
+             "\n    ", "Pass"],
         )
         start = source.index("TP")
         checker.check_region("TypeVar", start, start + len("TP"))
@@ -557,15 +496,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "JoinedStr",
-            [
-                "rf'",
-                "abc",
-                "FormattedValue",
-                '\' f"""xxx',
-                "FormattedValue",
-                " ",
-                '"""',
-            ],
+            ["rf'", "abc", "FormattedValue", '\' f"""xxx', "FormattedValue", " ", '"""'],
         )
         checker.check_children("FormattedValue", ["{", "", "Name", "", "}"])
 
@@ -811,23 +742,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("Class", 0, len(source) - 1)
         checker.check_children(
             "Class",
-            [
-                "class",
-                " ",
-                "A",
-                "",
-                "(",
-                "",
-                "Name",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Expr",
-                "\n    ",
-                "Pass",
-            ],
+            ["class", " ", "A", "", "(", "", "Name", "", ")", "", ":", "\n    ", "Expr", "\n    ", "Pass"],
         )
 
     def test_class_with_no_bases(self):
@@ -868,25 +783,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("FunctionDef", 0, len(source) - 1)
         checker.check_children(
             "FunctionDef",
-            [
-                "@",
-                "",
-                "Name",
-                "\n",
-                "def",
-                " ",
-                "f",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["@", "", "Name", "\n", "def", " ", "f", "", "(", "", "arguments", "", ")", "", ":", "\n    ", "Pass"],
         )
 
     def test_decorators_for_classes(self):
@@ -900,25 +797,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("ClassDef", 0, len(source) - 1)
         checker.check_children(
             "ClassDef",
-            [
-                "@",
-                "",
-                "Name",
-                "\n",
-                "class",
-                " ",
-                "C",
-                "",
-                "(",
-                "",
-                "Name",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["@", "", "Name", "\n", "class", " ", "C", "", "(", "", "Name", "", ")", "", ":", "\n    ", "Pass"],
         )
 
     def test_both_varargs_and_kwargs(self):
@@ -963,21 +842,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("Function", 0, len(source) - 1)
         checker.check_children(
             "Function",
-            [
-                "def",
-                " ",
-                "f",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["def", " ", "f", "", "(", "", "arguments", "", ")", "", ":", "\n    ", "Pass"],
         )
 
     @testutils.only_for_versions_higher("3.5")
@@ -991,23 +856,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("AsyncFunction", 0, len(source) - 1)
         checker.check_children(
             "AsyncFunction",
-            [
-                "async",
-                " ",
-                "def",
-                " ",
-                "f",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["async", " ", "def", " ", "f", "", "(", "", "arguments", "", ")", "", ":", "\n    ", "Pass"],
         )
 
     def test_argument_annotation(self):
@@ -1051,23 +900,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("Function", 0, len(source) - 1)
         checker.check_children(
             "Function",
-            [
-                "def",
-                " ",
-                "f",
-                "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
-                "",
-                ":",
-                "\n    ",
-                "Expr",
-                "\n    ",
-                "Pass",
-            ],
+            ["def", " ", "f", "", "(", "", "arguments", "", ")", "", ":", "\n    ", "Expr", "\n    ", "Pass"],
         )
         expected_child = ast.arg.__name__
         checker.check_children(
@@ -1130,25 +963,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("For", 0, len(source) - 1)
         checker.check_children(
             "For",
-            [
-                "for",
-                " ",
-                "Name",
-                " ",
-                "in",
-                " ",
-                "Call",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-                "\n",
-                "else",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["for", " ", "Name", " ", "in", " ", "Call", "", ":", "\n    ", "Pass", "\n", "else", "", ":", "\n    ", "Pass"],
         )
 
     @testutils.only_for_versions_higher("3.5")
@@ -1165,27 +980,7 @@ class PatchedASTTest(unittest.TestCase):
         checker.check_region("AsyncFor", source.index("async for"), len(source) - 1)
         checker.check_children(
             "AsyncFor",
-            [
-                "async",
-                " ",
-                "for",
-                " ",
-                "Name",
-                " ",
-                "in",
-                " ",
-                "Call",
-                "",
-                ":",
-                "\n        ",
-                "Pass",
-                "\n    ",
-                "else",
-                "",
-                ":",
-                "\n        ",
-                "Pass",
-            ],
+            ["async", " ", "for", " ", "Name", " ", "in", " ", "Call", "", ":", "\n        ", "Pass", "\n    ", "else", "", ":", "\n        ", "Pass"],
         )
 
     @testutils.only_for_versions_higher("3.8")
@@ -1216,8 +1011,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("ImportFrom", 0, len(source) - 1)
         checker.check_children(
-            "ImportFrom",
-            ["from", " ", ".", "", ".", "", "x", " ", "import", " ", "alias"],
+            "ImportFrom", ["from", " ", ".", "", ".", "", "x", " ", "import", " ", "alias"]
         )
         checker.check_children("alias", ["y", " ", "as", " ", "z"])
 
@@ -1237,8 +1031,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("ImportFrom", 0, len(source) - 1)
         checker.check_children(
-            "ImportFrom",
-            ["from", " ", ".", " ", ".", " ", ".", " ", "import", " ", "alias"],
+            "ImportFrom", ["from", " ", ".", " ", ".", " ", ".", " ", "import", " ", "alias"]
         )
         checker.check_children("alias", ["y", " ", "as", " ", "z"])
 
@@ -1248,8 +1041,7 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("ImportFrom", 0, len(source) - 1)
         checker.check_children(
-            "ImportFrom",
-            ["from", " ", ".", " ", "a", " . ", "b", " ", "import", " ", "alias"],
+            "ImportFrom", ["from", " ", ".", " ", "a", " . ", "b", " ", "import", " ", "alias"]
         )
         checker.check_children("alias", ["y", " ", "as", " ", "z"])
 
@@ -1541,9 +1333,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         checker.check_region("Raise", 0, len(source) - 1)
-        checker.check_children(
-            "Raise", ["raise", " ", "Call", " ", "from", " ", "Name"]
-        )
+        checker.check_children("Raise", ["raise", " ", "Call", " ", "from", " ", "Name"])
 
     def test_return_node(self):
         source = dedent("""\
@@ -1769,19 +1559,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         node_to_test = "Try"
-        expected_children = [
-            "try",
-            "",
-            ":",
-            "\n    ",
-            "Pass",
-            "\n",
-            "finally",
-            "",
-            ":",
-            "\n    ",
-            "Pass",
-        ]
+        expected_children = ["try", "", ":", "\n    ", "Pass", "\n", "finally", "", ":", "\n    ", "Pass"]
         checker.check_children(node_to_test, expected_children)
 
     def test_try_except_node(self):
@@ -1796,32 +1574,12 @@ class PatchedASTTest(unittest.TestCase):
         node_to_test = "Try"
         checker.check_children(
             node_to_test,
-            [
-                "try",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-                "\n",
-                ("excepthandler", "ExceptHandler"),
-            ],
+            ["try", "", ":", "\n    ", "Pass", "\n", ("excepthandler", "ExceptHandler")],
         )
         expected_child = "e"
         checker.check_children(
             ("excepthandler", "ExceptHandler"),
-            [
-                "except",
-                " ",
-                "Name",
-                " ",
-                "as",
-                " ",
-                expected_child,
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["except", " ", "Name", " ", "as", " ", expected_child, "", ":", "\n    ", "Pass"],
         )
 
     def test_try_except_and_finally_node(self):
@@ -1836,21 +1594,7 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         node_to_test = "Try"
-        expected_children = [
-            "try",
-            "",
-            ":",
-            "\n    ",
-            "Pass",
-            "\n",
-            "ExceptHandler",
-            "\n",
-            "finally",
-            "",
-            ":",
-            "\n    ",
-            "Pass",
-        ]
+        expected_children = ["try", "", ":", "\n    ", "Pass", "\n", "ExceptHandler", "\n", "finally", "", ":", "\n    ", "Pass"]
         checker.check_children(node_to_test, expected_children)
 
     @testutils.only_for_versions_higher("3.11")
@@ -1867,34 +1611,12 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children(
             "TryStar",
-            [
-                "try",
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-                "\n",
-                "ExceptHandler",
-                "\n",
-                "ExceptHandler",
-            ],
+            ["try", "", ":", "\n    ", "Pass", "\n", "ExceptHandler", "\n", "ExceptHandler"],
         )
         expected_child = "e"
         checker.check_children(
             "ExceptHandler",
-            [
-                "except",
-                "* ",
-                "Name",
-                " ",
-                "as",
-                " ",
-                expected_child,
-                "",
-                ":",
-                "\n    ",
-                "Pass",
-            ],
+            ["except", "* ", "Name", " ", "as", " ", expected_child, "", ":", "\n    ", "Pass"],
         )
 
     def test_ignoring_comments(self):
@@ -2032,34 +1754,28 @@ class PatchedASTTest(unittest.TestCase):
         """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Match",
-            [
-                "match",
-                " ",
-                "Name",
-                "",
-                ":",
-                "\n    ",
-                "match_case",
-            ],
-        )
-        checker.check_children(
+        checker.check_children("Match", [
+            "match",
+            " ",
+            "Name",
+            "",
+            ":",
+            "\n    ",
             "match_case",
-            [
-                "case",
-                " ",
-                "MatchClass",
-                " ",
-                "if",
-                " ",
-                "Compare",
-                "",
-                ":",
-                "\n        ",
-                "Expr",
-            ],
-        )
+        ])
+        checker.check_children("match_case", [
+            "case",
+            " ",
+            "MatchClass",
+            " ",
+            "if",
+            " ",
+            "Compare",
+            "",
+            ":",
+            "\n        ",
+            "Expr",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_class(self):
@@ -2095,7 +1811,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children("MatchAs", ["_"])
+        checker.check_children("MatchAs", [
+            "_"
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_or(self):
@@ -2155,24 +1873,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence",
-            [
-                "[",
-                "",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchStar",
-                "",
-                "]",
-            ],
-        )
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchValue", "", ",", " ", "MatchStar", "", "]",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_with_no_parens(self):
@@ -2184,16 +1887,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence",
-            [
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchValue",
-            ],
-        )
+        checker.check_children("MatchSequence", [
+            "MatchValue", "", ",", " ", "MatchValue",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_with_grouped_first_pattern(self):
@@ -2245,20 +1941,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence",
-            [
-                "[",
-                "",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchValue",
-                "",
-                "]",
-            ],
-        )
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchValue", "", "]",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_with_round_parens(self):
@@ -2270,20 +1955,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence",
-            [
-                "(",
-                "",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchValue",
-                "",
-                ")",
-            ],
-        )
+        checker.check_children("MatchSequence", [
+            "(", "", "MatchValue", "", ",", " ", "MatchValue", "", ")",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_with_spaces_around_parens(self):
@@ -2296,20 +1970,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence",
-            [
-                "(",
-                "  ",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchValue",
-                "\n",
-                ")",
-            ],
-        )
+        checker.check_children("MatchSequence", [
+            "(", "  ", "MatchValue", "", ",", " ", "MatchValue", "\n", ")",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_with_internal_parens(self):
@@ -2321,9 +1984,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchSequence")
-        checker.check_children(
-            "MatchSequence", ["MatchSequence", "", ",", " ", "MatchSequence"]
-        )
+        checker.check_children("MatchSequence", [
+            "MatchSequence", "", ",", " ", "MatchSequence"
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_sequence_empty_round_parens(self):
@@ -2373,31 +2036,15 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children(
-            "MatchAs",
-            [
-                "MatchSequence",
-                " ",
-                "as",
-                " ",
-                "myval",
-            ],
-        )
-        checker.check_children(
-            "MatchSequence",
-            [
-                "[",
-                "",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "MatchStar",
-                "",
-                "]",
-            ],
-        )
-        checker.check_children("MatchStar", ["*", "", "rest"])
+        checker.check_children("MatchAs", [
+            "MatchSequence", " ", "as", " ", "myval",
+        ])
+        checker.check_children("MatchSequence", [
+            "[", "", "MatchValue", "", ",", " ", "MatchStar", "", "]",
+        ])
+        checker.check_children("MatchStar", [
+            "*", "", "rest"
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_as_capture_pattern(self):
@@ -2409,7 +2056,9 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children("MatchAs", ["myval"])
+        checker.check_children("MatchAs", [
+            "myval"
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_as_capture_pattern_with_explicit_name(self):
@@ -2421,16 +2070,13 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children(
-            "MatchAs",
-            [
-                "MatchValue",
-                " ",
-                "as",
-                " ",
-                "myval",
-            ],
-        )
+        checker.check_children("MatchAs", [
+            "MatchValue",
+            " ",
+            "as",
+            " ",
+            "myval",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_class_simple_match_as_capture_pattern(self):
@@ -2442,18 +2088,15 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchClass")
-        checker.check_children(
-            "MatchClass",
-            [
-                "Name",
-                "",
-                "(",
-                "",
-                "MatchAs",
-                "",
-                ")",
-            ],
-        )
+        checker.check_children("MatchClass", [
+            "Name",
+            "",
+            "(",
+            "",
+            "MatchAs",
+            "",
+            ")",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_class_named_argument(self):
@@ -2465,35 +2108,30 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchClass")
-        checker.check_children(
-            "MatchClass",
-            [
-                "Name",
-                "",
-                "(",
-                "",
-                "x",
-                "",
-                "=",
-                "",
-                "MatchValue",
-                "",
-                ",",
-                " ",
-                "y",
-                "",
-                "=",
-                "",
-                "MatchValue",
-                "",
-                ")",
-            ],
-        )
+        checker.check_children("MatchClass", [
+            "Name",
+            "",
+            "(",
+            "",
+            "x",
+            "",
+            "=",
+            "",
+            "MatchValue",
+            "",
+            ",",
+            " ",
+            "y",
+            "",
+            "=",
+            "",
+            "MatchValue",
+            "",
+            ")",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
-    def test_match_node_with_match_class_match_as_capture_pattern_with_explicit_name(
-        self,
-    ):
+    def test_match_node_with_match_class_match_as_capture_pattern_with_explicit_name(self):
         source = dedent("""\
             match x:
                 case Foo(x) as b:
@@ -2502,28 +2140,22 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children(
-            "MatchAs",
-            [
-                "MatchClass",
-                " ",
-                "as",
-                " ",
-                "b",
-            ],
-        )
-        checker.check_children(
+        checker.check_children("MatchAs", [
             "MatchClass",
-            [
-                "Name",
-                "",
-                "(",
-                "",
-                "MatchAs",
-                "",
-                ")",
-            ],
-        )
+            " ",
+            "as",
+            " ",
+            "b",
+        ])
+        checker.check_children("MatchClass", [
+            "Name",
+            "",
+            "(",
+            "",
+            "MatchAs",
+            "",
+            ")",
+        ])
 
     @testutils.only_for_versions_higher("3.10")
     def test_match_node_with_match_mapping_match_as(self):
@@ -2535,30 +2167,24 @@ class PatchedASTTest(unittest.TestCase):
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
         self.assert_single_case_match_block(checker, "MatchAs")
-        checker.check_children(
-            "MatchAs",
-            [
-                "MatchMapping",
-                " ",
-                "as",
-                " ",
-                "c",
-            ],
-        )
-        checker.check_children(
+        checker.check_children("MatchAs", [
             "MatchMapping",
-            [
-                "{",
-                "",
-                "Constant",
-                "",
-                ":",
-                " ",
-                "MatchAs",
-                "",
-                "}",
-            ],
-        )
+            " ",
+            "as",
+            " ",
+            "c",
+        ])
+        checker.check_children("MatchMapping", [
+            "{",
+            "",
+            "Constant",
+            "",
+            ":",
+            " ",
+            "MatchAs",
+            "",
+            "}",
+        ])
 
     @testutils.only_for_versions_higher("3.12")
     def test_type_alias(self):
@@ -2567,16 +2193,13 @@ class PatchedASTTest(unittest.TestCase):
         """)
         ast_frag = patchedast.get_patched_ast(source, True)
         checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "TypeAlias",
-            [
-                "type",
-                " ",
-                "Name",
-                " = ",
-                "Subscript",
-            ],
-        )
+        checker.check_children("TypeAlias", [
+            "type",
+            " ",
+            "Name",
+            " = ",
+            "Subscript",
+        ])
 
     @testutils.only_for_versions_higher("3.12")
     def test_type_var_simple(self):
@@ -2604,11 +2227,7 @@ class PatchedASTTest(unittest.TestCase):
                 "",
                 "]",
                 "",
-                "(",
-                "",
-                "arguments",
-                "",
-                ")",
+                "(", "", "arguments", "", ")",
                 "",
                 ":",
                 "\n    ",
@@ -2627,16 +2246,13 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_type_var(checker)
 
-        checker.check_children(
-            "TypeVar",
-            [
-                "T",
-                " ",
-                "=",
-                " ",
-                "Name",
-            ],
-        )
+        checker.check_children("TypeVar", [
+            "T",
+            " ",
+            "=",
+            " ",
+            "Name",
+        ])
 
     @testutils.only_for_versions_higher("3.12")
     def test_type_var_with_constraint(self):
@@ -2649,16 +2265,13 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_type_var(checker)
 
-        checker.check_children(
-            "TypeVar",
-            [
-                "T",
-                "",
-                ":",
-                " ",
-                "Tuple",
-            ],
-        )
+        checker.check_children("TypeVar", [
+            "T",
+            "",
+            ":",
+            " ",
+            "Tuple",
+        ])
 
     @testutils.only_for_versions_higher("3.13")
     def test_type_var_with_constraint_and_default_value(self):
@@ -2671,20 +2284,17 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_type_var(checker)
 
-        checker.check_children(
-            "TypeVar",
-            [
-                "T",
-                "",
-                ":",
-                " ",
-                "Tuple",
-                " ",
-                "=",
-                " ",
-                "Name",
-            ],
-        )
+        checker.check_children("TypeVar", [
+            "T",
+            "",
+            ":",
+            " ",
+            "Tuple",
+            " ",
+            "=",
+            " ",
+            "Name",
+        ])
 
     @testutils.only_for_versions_higher("3.12")
     def test_type_var_tuple_simple(self):
@@ -2697,14 +2307,11 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_type_var_tuple(checker)
 
-        checker.check_children(
-            "TypeVarTuple",
-            [
-                "*",
-                "",
-                "T",
-            ],
-        )
+        checker.check_children("TypeVarTuple", [
+            "*",
+            "",
+            "T",
+        ])
 
     @testutils.only_for_versions_higher("3.13")
     def test_type_var_tuple_with_default_value(self):
@@ -2717,18 +2324,15 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_type_var_tuple(checker)
 
-        checker.check_children(
-            "TypeVarTuple",
-            [
-                "*",
-                "",
-                "T",
-                " ",
-                "=",
-                " ",
-                "Tuple",
-            ],
-        )
+        checker.check_children("TypeVarTuple", [
+            "*",
+            "",
+            "T",
+            " ",
+            "=",
+            " ",
+            "Tuple",
+        ])
 
     @testutils.only_for_versions_higher("3.12")
     def test_param_spec_simple(self):
@@ -2741,14 +2345,11 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_param_spec(checker)
 
-        checker.check_children(
-            "ParamSpec",
-            [
-                "**",
-                "",
-                "T",
-            ],
-        )
+        checker.check_children("ParamSpec", [
+            "**",
+            "",
+            "T",
+        ])
 
     @testutils.only_for_versions_higher("3.13")
     def test_param_spec_with_default_value(self):
@@ -2761,18 +2362,15 @@ class PatchedASTTest(unittest.TestCase):
 
         self.assert_function_def_has_one_param_spec(checker)
 
-        checker.check_children(
-            "ParamSpec",
-            [
-                "**",
-                "",
-                "T",
-                " ",
-                "=",
-                " ",
-                "Tuple",
-            ],
-        )
+        checker.check_children("ParamSpec", [
+            "**",
+            "",
+            "T",
+            " ",
+            "=",
+            " ",
+            "Tuple",
+        ])
 
     def test_string_literals_do_not_desynchronise_the_walker(self):
         """Parentheses inside a triple-quoted string used to desynchronise
@@ -2848,7 +2446,7 @@ class _ResultChecker:
     def check_region(self, text, start, end):
         node = self._find_node(text)
         if node is None:
-            self.test_case.fail(f"Node <{text}> cannot be found")
+            self.test_case.fail("Node <%s> cannot be found" % text)
         self.test_case.assertEqual((start, end), node.region)
 
     def _find_node(self, text):
@@ -2905,7 +2503,7 @@ class _ResultChecker:
     def check_children(self, text, children):
         node = self._find_node(text)
         if node is None:
-            self.test_case.fail(f"Node <{text}> cannot be found")
+            self.test_case.fail("Node <%s> cannot be found" % text)
         result = list(node.sorted_children)
         self.test_case.assertEqual(len(children), len(result))
         for expected, child in zip(children, result):

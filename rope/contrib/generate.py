@@ -15,7 +15,7 @@ from rope.base import (
 from rope.refactor import functionutils, importutils, sourceutils, suites
 
 if TYPE_CHECKING:
-    from typing import Literal
+    from typing import Literal, Optional
 
     from rope.base.project import Project
     from rope.base.resources import File, Folder, Resource
@@ -34,7 +34,7 @@ def create_generate(
     project: Project,
     resource: Resource,
     offset: int,
-    goal_resource: Resource | None = None,
+    goal_resource: Optional[Resource] = None,
 ):
     """A factory for creating `Generate` objects
 
@@ -89,10 +89,12 @@ class _Generate:
 
     def _check_exceptional_conditions(self):
         if self.info.element_already_exists():
-            raise exceptions.RefactoringError(f"Element <{self.name}> already exists.")
+            raise exceptions.RefactoringError(
+                "Element <%s> already exists." % self.name
+            )
         if not self.info.primary_is_found():
             raise exceptions.RefactoringError(
-                f"Cannot determine the scope <{self.name}> should be defined in."
+                "Cannot determine the scope <%s> should be defined in." % self.name
             )
 
     def get_changes(self):
@@ -154,7 +156,7 @@ class GenerateFunction(_Generate):
 
 class GenerateVariable(_Generate):
     def _get_element(self):
-        return f"{self.name} = None\n"
+        return "%s = None\n" % self.name
 
     def _get_element_kind(self):
         return "Variable"
@@ -162,7 +164,7 @@ class GenerateVariable(_Generate):
 
 class GenerateClass(_Generate):
     def _get_element(self):
-        return f"class {self.name}(object):\n    pass\n"
+        return "class %s(object):\n    pass\n" % self.name
 
     def _get_element_kind(self):
         return "Class"
@@ -171,11 +173,11 @@ class GenerateClass(_Generate):
 class GenerateModule(_Generate):
     def get_changes(self):
         package = self.info.get_package()
-        changes = change.ChangeSet(f"Generate Module <{self.name}>")
+        changes = change.ChangeSet("Generate Module <%s>" % self.name)
         new_resource = self.project.get_file(f"{package.path}/{self.name}.py")
         if new_resource.exists():
             raise exceptions.RefactoringError(
-                f"Module <{new_resource.path}> already exists"
+                "Module <%s> already exists" % new_resource.path
             )
         changes.add_change(change.CreateResource(new_resource))
         changes.add_change(
@@ -185,17 +187,17 @@ class GenerateModule(_Generate):
 
     def get_location(self):
         package = self.info.get_package()
-        return (package.get_child(f"{self.name}.py"), 1)
+        return (package.get_child("%s.py" % self.name), 1)
 
 
 class GeneratePackage(_Generate):
     def get_changes(self):
         package = self.info.get_package()
-        changes = change.ChangeSet(f"Generate Package <{self.name}>")
+        changes = change.ChangeSet("Generate Package <%s>" % self.name)
         new_resource = self.project.get_folder(f"{package.path}/{self.name}")
         if new_resource.exists():
             raise exceptions.RefactoringError(
-                f"Package <{new_resource.path}> already exists"
+                "Package <%s> already exists" % new_resource.path
             )
         changes.add_change(change.CreateResource(new_resource))
         changes.add_change(
@@ -397,7 +399,7 @@ class _FunctionGenerationInfo(_GenerationInfo):
         finder = worder.Worder(source)
         if finder.is_a_function_being_called(self.offset):
             start, end = finder.get_primary_range(self.offset)
-            _parens_start, parens_end = finder.get_word_parens_range(end - 1)
+            parens_start, parens_end = finder.get_word_parens_range(end - 1)
             call = source[start:parens_end]
             parser = functionutils._FunctionCallParser(call, False)
             args, keywords = parser.get_parameters()

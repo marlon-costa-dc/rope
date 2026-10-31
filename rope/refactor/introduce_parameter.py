@@ -60,7 +60,7 @@ class IntroduceParameter:
         self.pyfunction = scope.pyobject
         if self.pyname is None:
             raise exceptions.RefactoringError(
-                f"Cannot find the definition of <{self.name}>"
+                "Cannot find the definition of <%s>" % self.name
             )
 
     def _get_primary(self):
@@ -88,7 +88,7 @@ class IntroduceParameter:
         self._change_function_occurrences(
             collector, body_start, body_end, new_parameter
         )
-        changes = rope.base.change.ChangeSet(f"Introduce parameter <{new_parameter}>")
+        changes = rope.base.change.ChangeSet("Introduce parameter <%s>" % new_parameter)
         change = rope.base.change.ChangeContents(self.resource, collector.get_changed())
         changes.add_change(change)
         return changes

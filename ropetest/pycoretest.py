@@ -50,24 +50,20 @@ class PyCoreTest(unittest.TestCase):
 
     def test_simple_class(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(
-            dedent("""\
+        mod.write(dedent("""\
             class SampleClass(object):
                 pass
-        """)
-        )
+        """))
         mod_element = self.project.get_module("mod")
         result = mod_element["SampleClass"].get_object()
         self.assertEqual(get_base_type("Type"), result.get_type())
 
     def test_simple_function(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(
-            dedent("""\
+        mod.write(dedent("""\
             def sample_function():
                 pass
-        """)
-        )
+        """))
         mod_element = self.project.get_module("mod")
         result = mod_element["sample_function"].get_object()
         self.assertEqual(get_base_type("Function"), result.get_type())
@@ -103,25 +99,21 @@ class PyCoreTest(unittest.TestCase):
 
     def test_class_variables(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(
-            dedent("""\
+        mod.write(dedent("""\
             class SampleClass(object):
                 var = 10
-        """)
-        )
+        """))
         mod_element = self.project.get_module("mod")
         sample_class = mod_element["SampleClass"].get_object()
         var = sample_class["var"]  # noqa
 
     def test_class_attributes_set_in_init(self):
         mod = testutils.create_module(self.project, "mod")
-        mod.write(
-            dedent("""\
+        mod.write(dedent("""\
             class C(object):
                 def __init__(self):
                     self.var = 20
-        """)
-        )
+        """))
         mod_element = self.project.get_module("mod")
         sample_class = mod_element["C"].get_object()
         var = sample_class["var"]  # noqa
@@ -1396,13 +1388,11 @@ class PyCoreTest(unittest.TestCase):
 
     def test_get_pyname_definition_location_imports(self):
         module_resource = testutils.create_module(self.project, "mod")
-        module_resource.write(
-            dedent("""\
+        module_resource.write(dedent("""\
 
             def a_func():
                 pass
-        """)
-        )
+        """))
         imported_module = self.project.get_module("mod")
         code = dedent("""\
             from mod import a_func
@@ -1577,6 +1567,8 @@ class PyCoreTest(unittest.TestCase):
             import threading
             with threading.lock() as var:    pass
         """)
+        if sys.version_info < (2, 6, 0):
+            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         self.assertTrue("var" in pymod)
 
@@ -1589,6 +1581,8 @@ class PyCoreTest(unittest.TestCase):
             with A() as (a, b):
                 pass
         """)
+        if sys.version_info < (2, 6, 0):
+            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         self.assertTrue("a" in pymod)
         self.assertTrue("b" in pymod)
@@ -1603,6 +1597,8 @@ class PyCoreTest(unittest.TestCase):
             with A() as var:
                 pass
         """)
+        if sys.version_info < (2, 6, 0):
+            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         a_class = pymod["A"].get_object()
         var = pymod["var"].get_object()
@@ -1623,6 +1619,8 @@ class PyCoreTest(unittest.TestCase):
             with A() as var_a, B() as var_b:
                 pass
         """)
+        if sys.version_info < (2, 6, 0):
+            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         a_class = pymod["A"].get_object()
         var_a = pymod["var_a"].get_object()
@@ -1636,6 +1634,8 @@ class PyCoreTest(unittest.TestCase):
         code = dedent("""\
             with open("file"):    pass
         """)
+        if sys.version_info < (2, 6, 0):
+            code = "from __future__ import with_statement\n" + code
         pymod = libutils.get_string_module(self.project, code)
         pymod.get_attributes()
 
@@ -1751,12 +1751,10 @@ class PyCoreTest(unittest.TestCase):
 
     def test_pyobject_equality_should_compare_types(self):
         mod1 = testutils.create_module(self.project, "mod1")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             var1 = ""
             var2 = ""
-        """)
-        )
+        """))
         pymod1 = self.pycore.resource_to_pyobject(mod1)
         self.assertEqual(pymod1["var1"].get_object(), pymod1["var2"].get_object())
 
@@ -1877,31 +1875,25 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_circular_imports2(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             from mod2 import Sample2
             class Sample1(object):
                 pass
-        """)
-        )
-        mod2.write(
-            dedent("""\
+        """))
+        mod2.write(dedent("""\
             from mod1 import Sample1
             class Sample2(object):
                 pass
-        """)
-        )
+        """))
         self.project.get_module("mod1").get_attributes()
 
     def test_multi_dot_imports(self):
         pkg = testutils.create_package(self.project, "pkg")
         pkg_mod = testutils.create_module(self.project, "mod", pkg)
-        pkg_mod.write(
-            dedent("""\
+        pkg_mod.write(dedent("""\
             def sample_func():
                 pass
-        """)
-        )
+        """))
         code = "import pkg.mod\n"
         mod = libutils.get_string_module(self.project, code)
         self.assertTrue("pkg" in mod)
@@ -1938,12 +1930,10 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_multi_dot_imports_as(self):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def f():
                 pass
-        """)
-        )
+        """))
         code = "import pkg.mod1 as mod1\n"
         mod = libutils.get_string_module(self.project, code)
         module = mod["mod1"].get_object()
@@ -2100,12 +2090,10 @@ class PyCoreInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1", pkg)
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         mod2.write("from mod1 import a_func\n")
         mod1_object = self.pycore.resource_to_pyobject(mod1)
         mod2_object = self.pycore.resource_to_pyobject(mod2)
@@ -2144,12 +2132,10 @@ class PyCoreInProjectsTest(unittest.TestCase):
         pkg = testutils.create_package(self.project, "pkg")
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2", pkg)
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             def a_func():
                 pass
-        """)
-        )
+        """))
         mod2.write("from ..mod1 import a_func\n")
         mod1_object = self.pycore.resource_to_pyobject(mod1)
         mod2_object = self.pycore.resource_to_pyobject(mod2)
@@ -2160,18 +2146,14 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_invalidating_cache_for_from_imports_after_resource_change(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod2.write(
-            dedent("""\
+        mod2.write(dedent("""\
             def a_func():
                 print(1)
-        """)
-        )
-        mod1.write(
-            dedent("""\
+        """))
+        mod1.write(dedent("""\
             from mod2 import a_func
             a_func()
-        """)
-        )
+        """))
 
         pymod1 = self.project.get_module("mod1")
         pymod2 = self.project.get_module("mod2")
@@ -2183,31 +2165,25 @@ class PyCoreInProjectsTest(unittest.TestCase):
     def test_invalidating_superclasses_after_change(self):
         mod1 = testutils.create_module(self.project, "mod1")
         mod2 = testutils.create_module(self.project, "mod2")
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             class A(object):
                 def func1(self):
                     pass
-        """)
-        )
-        mod2.write(
-            dedent("""\
+        """))
+        mod2.write(dedent("""\
             import mod1
             class B(mod1.A):
                 pass
-        """)
-        )
+        """))
 
         b_class = self.project.get_module("mod2")["B"].get_object()
         self.assertTrue("func1" in b_class)
 
-        mod1.write(
-            dedent("""\
+        mod1.write(dedent("""\
             class A(object):
                 def func2(self):
                     pass
-        """)
-        )
+        """))
         self.assertTrue("func2" in b_class)
 
     def test_caching_pymodule_with_syntax_errors(self):

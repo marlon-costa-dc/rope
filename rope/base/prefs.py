@@ -1,10 +1,8 @@
 """Rope preferences."""
-
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import Enum
 from textwrap import dedent
-from typing import Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from packaging.requirements import Requirement
 from pytoolconfig import PyToolConfig, UniversalKey, field
@@ -20,8 +18,8 @@ class AutoimportPrefs:
     # memory: bool = field(default=None, description="Cache in memory instead of disk")
     # parallel: bool = field(default=True, description="Use multiple processes to parse")
 
-    aliases: list[tuple[str, str]] = field(
-        default_factory=lambda: [
+    aliases: List[Tuple[str, str]] = field(
+        default_factory=lambda : [
             ("np", "numpy"),
             ("pd", "pandas"),
             ("plt", "matplotlib.pyplot"),
@@ -55,7 +53,7 @@ class ImportPrefs:
 class Prefs:
     """Class to store rope preferences."""
 
-    ignored_resources: list[str] = field(
+    ignored_resources: List[str] = field(
         default_factory=lambda: [
             "*.pyc",
             "*~",
@@ -83,7 +81,7 @@ class Prefs:
             ``build//*.o``: matches ``build/lib.o`` and ``build/sub/lib.o``
         """),
     )
-    python_files: list[str] = field(
+    python_files: List[str] = field(
         default_factory=lambda: ["*.py"],
         description=dedent("""
             Specifies which files should be considered python files.  It is
@@ -92,7 +90,7 @@ class Prefs:
             default.
         """),
     )
-    source_folders: list[str] = field(
+    source_folders: List[str] = field(
         description=dedent("""
             Custom source folders:  By default rope searches the project
             for finding source folders (folders that should be searched
@@ -103,10 +101,10 @@ class Prefs:
             separating folders regardless of the platform rope is running on.
             ``src/my_source_folder`` for instance.
         """),
-        default_factory=list,
+        default_factory=lambda: [],
     )
-    python_path: list[str] = field(
-        default_factory=list,
+    python_path: List[str] = field(
+        default_factory=lambda: [],
         description="You can extend python path for looking up modules.",
     )
     save_objectdb: bool = field(
@@ -152,7 +150,7 @@ class Prefs:
         """),
     )
 
-    extension_modules: list[str] = field(
+    extension_modules: List[str] = field(
         default_factory=list,
         description="""
 Builtin and c-extension modules that are allowed to be imported and inspected by rope.
@@ -227,23 +225,23 @@ Builtin and c-extension modules that are allowed to be imported and inspected by
             disable the search type-hinting in a class hierarchy, etc.
         """),
     )
-    project_opened: Callable | None = field(
+    project_opened: Optional[Callable] = field(
         None,
         description=dedent("""
             This function is called after opening the project.
             Can only be set in config.py.
         """),
     )
-    py_version: tuple[int, int] | None = field(
+    py_version: Optional[Tuple[int, int]] = field(
         default=None,
         description="Minimum python version to target",
         universal_config=UniversalKey.min_py_version,
     )
-    dependencies: list[Requirement] | None = field(
+    dependencies: Optional[List[Requirement]] = field(
         default=None, universal_config=UniversalKey.dependencies
     )
-    callbacks: dict[str, Callable[[Any], None]] = field(
-        default_factory=dict,
+    callbacks: Dict[str, Callable[[Any], None]] = field(
+        default_factory=lambda: {},
         description=dedent("""
             Callbacks run when configuration values are changed.
             Can only be set in config.py.
@@ -299,7 +297,7 @@ class _RopeConfigSource(Source):
     """Custom source for rope config.py files."""
 
     name: str = "config.py"
-    run_globals: dict
+    run_globals: Dict
 
     def __init__(self, ropefolder: Folder):
         self.ropefolder = ropefolder
@@ -321,7 +319,7 @@ class _RopeConfigSource(Source):
             exec(code, self.run_globals)
         return True
 
-    def parse(self) -> dict | None:
+    def parse(self) -> Optional[Dict]:
         prefs = Prefs()
         if not self._read():
             return None
@@ -359,9 +357,6 @@ def get_preferred_import_style(prefs: Prefs) -> ImportStyle:
     try:
         return ImportStyle(prefs.imports.preferred_import_style)
     except ValueError:
-        if (
-            prefs.imports.preferred_import_style == "default"
-            and prefs.prefer_module_from_imports
-        ):
+        if prefs.imports.preferred_import_style == "default" and prefs.prefer_module_from_imports:
             return ImportStyle.from_module
         return DEFAULT_IMPORT_STYLE

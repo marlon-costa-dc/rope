@@ -189,7 +189,8 @@ def _is_method_call(primary, pyfunction):
         and isinstance(pyfunction.parent, rope.base.pyobjects.PyClass)
     ):
         return True
-    return bool(
-        isinstance(pyobject.get_type(), rope.base.pyobjects.AbstractClass)
-        and isinstance(pyfunction, rope.base.builtins.BuiltinFunction)
-    )
+    if isinstance(
+        pyobject.get_type(), rope.base.pyobjects.AbstractClass
+    ) and isinstance(pyfunction, rope.base.builtins.BuiltinFunction):
+        return True
+    return False
