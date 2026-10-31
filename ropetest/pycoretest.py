@@ -1,4 +1,6 @@
+import os
 import sys
+import tempfile
 import unittest
 from textwrap import dedent
 
@@ -367,6 +369,22 @@ class PyCoreTest(unittest.TestCase):
         self.project = Project(self.project.address, source_folders=["first", "second"])
         self.assertEqual(package, self.project.find_module("sample"))
         self.assertIsNone(self.project.find_module("sample.child"))
+
+    def test_find_module_skips_python_path_files(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        archive = os.path.join(external.name, "archive.zip")
+        libs = os.path.join(external.name, "libs")
+        os.mkdir(libs)
+        open(archive, "w").close()
+        with open(os.path.join(libs, "sample.py"), "w") as sample:
+            sample.write("")
+        self.project.close()
+        self.project = Project(self.project.address, python_path=[archive, libs])
+        self.assertEqual(
+            os.path.join(libs, "sample.py"),
+            self.project.find_module("sample").real_path,
+        )
 
     def test_find_nested_module_searches_namespace_portions(self):
         first = self.project.root.create_folder("first")
