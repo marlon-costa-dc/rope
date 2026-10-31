@@ -72,7 +72,7 @@ def test_get_package_source_venv_in_project_dir(example_external_package_path, p
     # technically being inside the project folder.
 
     # Set up actual venv in project folder:
-    project_venv_path = project.root.pathlib / ".venv"
+    project_venv_path = project.root.pathlib/".venv"
     venv.create(project_venv_path)
 
     # Crude approximation of a package installed into this venv:
@@ -112,13 +112,10 @@ def test_get_modname_path_components(path_type):
 
 
 def test_get_modname_external(example_external_package_path):
-    assert (
-        utils.get_modname_from_path(
-            example_external_package_path,
-            example_external_package_path,
-        )
-        == "external_fixturepkg"
-    )
+    assert utils.get_modname_from_path(
+        example_external_package_path,
+        example_external_package_path,
+    ) == "external_fixturepkg"
 
 
 def test_get_modname_folder(

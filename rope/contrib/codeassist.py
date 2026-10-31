@@ -711,7 +711,8 @@ class PyDocExtractor:
         if isinstance(pyfunction, pyobjects.PyFunction):
             if self._has_parameter_kinds(pyfunction):
                 signature = functionutils._get_function_signature(pyfunction)
-                signature = signature.removesuffix(":")
+                if signature.endswith(":"):
+                    signature = signature[:-1]
                 if remove_self and self._is_method(pyfunction):
                     signature = self._remove_self(pyfunction, signature)
                 return location + signature

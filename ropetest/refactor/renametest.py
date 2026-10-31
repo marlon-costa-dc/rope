@@ -249,7 +249,9 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case [1, *_] as old_name:
                     print(old_name)
         """)
-        refactored = self._local_rename(code, code.rindex("old_name") + 1, "new_name")
+        refactored = self._local_rename(
+            code, code.rindex("old_name") + 1, "new_name"
+        )
         self.assertEqual(
             dedent("""\
                 match value:
@@ -266,7 +268,9 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case [1, *old_name] if old_name:
                     print(old_name)
         """)
-        refactored = self._local_rename(code, code.index("old_name") + 1, "new_name")
+        refactored = self._local_rename(
+            code, code.index("old_name") + 1, "new_name"
+        )
         self.assertEqual(
             dedent("""\
                 match value:
@@ -283,7 +287,9 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
                 case {"key": item, **old_name}:
                     print(old_name)
         """)
-        refactored = self._local_rename(code, code.index("old_name") + 1, "new_name")
+        refactored = self._local_rename(
+            code, code.index("old_name") + 1, "new_name"
+        )
         self.assertEqual(
             dedent("""\
                 match value:
@@ -491,14 +497,14 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         self.assertEqual(expected, refactored)
 
     def test_renaming_occurrence_in_f_string_with_reused_quotes(self):
-        code = dedent("""\
+        code = dedent('''\
             a_var = {"key": 20}
             a_string=f"{a_var['key']} and {a_var['key']:>2}"
-        """)
-        expected = dedent("""\
+        ''')
+        expected = dedent('''\
             new_var = {"key": 20}
             a_string=f"{new_var['key']} and {new_var['key']:>2}"
-        """)
+        ''')
         refactored = self._local_rename(code, 2, "new_var")
         self.assertEqual(expected, refactored)
 
@@ -815,15 +821,13 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
 
     def test_renaming_conditional_external_import_from_another_module(self):
         compat = testutils.create_module(self.project, "compat")
-        compat.write(
-            dedent("""\
+        compat.write(dedent("""\
             import sys
             if sys.version_info[0] >= 3:
                 from builtins import map, zip
             else:
                 zip = lambda *args: None
-        """)
-        )
+        """))
         mod = testutils.create_module(self.project, "mod")
         mod.write("from compat import zip\nresult = list(zip([1], [2]))\n")
         self._rename(mod, mod.read().rindex("zip"), "pairs")

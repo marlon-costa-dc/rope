@@ -1298,34 +1298,23 @@ def test_lookup_factory_local_rebinding_keeps_actual_return_type_guarded(
     assert sentinel.read_bytes() == original_sentinel
 
 
-_EXTRA_MAPPING_CLASS_IDENTITY = (
-    CLASSES
-    + BOX
-    + textwrap.dedent("""Box.slot = Other()
+_EXTRA_MAPPING_CLASS_IDENTITY = CLASSES + BOX + textwrap.dedent("""Box.slot = Other()
 saved = Box
 match {'replacement': First()}:
     case {**Box}:
         pass
 print(saved.slot.field, Box['replacement'].field)
 """)
-)
 
-_EXTRA_STAR_CLASS_IDENTITY = (
-    CLASSES
-    + BOX
-    + textwrap.dedent("""Box.slot = Other()
+_EXTRA_STAR_CLASS_IDENTITY = CLASSES + BOX + textwrap.dedent("""Box.slot = Other()
 saved = Box
 match [First()]:
     case [*Box]:
         pass
 print(saved.slot.field, Box[0].field)
 """)
-)
 
-_EXTRA_EXCEPT_CLASS_IDENTITY = (
-    CLASSES
-    + BOX
-    + textwrap.dedent("""Box.slot = Other()
+_EXTRA_EXCEPT_CLASS_IDENTITY = CLASSES + BOX + textwrap.dedent("""Box.slot = Other()
 saved = Box
 try:
     raise ValueError('replacement')
@@ -1333,7 +1322,6 @@ except ValueError as Box:
     print(saved.slot.field, str(Box))
 print(saved.slot.field)
 """)
-)
 
 _EXTRA_EXCEPT_LOOKUP_HOOK = CLASSES + textwrap.dedent("""def lookup(self, name):
     if name == 'slot':

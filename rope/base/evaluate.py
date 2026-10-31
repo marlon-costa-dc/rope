@@ -304,7 +304,12 @@ class ScopeNameFinder:
             pyobject = self.get_enclosing_function(offset)
             from rope.base.sourcebindings import SourceLambdaFunction
 
-            if isinstance(pyobject, (SourceLambdaFunction, pyobjectsdef.PyFunction)):
+            if isinstance(pyobject, SourceLambdaFunction):
+                parameter_name = None
+                if keyword_name in pyobject.get_keyword_param_names():
+                    parameter_name = pyobject.get_parameters().get(keyword_name)
+                return (None, parameter_name)
+            elif isinstance(pyobject, pyobjectsdef.PyFunction):
                 parameter_name = None
                 if keyword_name in pyobject.get_keyword_param_names():
                     parameter_name = pyobject.get_parameters().get(keyword_name)
@@ -711,7 +716,9 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                                 item_scope = pyscopes.TemporaryScope(
                                     entry.pycore, entry, {"__rope_element": value}
                                 )
-                                value = eval_str(item_scope, f"__rope_element[{level}]")
+                                value = eval_str(
+                                    item_scope, "__rope_element[%s]" % level
+                                )
                             if value is None:
                                 break
                         if value is not None:

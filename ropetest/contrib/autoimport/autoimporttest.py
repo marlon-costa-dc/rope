@@ -76,15 +76,13 @@ def test_autoimport_memory_parameter_is_true(
 
 
 def test_autoimport_omitted_memory_parameter_is_deprecated(project: Project):
-    with (
-        pytest.warns(
-            DeprecationWarning,
-            match=r"The default value for `AutoImport\(memory\)` argument will change",
-        ),
-        AutoImport(project) as ai,
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"The default value for `AutoImport\(memory\)` argument will change",
     ):
-        assert ai.memory is True
-        assert is_in_memory_database(ai.connection)
+        with AutoImport(project) as ai:
+            assert ai.memory is True
+            assert is_in_memory_database(ai.connection)
 
 
 def test_autoimport_memory_parameter_is_false(
@@ -158,14 +156,10 @@ def test_multithread_connections_closed_on_close(project: Project):
     assert ai._closed
     assert len(ai._connections) == 0
     for conn in all_conns:
-        with pytest.raises(
-            sqlite3.ProgrammingError, match="Cannot operate on a closed database"
-        ):
+        with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
             conn.execute("SELECT 1")
 
-    with pytest.raises(
-        exceptions.RopeError, match="AutoImport instance has been closed"
-    ):
+    with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
         _ = ai.connection
 
 
@@ -179,9 +173,7 @@ def test_close_thread_connection(project: Project):
             assert worker_conn in ai._connections
             ai.close_thread_connection()
             assert worker_conn not in ai._connections
-            with pytest.raises(
-                sqlite3.ProgrammingError, match="Cannot operate on a closed database"
-            ):
+            with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
                 worker_conn.execute("SELECT 1")
             new_conn = ai.connection
             assert new_conn is not worker_conn
@@ -197,9 +189,7 @@ def test_close_idempotent(project: Project):
     ai.close()
     assert ai._closed
     ai.close()
-    with pytest.raises(
-        sqlite3.ProgrammingError, match="Cannot operate on a closed database"
-    ):
+    with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
         conn.execute("SELECT 1")
 
 
@@ -207,14 +197,10 @@ def test_register_connection_after_close(project: Project):
     ai = AutoImport(project, memory=True)
     ai.close()
     conn = AutoImport.create_database_connection(memory=True)
-    with pytest.raises(
-        exceptions.RopeError, match="AutoImport instance has been closed"
-    ):
+    with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
         ai._register_connection(conn)
     assert conn not in ai._connections
-    with pytest.raises(
-        sqlite3.ProgrammingError, match="Cannot operate on a closed database"
-    ):
+    with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
         conn.execute("SELECT 1")
 
 
@@ -222,9 +208,7 @@ def test_connection_setter_after_close(project: Project):
     ai = AutoImport(project, memory=True)
     ai.close()
     with closing(AutoImport.create_database_connection(memory=True)) as conn:
-        with pytest.raises(
-            exceptions.RopeError, match="AutoImport instance has been closed"
-        ):
+        with pytest.raises(exceptions.RopeError, match="AutoImport instance has been closed"):
             ai.connection = conn
 
 

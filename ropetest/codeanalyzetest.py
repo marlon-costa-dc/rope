@@ -418,21 +418,8 @@ class WordRangeFinderTest(unittest.TestCase):
 
     def test_assignment_operator_types(self):
         for operator in (
-            "=",
-            "+=",
-            "-=",
-            "*=",
-            "/=",
-            "//=",
-            "%=",
-            "**=",
-            "@=",
-            "&=",
-            "|=",
-            "^=",
-            "<<=",
-            ">>=",
-            ":=",
+            "=", "+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=",
+            "&=", "|=", "^=", "<<=", ">>=", ":=",
         ):
             code = "name " + operator + " value\n"
             if operator == ":=":

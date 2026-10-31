@@ -164,12 +164,9 @@ def test_ordinary_formal_kinds_rename_through_parameter_protocol(
     before = {}
     exec(source, before)
     offset = source.index(
-        "target",
-        source.index("def func(") if selected == "formal" else source.index("return "),
+        "target", source.index("def func(") if selected == "formal" else source.index("return ")
     )
-    model_project.do(
-        rename.Rename(model_project, resource, offset).get_changes("renamed")
-    )
+    model_project.do(rename.Rename(model_project, resource, offset).get_changes("renamed"))
     after = {}
     exec(resource.read(), after)
     assert after["result"] == before["result"] == (int, str)

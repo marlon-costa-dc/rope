@@ -21,11 +21,11 @@ CLASSES = dedent("""\
         def __init__(self):
             self.field = 2
 """)
-PREFS = {
-    "save_history": False,
-    "perform_doa": False,
-    "automatic_soa": False,
-}
+PREFS = dict(
+    save_history=False,
+    perform_doa=False,
+    automatic_soa=False,
+)
 
 
 def _write_inputs(directory, helper, subject):

@@ -80,7 +80,9 @@ class BuiltinTypesTest(unittest.TestCase):
         self.assertIs(namespace["value"], namespace["selected"])
         self.mod.write(code)
         pymod = self.project.get_pymodule(self.mod)
-        self.assertIs(pymod["value"].get_object(), pymod["selected"].get_object())
+        self.assertIs(
+            pymod["value"].get_object(), pymod["selected"].get_object()
+        )
 
     def test_get_items_from_slices(self):
         self.mod.write(dedent("""\

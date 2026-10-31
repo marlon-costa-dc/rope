@@ -302,11 +302,11 @@ class SourceContext:
     __slots__ = (
         "_environment",
         "_structural_scope",
+        "source_node",
+        "role",
         "annotation_owner",
         "annotation_policy",
         "branch_context",
-        "role",
-        "source_node",
     )
 
     def __init__(
@@ -394,7 +394,7 @@ class SourceContext:
 class SourceFragment:
     """A recorded node span (hand-rolled frozen dataclass equivalent)."""
 
-    __slots__ = ("context", "depth", "end", "start")
+    __slots__ = ("start", "end", "depth", "context")
 
     def __init__(self, start, end, depth, context):
         self.start = start
@@ -557,15 +557,12 @@ class OpaqueSourceName(pynames.PyName):
         result = []
         for environment in self.candidate_environments:
             candidate = environment.lookup(self.name)
-            if (
-                candidate is not None
-                and candidate is not self
-                and (
+            if candidate is not None and candidate is not self:
+                if (
                     not isinstance(candidate, OpaqueSourceName)
                     and candidate not in result
-                )
-            ):
-                result.append(candidate)
+                ):
+                    result.append(candidate)
         return tuple(result)
 
     def may_reference(self, pyname):
@@ -1511,7 +1508,7 @@ class SourceBindingIndex:
                 return ()
             name = value.id
             body = module_body
-        raise ValueError(f"Cyclic native string-sequence declaration: {name}")
+        raise ValueError("Cyclic native string-sequence declaration: %s" % name)
 
     def context_at(self, offset):
         matched = [item for item in self.fragments if item.start <= offset < item.end]
@@ -1714,13 +1711,10 @@ class SourceBindingIndex:
                     alias.asname or alias.name.split(".")[0]
                     for alias in expression.names
                 )
+            elif isinstance(expression, ast.ExceptHandler) and expression.name:
+                names.add(expression.name)
             elif (
-                isinstance(expression, ast.ExceptHandler)
-                and expression.name
-                or (
-                    isinstance(expression, (ast.MatchAs, ast.MatchStar))
-                    and expression.name
-                )
+                isinstance(expression, (ast.MatchAs, ast.MatchStar)) and expression.name
             ):
                 names.add(expression.name)
             elif isinstance(expression, ast.MatchMapping) and expression.rest:

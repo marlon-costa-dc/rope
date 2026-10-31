@@ -27,7 +27,9 @@ class SimilarFinderTest(unittest.TestCase):
     def _assert_try_else_with_finally_regions(self, handler):
         source = (
             "before = module.Model\n"
-            "try:\n    value = 1\n" + handler + " ValueError:\n    value = 2\n"
+            "try:\n    value = 1\n"
+            + handler
+            + " ValueError:\n    value = 2\n"
             "else:\n    value = module.Model\n"
             "finally:\n    value = 3\n"
         )
@@ -71,7 +73,6 @@ class SimilarFinderTest(unittest.TestCase):
         first = source.index("list")
         second = source.index("list", first + 1)
         self.assertEqual([(first, first + 4), (second, second + 4)], regions)
-
     def test_return_annotation_names_have_match_regions(self):
         source = "def f() -> target:\n    return target\n"
         finder = self._create_finder(source)

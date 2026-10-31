@@ -291,7 +291,7 @@ class InlineVariable(_Inliner):
             self._check_deferred_annotation_references(resource, remove, only_current)
         if remove and self.resource in resources:
             self._check_initializer_removal(resources, only_current)
-        changes = ChangeSet(f"Inline variable <{self.name}>")
+        changes = ChangeSet("Inline variable <%s>" % self.name)
         jobset = task_handle.create_jobset("Calculating changes", len(resources))
 
         for resource in resources:

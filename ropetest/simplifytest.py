@@ -102,7 +102,7 @@ class SimplifyTest(unittest.TestCase):
 
     @testutils.only_for_versions_higher("3.12")
     def test_fstring_nested_bracket_not_folded(self):
-        code = "f\"{f'[{x}'}\"\ndef g(): pass\n"
+        code = 'f"{f\'[{x}\'}"\ndef g(): pass\n'
         self.assertEqual(code.count("\n"), simplify.real_code(code).count("\n"))
 
     # --- PRESERVED: real expression brackets inside an f-string must stay ---

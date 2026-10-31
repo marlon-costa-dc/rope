@@ -301,7 +301,7 @@ class PyClass(pyobjects.PyClass):
             bases = self.get_bases()
             if self._linearizing:
                 raise exceptions.InconsistentHierarchyError(
-                    f"Cyclic class inheritance: {self.get_name()}"
+                    "Cyclic class inheritance: %s" % self.get_name()
                 )
             self._linearizing = True
             try:
@@ -356,7 +356,7 @@ class PyClass(pyobjects.PyClass):
                     winner = candidate
                 elif not _mro_holds(winner.get_mro(), candidate):
                     raise exceptions.InconsistentHierarchyError(
-                        f"Conflicting metaclasses: {self.get_name()}"
+                        "Conflicting metaclasses: %s" % self.get_name()
                     )
             self._metaclass.set(winner)
         return self._metaclass.get()

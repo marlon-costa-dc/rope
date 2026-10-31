@@ -252,7 +252,7 @@ class Match:
     def get_capture_region(self, name):
         """Return the captured variable's half-open source character range."""
         if name not in self.mapping:
-            raise ValueError(f"Match has no captured variable: {name}")
+            raise ValueError("Match has no captured variable: %s" % name)
         return patchedast.node_region(self.mapping[name])
 
 

@@ -64,10 +64,7 @@ def main():
     wheel = Path("dist") / f"rope-{release}-py3-none-any.whl"
     sdist = Path("dist") / f"rope-{release}.tar.gz"
     for artifact in (wheel, sdist):
-        print(
-            f"SHA256 {artifact} {hashlib.sha256(artifact.read_bytes()).hexdigest()}",
-            flush=True,
-        )
+        print(f"SHA256 {artifact} {hashlib.sha256(artifact.read_bytes()).hexdigest()}", flush=True)
     with zipfile.ZipFile(wheel) as artifact:
         assert artifact.read("rope/py.typed") == b""
     with tarfile.open(sdist) as artifact:
@@ -77,12 +74,8 @@ def main():
             assert marker.read() == b""
     print(f"Verified rope/py.typed in {wheel} and {sdist}")
     environment = Path(sys.prefix).resolve()
-    if environment == Path(sys.base_prefix).resolve() or environment.is_relative_to(
-        source_root
-    ):
-        raise RuntimeError(
-            "artifact validation requires an exclusive environment outside the checkout"
-        )
+    if environment == Path(sys.base_prefix).resolve() or environment.is_relative_to(source_root):
+        raise RuntimeError("artifact validation requires an exclusive environment outside the checkout")
     with tempfile.TemporaryDirectory(
         prefix="rope-artifact-runtime-", dir=environment.parent
     ) as directory:
@@ -107,14 +100,9 @@ def main():
         shutil.copyfile(source_root / "pyproject.toml", runtime / "pyproject.toml")
         subprocess.run(
             [
-                str(python),
-                "-I",
-                str(Path(__file__).resolve()),
-                "--installed-contract",
-                "--expected-version",
-                release,
-                "--contract",
-                str(contract),
+                str(python), "-I", str(Path(__file__).resolve()),
+                "--installed-contract", "--expected-version", release,
+                "--contract", str(contract),
             ],
             cwd=runtime,
             env=consumer_environment,

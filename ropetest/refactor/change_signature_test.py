@@ -812,8 +812,7 @@ class ChangeSignatureTest(unittest.TestCase):
                 self.assertEqual(expected, self.mod.read())
 
     def test_function_local_constructors_with_the_same_name_are_distinct(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             def first():
                 class Local:
                     def __init__(self, value):
@@ -824,8 +823,7 @@ class ChangeSignatureTest(unittest.TestCase):
                     def __init__(self, value):
                         pass
                 return Local(2)
-        """)
-        )
+        """))
         signature = change_signature.ChangeSignature(
             self.project, self.mod, self.mod.read().index("__init__")
         )
@@ -847,15 +845,13 @@ class ChangeSignatureTest(unittest.TestCase):
         )
 
     def test_changing_signature_for_class_nested_constructor(self):
-        self.mod.write(
-            dedent("""\
+        self.mod.write(dedent("""\
             class Outer:
                 class Inner:
                     def __init__(self, value):
                         pass
             item = Outer.Inner(1)
-        """)
-        )
+        """))
         signature = change_signature.ChangeSignature(
             self.project, self.mod, self.mod.read().index("__init__")
         )

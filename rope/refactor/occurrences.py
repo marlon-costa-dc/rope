@@ -39,7 +39,7 @@ import contextlib
 import io
 import re
 import tokenize
-from collections.abc import Iterator
+from typing import Iterator
 
 from rope.base import (
     ast,

@@ -235,9 +235,7 @@ class RestructureTest(unittest.TestCase):
 
         def import_filter(resource, imports):
             received.append((resource, imports))
-            return [
-                declaration for declaration in imports if "other" not in declaration
-            ]
+            return [declaration for declaration in imports if "other" not in declaration]
 
         refactoring = restructure.Restructure(
             self.project,

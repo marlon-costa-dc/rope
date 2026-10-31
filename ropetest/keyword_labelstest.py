@@ -54,13 +54,9 @@ def module(project):
 )
 def unknown_call(request):
     setup, callee = request.param
-    return (
-        dedent("""\
+    return dedent("""\
         target = int
-    """)
-        + setup
-        + f"result = {callee}(target=target)\n"
-    )
+    """) + setup + f"result = {callee}(target=target)\n"
 
 
 def run(source):
@@ -139,13 +135,9 @@ def test_unknown_keyword_cannot_select_same_named_variable(project, module):
 def test_known_parameter_rename_preserves_identity(
     project, module, callee, setup, selection
 ):
-    source = (
-        dedent("""\
+    source = dedent("""\
         target = str
-    """)
-        + setup
-        + f"result = {callee}(target=target)\n"
-    )
+    """) + setup + f"result = {callee}(target=target)\n"
     module.write(source)
     formal_offset = source.index("target=int")
     keyword_offset = source.index("target=target")

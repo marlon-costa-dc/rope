@@ -1,6 +1,7 @@
 import bisect
 import collections
 import io
+import numbers
 import re
 import tokenize
 import warnings
@@ -368,6 +369,7 @@ class _PatchingASTWalker:
             )
 
         QUOTE_CHARS = ['"""', "'''", '"', "'"]
+        offset = self.source.offset
         start, end = self.ast_adapter[node]
 
         children = []

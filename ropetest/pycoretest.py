@@ -343,9 +343,7 @@ class PyCoreTest(unittest.TestCase):
         base = mod["Base"].get_object()
         derived = mod["Derived"].get_object()
         mapping = mod["Mapping"].get_object()
-        self.assertEqual(
-            base["__init__"].get_object(), derived["__init__"].get_object()
-        )
+        self.assertEqual(base["__init__"].get_object(), derived["__init__"].get_object())
         self.assertEqual(
             base["__init_subclass__"].get_object(),
             mapping["__init_subclass__"].get_object(),
@@ -944,9 +942,7 @@ class PyCoreTest(unittest.TestCase):
         """)
         namespace = {}
         exec(code, namespace)
-        self.assertIs(
-            namespace["Ownership"].__type_params__[0].__bound__, namespace["Identity"]
-        )
+        self.assertIs(namespace["Ownership"].__type_params__[0].__bound__, namespace["Identity"])
         mod = libutils.get_string_module(self.project, code)
         owner = mod["Ownership"].get_object()
         leaf = mod["Leaf"].get_object()
@@ -1058,20 +1054,16 @@ class PyCoreTest(unittest.TestCase):
 
     def test_class_base_uses_import_before_rebinding_its_name(self):
         provider = testutils.create_module(self.project, "provider")
-        provider.write(
-            dedent("""\
+        provider.write(dedent("""\
             class Foo:
                 member = 1
-        """)
-        )
+        """))
         resource = testutils.create_module(self.project, "consumer")
-        resource.write(
-            dedent("""\
+        resource.write(dedent("""\
             from provider import Foo
             class Foo(Foo):
                 pass
-        """)
-        )
+        """))
         imported = self.project.get_pymodule(provider)["Foo"].get_object()
         derived = self.project.get_pymodule(resource)["Foo"].get_object()
         self.assertEqual([derived, imported], derived.get_mro())
@@ -1081,20 +1073,16 @@ class PyCoreTest(unittest.TestCase):
     def test_generic_class_base_uses_import_before_rebinding_its_name(self):
         self.project.prefs.set("import_dynload_stdmods", True)
         provider = testutils.create_module(self.project, "provider")
-        provider.write(
-            dedent("""\
+        provider.write(dedent("""\
             class Foo:
                 member = 1
-        """)
-        )
+        """))
         resource = testutils.create_module(self.project, "consumer")
-        resource.write(
-            dedent("""\
+        resource.write(dedent("""\
             from provider import Foo
             class Foo[T](Foo):
                 pass
-        """)
-        )
+        """))
         imported = self.project.get_pymodule(provider)["Foo"].get_object()
         derived = self.project.get_pymodule(resource)["Foo"].get_object()
         namespace = {}
@@ -1111,27 +1099,21 @@ class PyCoreTest(unittest.TestCase):
     def test_generic_parameter_precedes_imported_previous_class_name(self):
         self.project.prefs.set("import_dynload_stdmods", True)
         provider = testutils.create_module(self.project, "provider")
-        provider.write(
-            dedent("""\
+        provider.write(dedent("""\
             class Foo:
                 pass
-        """)
-        )
+        """))
         resource = testutils.create_module(self.project, "consumer")
-        resource.write(
-            dedent("""\
+        resource.write(dedent("""\
             from provider import Foo
             class Foo[Foo](Foo):
                 pass
-        """)
-        )
+        """))
         derived = self.project.get_pymodule(resource)["Foo"].get_object()
         unresolved, generic = derived.get_bases()
         self.assertIsInstance(unresolved, UnresolvedBase)
         self.assertIs(unresolved.pyobject, get_unknown())
-        self.assertIs(
-            self.project.get_module("typing")["Generic"].get_object(), generic
-        )
+        self.assertIs(self.project.get_module("typing")["Generic"].get_object(), generic)
 
     def test_inconsistent_mro(self):
         code = dedent("""\

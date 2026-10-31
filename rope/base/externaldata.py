@@ -3,7 +3,7 @@
 import collections
 import io
 import tokenize
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 
 from rope.base import (
     ast,
@@ -64,12 +64,9 @@ def _class_bindings(node):
                 for item in child.names
             }
             names.update(bound)
-        elif (
-            isinstance(child, ast.ExceptHandler)
-            and child.name
-            or isinstance(child, (ast.MatchAs, ast.MatchStar))
-            and child.name
-        ):
+        elif isinstance(child, ast.ExceptHandler) and child.name:
+            names.add(child.name)
+        elif isinstance(child, (ast.MatchAs, ast.MatchStar)) and child.name:
             names.add(child.name)
         elif isinstance(child, ast.MatchMapping) and child.rest:
             names.add(child.rest)
@@ -117,11 +114,15 @@ def _count_module_bindings(tree):
                 counts[item.asname or item.name] += 1
                 if item.name == "*":
                     wildcard_import = True
-        elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+        elif isinstance(node, ast.ExceptHandler):
             if node.name:
                 counts[node.name] += 1
-        elif isinstance(node, ast.MatchMapping) and node.rest:
-            counts[node.rest] += 1
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)):
+            if node.name:
+                counts[node.name] += 1
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest:
+                counts[node.rest] += 1
         stack.extend(ast.iter_child_nodes(node))
     return _BindingCounts(counts, wildcard_import)
 
@@ -150,22 +151,22 @@ class _UncertainDataName(pynames.PyName):
 
 class _ModulePlanContext:
     __slots__ = (
-        "assignments",
-        "bindings",
-        "class_bindings",
+        "tree",
         "classes",
-        "enclosing",
-        "functions",
-        "hook_functions",
+        "bindings",
+        "assignments",
+        "writes",
         "parents",
+        "functions",
+        "readers_by_attr",
+        "class_bindings",
+        "types",
         "plain_class",
         "plain_rhs",
-        "readers_by_attr",
-        "receiver_names",
+        "enclosing",
         "returned_types",
-        "tree",
-        "types",
-        "writes",
+        "receiver_names",
+        "hook_functions",
     )
 
     def __init__(self, **fields):
@@ -221,12 +222,9 @@ def _plan_context(module):
                     )
                     for item in node.names
                 )
-            elif (
-                isinstance(node, ast.ExceptHandler)
-                and node.name
-                or isinstance(node, (ast.MatchAs, ast.MatchStar))
-                and node.name
-            ):
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                names.add(node.name)
+            elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
                 names.add(node.name)
             elif isinstance(node, ast.MatchMapping) and node.rest:
                 names.add(node.rest)
@@ -376,12 +374,9 @@ def _plan_context(module):
                         parent, (ast.Assign, ast.AnnAssign, ast.NamedExpr)
                     ):
                         unknown_writes.add(node.id)
-                elif (
-                    isinstance(node, ast.ExceptHandler)
-                    and node.name
-                    or isinstance(node, (ast.MatchAs, ast.MatchStar))
-                    and node.name
-                ):
+                elif isinstance(node, ast.ExceptHandler) and node.name:
+                    unknown_writes.add(node.name)
+                elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
                     unknown_writes.add(node.name)
                 elif isinstance(node, ast.MatchMapping) and node.rest:
                     unknown_writes.add(node.rest)
@@ -495,17 +490,15 @@ def _plan_context(module):
                 and node.name == hook
             ):
                 result.append(node)
+            elif isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == hook
+                for target in node.targets
+            ):
+                result.extend(resolve(node.value))
             elif (
-                isinstance(node, ast.Assign)
-                and any(
-                    isinstance(target, ast.Name) and target.id == hook
-                    for target in node.targets
-                )
-                or (
-                    isinstance(node, ast.AnnAssign)
-                    and isinstance(node.target, ast.Name)
-                    and node.target.id == hook
-                )
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == hook
             ):
                 result.extend(resolve(node.value))
             elif isinstance(node, (ast.Import, ast.ImportFrom)) and any(
@@ -547,7 +540,7 @@ class _ModulePlanState:
     dicts, and the rename checks must observe exactly those records.
     """
 
-    __slots__ = ("complete", "context", "result")
+    __slots__ = ("context", "result", "complete")
 
     def __init__(self, context):
         self.context = context
@@ -569,6 +562,7 @@ def _resolve_entry(context, result, key, events):
     classes = context.classes
     bindings = context.bindings
     assignments = context.assignments
+    writes = context.writes
     parents = context.parents
     functions = context.functions
     readers_by_attr = context.readers_by_attr
@@ -930,9 +924,9 @@ def _original_value_containers(plan):
                     )
                     else value.get_type()
                 )
-                if isinstance(
-                    candidate, pyobjects.AbstractClass
-                ) or local_source_module(candidate, project, root):
+                if isinstance(candidate, pyobjects.AbstractClass):
+                    pending.append(candidate)
+                elif local_source_module(candidate, project, root):
                     pending.append(candidate)
 
 

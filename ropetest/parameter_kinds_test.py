@@ -484,7 +484,7 @@ def test_unknown_unpacking_does_not_invent_default_bindings(project, unpacking):
             class Key:
                 pass
             def supply():
-                return eval("{"[]" if unpacking.startswith("*s") else "{}"}")
+                return eval("{'[]' if unpacking.startswith('*s') else '{}'}")
             def func(pos=Pos(), /, *, key=Key()):
                 return pos
             result = func({unpacking})
@@ -1264,7 +1264,9 @@ def test_keyword_only_method_without_positional_receiver(project):
 
     mod = libutils.get_string_module(
         project,
-        "class Sample:\n    def method(*, named: str):\n        return named\n",
+        "class Sample:\n"
+        "    def method(*, named: str):\n"
+        "        return named\n",
     )
     method = mod["Sample"].get_object()["method"].get_object()
     assert method.get_param_names() == ["named"]

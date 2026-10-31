@@ -1088,10 +1088,7 @@ class RopeFolderTest(unittest.TestCase):
         site_packages.mkdir(parents=True)
         (site_packages / "stubpkg.py").write_text("")
         project = Project(str(directory), python_path=[str(site_packages)])
-        self.assertTrue(
-            project.get_file(".venv/lib/python3.13/site-packages/stubpkg.py").exists()
-            is not None
-        )
+        self.assertTrue(project.get_file(".venv/lib/python3.13/site-packages/stubpkg.py").exists() is not None)
         project.close()
 
     def test_ignored_folders(self):
@@ -1215,7 +1212,7 @@ class RopeFolderTest(unittest.TestCase):
         self.project = testutils.sample_project(fscommands=fscommands, ropefolder=None)
         myfile = self.project.get_file("myfile.txt")
         myfile.create()
-        self.project.root.create_folder("myfolder")
+        myfolder = self.project.root.create_folder("myfolder")
 
         children = {resource.path for resource in self.project.root.get_children()}
 

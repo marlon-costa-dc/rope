@@ -1892,7 +1892,9 @@ class ExtractMethodTest(unittest.TestCase):
         """)
         start = code.index("1 + 2")
         end = start + len("1 + 2")
-        refactored = self.do_extract_method(code, start, end, "extracted", global_=True)
+        refactored = self.do_extract_method(
+            code, start, end, "extracted", global_=True
+        )
         expected = dedent("""\
             def f():
                 class A:
@@ -1911,7 +1913,9 @@ class ExtractMethodTest(unittest.TestCase):
         """)
         start = code.index("1 + 2")
         end = start + len("1 + 2")
-        refactored = self.do_extract_method(code, start, end, "extracted", global_=True)
+        refactored = self.do_extract_method(
+            code, start, end, "extracted", global_=True
+        )
         expected = dedent("""\
 
             def extracted():

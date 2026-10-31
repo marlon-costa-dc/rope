@@ -747,7 +747,7 @@ class MoveMethod:
 
         """
         functionutils._check_signature_parameters(self.pyfunction)
-        changes = ChangeSet(f"Moving method <{self.method_name}>")
+        changes = ChangeSet("Moving method <%s>" % self.method_name)
         if resources is None:
             resources = self.project.get_python_files()
         if new_name is None:

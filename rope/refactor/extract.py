@@ -508,6 +508,7 @@ class _ExceptionalConditionChecker:
     def multi_line_conditions(self, info):
         node = _parse_text(info.source[info.region[0] : info.region[1]])
         count = usefunction._return_count(node)
+        extracted = info.extracted
         if count > 1:
             raise RefactoringError(
                 "Extracted piece can have only one return statement."
@@ -576,9 +577,9 @@ class _ExtractMethodParts(ast.RopeNodeVisitor):
 
     def get_definition(self):
         if self.info.global_ or self.info.class_to_define_before is not None:
-            return f"\n{self._get_function_definition()}\n"
+            return "\n%s\n" % self._get_function_definition()
         else:
-            return f"\n{self._get_function_definition()}"
+            return "\n%s" % self._get_function_definition()
 
     def get_replacement_pattern(self):
         variables = []

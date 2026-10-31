@@ -6,7 +6,7 @@ import os
 import sys
 import warnings
 from contextlib import ExitStack
-from typing import Optional
+from typing import Optional, Union
 
 import rope.base.fscommands  # Use full qualification for clarity.
 import rope.base.resourceobserver as resourceobserver
@@ -146,7 +146,7 @@ class _Project:
             raise ModuleNotFoundError("Module %s not found" % name)
         return self.pycore.resource_to_pyobject(module)
 
-    def find_module(self, modname, folder=None) -> File | Folder | None:
+    def find_module(self, modname, folder=None) -> Optional[Union[File, Folder]]:
         """Returns a resource corresponding to the given module
 
         returns None if it can not be found
@@ -234,7 +234,7 @@ class Project(_Project):
         if not filesystem.exists(self._address):
             filesystem.create_folder(self._address)
         elif not filesystem.isdir(self._address):
-            raise exceptions.RopeError("Project root exists and is not a directory")
+            raise exceptions.RopeError("Project root exists and" " is not a directory")
         if fscommands is None:
             fscommands = rope.base.fscommands.create_fscommands(self._address)
         super().__init__(fscommands, external_project=external_project)

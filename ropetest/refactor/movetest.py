@@ -75,29 +75,23 @@ class MoveRefactoringTest(unittest.TestCase):
 
     def test_move_constant_preserves_used_module_alias(self) -> None:
         self.project.prefs["prefer_module_from_imports"] = True
-        self.mod4.write(
-            dedent("""\
+        self.mod4.write(dedent("""\
             def keep():
                 return 1
 
             value = 2
-        """)
-        )
-        self.mod5.write(
-            dedent("""\
+        """))
+        self.mod5.write(dedent("""\
             def existing():
                 return 3
-        """)
-        )
-        self.mod3.write(
-            dedent("""\
+        """))
+        self.mod3.write(dedent("""\
             from pkg import mod5
             from pkg import mod4 as utils_module
 
             def run():
                 return mod5.existing(), utils_module.keep(), utils_module.value
-        """)
-        )
+        """))
         self._move(self.mod4, self.mod4.read().index("value"), self.mod5)
         self.assertEqual(
             dedent("""\
@@ -109,20 +103,14 @@ class MoveRefactoringTest(unittest.TestCase):
             """),
             self.mod3.read(),
         )
-        self.assertEqual(
-            dedent("""\
+        self.assertEqual(dedent("""\
             def keep():
                 return 1
 
-        """),
-            self.mod4.read(),
-        )
-        self.assertIn(
-            dedent("""\
+        """), self.mod4.read())
+        self.assertIn(dedent("""\
             value = 2
-        """),
-            self.mod5.read(),
-        )
+        """), self.mod5.read())
 
     def test_move_constant_2(self) -> None:
         self.origin_module.write("bar = 321\nfoo = 123\n")

@@ -1971,12 +1971,9 @@ class ImportUtilsTest(unittest.TestCase):
                 expected = dedent(f"""\
                     from pkg2 import {imported}
                 """)
-                self.mod.write(
-                    expected
-                    + dedent("""\
+                self.mod.write(expected + dedent("""\
                     from pkg2 import mod2
-                """)
-                )
+                """))
                 pymod = self.project.get_pymodule(self.mod)
                 module_imports = self.import_tools.module_imports(
                     pymod, self._line_filter(2)
