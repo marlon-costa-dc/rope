@@ -433,3 +433,15 @@ class RegressionHintingTest(AbstractHintingTest):
                     return self.bar""")
         result = self._assist(code)
         self.assert_completion_in_result("bar", "attribute", result)
+
+    def test_assignment_hints_ignore_names_that_are_not_assigned(self):
+        from rope.base import libutils
+        from rope.base.oi.type_hinting import utils
+        from rope.base.oi.type_hinting.providers.pep0484_type_comments import (
+            AssignmentProvider,
+        )
+
+        pymodule = libutils.get_string_module(self.project, "def a_func():\n    pass\n")
+        defined_name = pymodule["a_func"]
+        self.assertIsNone(AssignmentProvider(None)(defined_name))
+        self.assertIsNone(utils.get_class_with_attr_name(defined_name))
