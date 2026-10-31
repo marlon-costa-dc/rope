@@ -416,6 +416,15 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children("FormattedValue", ["{", "", "Name", "", "}"])
 
+    def test_format_string_region_without_closing_quote_is_rejected(self):
+        source = 'f"abc{a}"\n'
+        node = ast.parse(source)
+        node.body[0].value.end_col_offset -= 1
+        with self.assertRaisesRegex(
+            patchedast.MismatchedTokenError, "does not end with a quote delimiter"
+        ):
+            patchedast.patch_ast(node, source)
+
     @testutils.only_for_versions_higher("3.6")
     def test_handling_format_strings_with_implicit_join(self):
         source = '''"1" + rf'abc{a}' f"""xxx{b} """\n'''
