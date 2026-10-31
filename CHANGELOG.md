@@ -1,14 +1,23 @@
 # **Upcoming release**
 
-- #850 Update and pin black version in pre-commit and Github Actions
-- #851 Bump supported python version to up to Python 3.14
-- #852 Implement patchedast handlers for TypeAlias
-- #853 Implement patchedast handlers TypeVar
+- #895 patchedast Starred and keyword now consumes their syntactically expected and ** (@lieryan)
+- #896 patchedast cleanup and refactoring (@lieryan)
+- #905 Ignore `node_modules` directories by default when scanning project files and source folders. (@marcoeangeli)
+- #844 Fix patchedast end-quote detection for `'''` inside a double-quoted f-string (@marlon-costa-dc)
+
+# Release 1.15.0
+
+- #850 Update and pin black version in pre-commit and Github Actions (@lieryan)
+- #851 Bump supported python version to up to Python 3.14 (@lieryan)
+- #852 Implement patchedast handlers for TypeAlias (@lieryan)
+- #853 Implement patchedast handlers TypeVar (@lieryan)
 - #847 Avoid printing autoimport syntax errors (@yangfan-yf-yf)
 - #623, #819, #863 Support MatchOr, MatchSequence, MatchStar (@jheld, @lieryan)
 - #870 Add default implementation for is_dir() (@lieryan)
 - #872 Fix unicode handling in patchedast (@lieryan)
-- Fix patchedast end-quote detection for `'''` inside a double-quoted f-string
+- #845 Support PEP 695 type parameters on class definitions and type aliases in patchedast (@marlon-costa-dc)
+- #849 docs: resolve warnings and update Github Actions versions (@mcepl)
+- #835 Tear down tests using python from venv (@aeliton)
 
 # Release 1.14.0
 
