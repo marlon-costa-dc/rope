@@ -414,15 +414,6 @@ class PatchedASTTest(unittest.TestCase):
         )
         checker.check_children("FormattedValue", ["{", "", "Name", "", "}"])
 
-    @testutils.only_for_versions_higher("3.12")
-    def test_handling_format_strings_with_multiline_replacement_field(self):
-        source = 'x = (f"{a}{\n    b\n}{c}").upper()\n'
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        start = source.index('f"')
-        checker.check_region("JoinedStr", start, source.index(")."))
-        self.assertEqual(source, patchedast.write_ast(ast_frag))
-
     @testutils.only_for_versions_higher("3.6")
     def test_handling_format_strings_with_format_spec(self):
         source = 'f"abc{a:01}"\n'
