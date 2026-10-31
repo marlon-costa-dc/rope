@@ -346,12 +346,15 @@ class PyCoreTest(unittest.TestCase):
                 pass
             class Z(X, Y):
                 pass
+            class W(Z):
+                pass
         """)
         mod = libutils.get_string_module(self.project, code)
         z = mod["Z"].get_object()
         with self.assertRaises(exceptions.InconsistentHierarchyError):
             z.get_mro()
         self.assertIsNone(z.get_consistent_mro())
+        self.assertIsNone(mod["W"].get_object().get_consistent_mro())
 
     def test_inconsistent_mro_keeps_attributes_along_the_bases(self):
         # Python refuses to create these classes, but rope keeps analysing
@@ -388,6 +391,7 @@ class PyCoreTest(unittest.TestCase):
         mod = libutils.get_string_module(self.project, code)
         with self.assertRaises(exceptions.InconsistentHierarchyError):
             mod["B"].get_object().get_mro()
+        self.assertIsNone(mod["B"].get_object().get_consistent_mro())
 
     def test_cyclic_inheritance(self):
         mod1 = testutils.create_module(self.project, "mod1")
@@ -397,6 +401,7 @@ class PyCoreTest(unittest.TestCase):
         a = self.project.get_module("mod1")["A"].get_object()
         with self.assertRaises(exceptions.InconsistentHierarchyError):
             a.get_mro()
+        self.assertIsNone(a.get_consistent_mro())
 
     def test_module_creation(self):
         new_module = testutils.create_module(self.project, "module")
