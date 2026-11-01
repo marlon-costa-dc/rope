@@ -373,8 +373,11 @@ class PyCoreTest(unittest.TestCase):
     def test_find_module_skips_python_path_files(self):
         external = tempfile.TemporaryDirectory()
         self.addCleanup(external.cleanup)
-        archive = os.path.join(external.name, "archive.zip")
-        libs = os.path.join(external.name, "libs")
+        # Rope reports real paths; temporary directories may sit behind a
+        # symlink (macOS /var) or a short name (Windows RUNNER~1).
+        root = os.path.realpath(external.name)
+        archive = os.path.join(root, "archive.zip")
+        libs = os.path.join(root, "libs")
         os.mkdir(libs)
         open(archive, "w").close()
         with open(os.path.join(libs, "sample.py"), "w") as sample:
