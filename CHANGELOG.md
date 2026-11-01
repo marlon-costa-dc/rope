@@ -1,5 +1,7 @@
 # __Upcoming release__
 
+# Release 1.15.0+dc.11
+
 - Memoize `Scope.get_region()` like `get_end()` and `get_logical_end()`, so
   offset lookups stop re-scanning decorator tokens for every subscope. Scopes
   are rebuilt with their module, so a changed source never sees a stale region.
