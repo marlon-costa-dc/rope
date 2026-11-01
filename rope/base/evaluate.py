@@ -198,7 +198,7 @@ def eval_node(scope, node):
 
 def eval_node2(scope, node):
     module = scope.pyobject.get_module()
-    context = module.get_source_binding_index().context_for_node(node)
+    context = module._get_source_binding_index().context_for_node(node)
     if context is not None and scope.get_kind() != "Temporary":
         scope = context.environment
     parameter_facts = False
@@ -316,7 +316,7 @@ class ScopeNameFinder:
         offset: int,
     ) -> Tuple[Optional[rope.base.pynames.PyName], Optional[rope.base.pynames.PyName]]:
         lineno = self.lines.get_line_number(offset)
-        index = self.module_scope.pyobject.get_source_binding_index()
+        index = self.module_scope.pyobject._get_source_binding_index()
         context = index.context_at(offset)
         holding_scope = context.environment
         structural_scope = context.structural_scope
@@ -704,7 +704,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
 
     def _make_comprehension_scope(self, node):
         module = self.scope.pyobject.get_module()
-        binding_scope = module.get_source_binding_index().comprehension_scope(node)
+        binding_scope = module._get_source_binding_index().comprehension_scope(node)
         if binding_scope is not None:
             if self.scope.get_kind() == "Temporary":
                 values = {
@@ -885,7 +885,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
 
     def _Lambda(self, node):
         module = self.scope.pyobject.get_module()
-        function = module.get_source_binding_index().callable_for_node(node)
+        function = module._get_source_binding_index().callable_for_node(node)
         if function is None:
             function = rope.base.builtins.Lambda(node, self.scope)
         elif self.scope.get_kind() == "Temporary":

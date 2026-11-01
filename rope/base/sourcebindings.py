@@ -502,7 +502,7 @@ def source_lambda_attribute_value(primary, attribute):
     module, _ = attribute.get_definition_location()
     if module is None:
         return None
-    index = module.get_source_binding_index()
+    index = module._get_source_binding_index()
     storage = {"class": [], "instance": []}
     for assignment in getattr(attribute, "assignments", ()):
         context = index.context_for_node(assignment.ast_node)
@@ -632,7 +632,7 @@ class BindingEnvironment(pyscopes.Scope):
         return []
 
     def get_binding_scopes(self):
-        return tuple(self.children)
+        return self.index.children_of(self)
 
     def get_kind(self):
         return self.kind
@@ -949,7 +949,7 @@ class SourceLambdaFunction(pyobjects.AbstractFunction):
             return None
         class_storage = False
         for assignment in getattr(attribute, "assignments", ()):
-            context = module.get_source_binding_index().context_for_node(
+            context = module._get_source_binding_index().context_for_node(
                 assignment.ast_node
             )
             if context is None or context.structural_scope.get_kind() != "Class":
@@ -1049,8 +1049,10 @@ class SourceLambdaFunction(pyobjects.AbstractFunction):
 
 
 class SourceBindingIndex:
-    def __init__(self, pymodule):
+    def __init__(self, pymodule, *, _defer_bodies=False):
         self.pymodule = pymodule
+        self._defer_bodies = _defer_bodies
+        self._pending_bodies = {}
         self.source = pymodule.source_code
         self.fragments = []
         self._fragment_positions = {}
@@ -1069,6 +1071,7 @@ class SourceBindingIndex:
         tree = pymodule.get_ast()
         self.global_reference = _StructuralReference(self, tree)
         self.owner_references = [self.global_reference]
+        self._owners_by_node = {id(tree): self.global_reference}
         self._preparing_headers = False
         self._class_symbols = {}
         self.future_annotations = any(
@@ -1092,11 +1095,52 @@ class SourceBindingIndex:
         )
         self.state = "BUILDING"
         self._visit(tree, self.global_reference, self.global_reference, "module", 0)
-        self._owners_by_node = {
-            id(owner.node): owner for owner in self.owner_references
-        }
-        self.fragments.sort(key=attrgetter("start", "end", "depth"))
+        if not self._pending_bodies:
+            self._sort_fragments()
         self.state = "FROZEN"
+
+    def _sort_fragments(self):
+        self.fragments.sort(key=attrgetter("start", "end", "depth"))
+        self._fragment_positions = {
+            id(fragment.context.source_node): position
+            for position, fragment in enumerate(self.fragments)
+        }
+
+    def _complete(self):
+        if not self._defer_bodies:
+            return self
+        self._defer_bodies = False
+        while self._pending_bodies:
+            self._materialize_body(next(iter(self._pending_bodies)))
+        self._sort_fragments()
+        return self
+
+    def _materialize_body(self, key):
+        node, environment, owner, depth = self._pending_bodies.pop(key)
+        previous = self._branch_context
+        self._branch_context = ()
+        try:
+            for statement in node.body:
+                self._visit(statement, environment, owner, "function-body", depth + 1)
+        finally:
+            self._branch_context = previous
+
+    def _materialize_at(self, offset):
+        # Completing an outer body discovers nested declarations in the same
+        # index; descend only into the body containing the requested source.
+        while True:
+            for key, (node, _, _, _) in self._pending_bodies.items():
+                first = node.body[0]
+                start = min(
+                    self._span(part)[0]
+                    for part in [first, *getattr(first, "decorator_list", ())]
+                )
+                _, end = self._span(node)
+                if start <= offset < end:
+                    self._materialize_body(key)
+                    break
+            else:
+                return
 
     def _span(self, node):
         if not hasattr(node, "lineno"):
@@ -1511,6 +1555,7 @@ class SourceBindingIndex:
         raise ValueError("Cyclic native string-sequence declaration: %s" % name)
 
     def context_at(self, offset):
+        self._materialize_at(offset)
         matched = [item for item in self.fragments if item.start <= offset < item.end]
         if matched:
             return max(
@@ -1520,9 +1565,12 @@ class SourceBindingIndex:
         return SourceContext(scope, scope, self.pymodule.get_ast(), "structure")
 
     def context_for_node(self, node):
+        if id(node) not in self.node_contexts and hasattr(node, "lineno"):
+            self._materialize_at(self._span(node)[0])
         return self.node_contexts.get(id(node))
 
     def binding_for_token(self, offset):
+        self._materialize_at(offset)
         for start, end, binding in self.token_bindings:
             if start <= offset < end:
                 if isinstance(binding, tuple):
@@ -1532,9 +1580,11 @@ class SourceBindingIndex:
         return None
 
     def callable_for_node(self, node):
+        self.context_for_node(node)
         return self.source_callables.get(id(node))
 
     def comprehension_scope(self, node):
+        self.context_for_node(node)
         return self.comprehensions.get(id(node))
 
     def prepare_header_bindings(self, scope=None):
@@ -1571,6 +1621,7 @@ class SourceBindingIndex:
         return tuple(self._opaque_references)
 
     def children_of(self, environment):
+        self._complete()
         if isinstance(environment, BindingEnvironment):
             return tuple(environment.children)
         return tuple(
@@ -1989,6 +2040,7 @@ class SourceBindingIndex:
         if kind == _KIND_CLASS:
             class_owner = _StructuralReference(self, node, owner, environment)
             self.owner_references.append(class_owner)
+            self._owners_by_node[id(node)] = class_owner
             generic = self._typeparams(node, environment, class_owner, depth + 1)
             for expression in node.decorator_list:
                 self._visit(expression, environment, owner, "decorator", depth + 1)
@@ -2069,6 +2121,7 @@ class SourceBindingIndex:
     def _function(self, node, entry, parent_owner, depth):
         owner = _StructuralReference(self, node, parent_owner, entry)
         self.owner_references.append(owner)
+        self._owners_by_node[id(node)] = owner
         generic = self._typeparams(node, entry, owner, depth + 1)
         args = node.args
         parameters = args.posonlyargs + args.args + args.kwonlyargs
@@ -2125,8 +2178,11 @@ class SourceBindingIndex:
         self._branch_context = ()
         try:
             self._record(node, body_env, owner, "function-body", depth)
-            for statement in node.body:
-                self._visit(statement, body_env, owner, "function-body", depth + 1)
+            if self._defer_bodies:
+                self._pending_bodies[id(node)] = (node, body_env, owner, depth)
+            else:
+                for statement in node.body:
+                    self._visit(statement, body_env, owner, "function-body", depth + 1)
         finally:
             self._branch_context = previous
 

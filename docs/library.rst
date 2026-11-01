@@ -1287,6 +1287,15 @@ continues to return the structural scope. Its explicit
 
 A module's ``get_source_binding_index()`` provides source identity queries:
 
+The public getter and direct ``SourceBindingIndex`` construction return a complete
+index. Internal definition and expression queries share that same module index,
+but may defer function bodies until their lexical source is queried. A full public
+index request or public binding-scope enumeration completes those bodies before
+returning, including nested annotations whose binding parent is the module.
+Body demands include decorators on the body's first declaration. Parsing and native C3
+resolution are unchanged. Modules containing assignment expressions remain eager:
+their nested headers can write bindings into enclosing or global scopes.
+
 .. code-block:: python
 
   pymodule = project.get_pymodule(resource)

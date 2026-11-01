@@ -282,7 +282,7 @@ class FunctionScope(Scope):
             self._visit_function()
         module = self.pyobject.get_module()
         if module.requires_header_bindings():
-            module.get_source_binding_index().prepare_header_bindings(self)
+            module._get_source_binding_index().prepare_header_bindings(self)
         return self.names
 
     def _visit_function(self):

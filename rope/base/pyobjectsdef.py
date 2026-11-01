@@ -446,7 +446,7 @@ class PyClass(pyobjects.PyClass):
 
                 context = (
                     self.get_module()
-                    .get_source_binding_index()
+                    ._get_source_binding_index()
                     .context_for_node(base_node)
                 )
                 if context is not None:
@@ -628,11 +628,16 @@ class PyModule(pyobjects.PyModule):
     def _create_scope(self):
         return rope.base.pyscopes.GlobalScope(self.pycore, self)
 
-    @utils.saveit
     def get_source_binding_index(self):
+        return self._get_source_binding_index()._complete()
+
+    @utils.saveit
+    def _get_source_binding_index(self):
         from rope.base.sourcebindings import SourceBindingIndex
 
-        return SourceBindingIndex(self)
+        return SourceBindingIndex(
+            self, _defer_bodies=not self.requires_header_bindings()
+        )
 
     @utils.saveit
     def requires_header_bindings(self):
@@ -645,12 +650,12 @@ class PyModule(pyobjects.PyModule):
 
     def get_attributes(self):
         if self.requires_header_bindings():
-            self.get_source_binding_index().prepare_header_bindings()
+            self._get_source_binding_index().prepare_header_bindings()
         return super().get_attributes()
 
     def get_attribute(self, name):
         if self.requires_header_bindings():
-            self.get_source_binding_index().prepare_header_bindings()
+            self._get_source_binding_index().prepare_header_bindings()
         return super().get_attribute(name)
 
     @property
@@ -1035,7 +1040,7 @@ class _ScopeVisitor(_ExpressionVisitor):
             if assignment is not None:
                 node = assignment.type_hint or assignment.ast_node
                 context = (
-                    self.get_module().get_source_binding_index().context_for_node(node)
+                    self.get_module()._get_source_binding_index().context_for_node(node)
                 )
                 assignment.branch_context = (
                     context.branch_context if context is not None else None
