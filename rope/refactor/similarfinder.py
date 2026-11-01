@@ -154,8 +154,8 @@ class _ASTMatcher:
     def find_matches(self):
         if self.matches is None:
             self.matches = []
-            # _check_nodes always returns None, so
-            # call_for_nodes traverses self.body's entire tree.
+            # call_for_nodes traverses self.body's entire tree, except the
+            # inside of f-strings, which _check_node walks itself.
             ast.call_for_nodes(self.body, self._check_node)
         return self.matches
 
@@ -164,6 +164,20 @@ class _ASTMatcher:
             self._check_statements(node)
         else:
             self._check_expression(node)
+        if isinstance(node, ast.JoinedStr):
+            self._check_replacement_fields(node)
+            return True
+        return False
+
+    def _check_replacement_fields(self, node):
+        # The literal pieces and format specs of an f-string are fragments of
+        # its source, not expressions: patchedast gives them no region.  Only
+        # the expressions in the replacement fields can match.
+        for value in node.values:
+            if isinstance(value, ast.FormattedValue):
+                ast.call_for_nodes(value.value, self._check_node)
+                if value.format_spec is not None:
+                    self._check_replacement_fields(value.format_spec)
 
     def _check_expression(self, node):
         mapping = {}
