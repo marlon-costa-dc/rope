@@ -2,12 +2,13 @@
 
 import sys
 import typing
-from textwrap import indent
+from textwrap import dedent, indent
 
 import pytest
 
 from rope.base import ast, evaluate, exceptions, pyobjects
 from rope.base.project import Project
+from rope.base.sourcebindings import SourceBindingIndex
 from rope.contrib import codeassist, finderrors
 from rope.refactor import introduce_parameter, rename
 
@@ -25,6 +26,115 @@ def module(project, source):
     resource = project.root.create_file("subject.py")
     resource.write(source)
     return resource
+
+
+def test_definition_queries_complete_the_same_index_on_body_demand(model_project):
+    source = dedent("""\
+        class Base:
+            def unused(self):
+                return [value for value in range(3)]
+        class Derived(Base):
+            pass
+        def outer(value):
+            def inner():
+                return value
+            return inner
+    """)
+    resource = module(model_project, source)
+    pymodule = model_project.get_pymodule(resource)
+    derived = pymodule["Derived"].get_object()
+    assert [owner.get_name() for owner in derived.get_mro()] == ["Derived", "Base"]
+    index = pymodule._get_source_binding_index()
+    unused = pymodule.get_ast().body[0].body[0]
+    assert index.node_contexts.get(id(unused.body[0])) is None
+
+    outer = pymodule["outer"].get_object()
+    closure = evaluate.eval_location(pymodule, source.index("return value") + 7)
+    assert closure is outer.get_parameters()["value"]
+    assert index.node_contexts.get(id(unused.body[0])) is None
+
+    assert pymodule.get_source_binding_index() is index
+    assert id(unused.body[0]) in index.node_contexts
+    eager = SourceBindingIndex(pymodule)
+    assert set(index.node_contexts) == set(eager.node_contexts)
+    for key, context in eager.node_contexts.items():
+        actual = index.node_contexts[key]
+        assert actual.role == context.role
+        assert actual.environment.get_kind() == context.environment.get_kind()
+        assert actual.structural_scope is context.structural_scope
+
+
+def test_nested_function_binding_children_materialize_their_body(model_project):
+    source = dedent("""\
+        def outer():
+            class Nested:
+                callback = lambda item: [value for value in item]
+            return Nested
+    """)
+    resource = module(model_project, source)
+    pymodule = model_project.get_pymodule(resource)
+    outer = pymodule["outer"].get_object()
+    nested = outer.get_scope().get_name("Nested").get_object()
+    assert nested.get_scope().get_binding_scopes() == ()
+    (callback,) = outer.get_scope().get_binding_scopes()
+    assert callback.get_kind() == "Lambda"
+    (comprehension,) = callback.get_binding_scopes()
+    assert comprehension.get_kind() == "Comprehension"
+    assert evaluate.eval_location(
+        pymodule, source.index("[value") + 1
+    ) is comprehension.get_name("value")
+
+
+@pytest.mark.parametrize("declaration", ["def inner():", "async def inner():", "class Inner:"])
+@pytest.mark.parametrize("query", ["offset", "node"])
+def test_first_nested_decorator_preserves_lexical_binding(
+    model_project, declaration, query
+):
+    source = dedent(f"""\
+        def outer():
+            @(lambda decorated: decorated)
+            {declaration}
+                pass
+    """)
+    resource = module(model_project, source)
+    pymodule = model_project.get_pymodule(resource)
+    decorator = pymodule.get_ast().body[0].body[0].decorator_list[0]
+    if query == "node":
+        index = pymodule._get_source_binding_index()
+        context = index.context_for_node(decorator.body)
+        assert context is not None
+        binding = context.environment.get_name("decorated")
+    else:
+        binding = evaluate.eval_location(pymodule, source.index("decorated:") + 1)
+    assert binding is not None
+    assert evaluate.eval_location(
+        pymodule, source.index(": decorated") + 3
+    ) is binding
+    assert evaluate.eval_location(
+        pymodule, source.index("decorated:") + 1
+    ) is binding
+    assert pymodule.get_source_binding_index().context_for_node(
+        decorator.body
+    ).environment.get_name("decorated") is binding
+
+
+def test_public_scope_enumeration_includes_nested_future_annotations(model_project):
+    source = dedent("""\
+        from __future__ import annotations
+        def outer():
+            def inner(value: int):
+                pass
+    """)
+    resource = module(model_project, source)
+    pymodule = model_project.get_pymodule(resource)
+    scopes = pymodule.get_scope().get_binding_scopes()
+    assert [(scope.get_kind(), scope.node.lineno) for scope in scopes] == [
+        ("Annotation", 3)
+    ]
+    evaluate.eval_location(pymodule, source.index("value:") + 1)
+    assert pymodule.get_scope().get_binding_scopes() == scopes
+    pymodule.get_source_binding_index()
+    assert pymodule.get_scope().get_binding_scopes() == scopes
 
 
 def prefix(mode):

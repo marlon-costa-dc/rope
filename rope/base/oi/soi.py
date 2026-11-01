@@ -80,7 +80,7 @@ def relevant_branch_context(pyname, branch_context):
 def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
     read_point = None
     if pyname.initial_binding is not None:
-        source_index = pyname.module.get_source_binding_index()
+        source_index = pyname.module._get_source_binding_index()
         read_context = source_index.context_for_node(read_node)
         if (
             read_context is None
@@ -143,7 +143,7 @@ def _infer_assignment_path(pyname, index, context, recursive, read_point=None):
         if branch_context is None:
             return pyobjects.get_unknown(), True
         if read_point is not None:
-            source_index = pyname.module.get_source_binding_index()
+            source_index = pyname.module._get_source_binding_index()
             if source_index.context_for_node(assignment.ast_node) is None:
                 return pyobjects.get_unknown(), True
             if source_index._span(assignment.ast_node)[1] > read_point:
@@ -209,7 +209,7 @@ def _infer_assignment_path(pyname, index, context, recursive, read_point=None):
 
 def _assignment_branch_context(assignment, pymodule):
     node = assignment.type_hint or assignment.ast_node
-    context = pymodule.get_source_binding_index().context_for_node(node)
+    context = pymodule._get_source_binding_index().context_for_node(node)
     if context is not None:
         return context.branch_context
     if assignment.branch_context is not None:
@@ -315,7 +315,7 @@ def _follow_pyname(assignment, pymodule, lineno=None, *, branch_context=()):
     holding_scope = pymodule.get_scope().get_inner_scope_for_line(lineno)
     holding_kind = holding_scope.get_kind()
     if branch_context:
-        context = pymodule.get_source_binding_index().context_for_node(assign_node)
+        context = pymodule._get_source_binding_index().context_for_node(assign_node)
         if context is not None:
             holding_scope = context.environment
         holding_scope = evaluate.SourceValueScope(
