@@ -123,6 +123,31 @@ class SimilarFinderTest(unittest.TestCase):
             list(finder.get_match_regions("int")),
         )
 
+    def test_fstring_literal_pieces_are_not_matched(self):
+        source = 'def f(x):\n    return f"a{x}b"\n'
+        finder = self._create_finder(source)
+        self.assertEqual([], list(finder.get_match_regions('"a"')))
+        self.assertEqual([], list(finder.get_match_regions('"b"')))
+
+    def test_fstring_format_specs_are_not_matched(self):
+        source = 'def f(x):\n    return f"{x:%Y%m%d}"\n'
+        finder = self._create_finder(source)
+        self.assertEqual([], list(finder.get_match_regions('"%Y%m%d"')))
+
+    def test_fstring_replacement_fields_have_match_regions(self):
+        source = 'def f(p, w):\n    return f"a{p.attr}b{p.when:{w}}"\n'
+        finder = self._create_finder(source)
+        start = source.index("p.attr")
+        self.assertEqual(
+            [(start, start + len("p.attr"))],
+            list(finder.get_match_regions("p.attr")),
+        )
+        start = source.index("{w}") + 1
+        self.assertEqual(
+            [(start, start + 1)],
+            list(finder.get_match_regions("w", start=start)),
+        )
+
     def test_interleaved_class_header_names_have_match_regions(self):
         source = "class C(Base, metaclass=Meta, *bases, **options):\n    pass\n"
         finder = self._create_finder(source)

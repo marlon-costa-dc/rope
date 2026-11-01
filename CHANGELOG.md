@@ -1,5 +1,10 @@
 # __Upcoming release__
 
+- Never offer the literal pieces or format specs of an f-string as similar
+  finder matches: patchedast gives them no region, so a literal pattern equal
+  to one of them raised `AttributeError`. Expressions inside the replacement
+  fields still match.
+
 # Release 1.15.0+dc.11
 
 - Memoize `Scope.get_region()` like `get_end()` and `get_logical_end()`, so
