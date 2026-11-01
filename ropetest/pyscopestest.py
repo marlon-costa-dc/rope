@@ -681,6 +681,31 @@ class PyCoreScopesTest(unittest.TestCase):
 
         self.assertEqual(scope.get_scopes()[1].get_region(), (26, 47))
 
+    def test_decorated_scope_region_is_stable_across_calls(self):
+        scope = libutils.get_string_scope(
+            self.project,
+            dedent("""\
+                @staticmethod
+                def func(ala):
+                    pass
+            """),
+        )
+        inner = scope.get_scopes()[0]
+
+        self.assertEqual(inner.get_region(), (0, 37))
+        self.assertEqual(inner.get_region(), inner.get_region())
+
+    def test_scope_region_follows_changed_module_source(self):
+        mod = testutils.create_module(self.project, "mod")
+        mod.write("def func():\n    pass\n")
+        first = self.project.get_pymodule(mod).get_scope().get_scopes()[0]
+        self.assertEqual(first.get_region(), (0, 20))
+
+        mod.write("\n\ndef func():\n    return 1\n")
+        second = self.project.get_pymodule(mod).get_scope().get_scopes()[0]
+
+        self.assertEqual(second.get_region(), (2, 26))
+
     def test_scope_regions_with_normalized_import_alias(self):
         alias = "u\u0301"
         code = (
