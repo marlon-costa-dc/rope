@@ -111,6 +111,7 @@ class Scope:
     def get_kind(self):
         pass
 
+    @utils.saveit
     def get_region(self):
         global_scope = self._get_global_scope()
         node = self.pyobject.get_ast()
