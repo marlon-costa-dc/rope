@@ -1412,7 +1412,9 @@ Union alternatives:
 - Foo | Bar
 
 Attribute completion includes the attributes exposed by each resolved
-alternative.
+alternative. If an alternative cannot be resolved, the complete union remains
+unresolved. A resolved ``types.NoneType`` remains an alternative; it is distinct
+from the resolver's absent-result sentinel.
 
 TODO:
 

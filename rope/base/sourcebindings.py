@@ -1053,6 +1053,7 @@ class SourceBindingIndex:
         self.pymodule = pymodule
         self._defer_bodies = _defer_bodies
         self._pending_bodies = {}
+        self._attribute_write_index = None
         self.source = pymodule.source_code
         self.fragments = []
         self._fragment_positions = {}
@@ -1098,6 +1099,20 @@ class SourceBindingIndex:
         if not self._pending_bodies:
             self._sort_fragments()
         self.state = "FROZEN"
+
+    def attribute_writes(self, name):
+        """Return matching stores/deletions from this immutable source snapshot."""
+        if self._attribute_write_index is None:
+            index = {}
+            for node in ast.walk(self.global_reference.node):
+                if isinstance(node, ast.Attribute) and isinstance(
+                    node.ctx, (ast.Store, ast.Del)
+                ):
+                    index.setdefault(node.attr, []).append(node)
+            self._attribute_write_index = {
+                key: tuple(nodes) for key, nodes in index.items()
+            }
+        return self._attribute_write_index.get(name, ())
 
     def _sort_fragments(self):
         self.fragments.sort(key=attrgetter("start", "end", "depth"))

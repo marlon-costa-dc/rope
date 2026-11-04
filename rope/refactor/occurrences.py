@@ -165,9 +165,11 @@ class Occurrence:
 
     @utils.saveit
     def is_in_import_statement(self):
-        return self.tools.word_finder.is_from_statement(
-            self.offset
-        ) or self.tools.word_finder.is_import_statement(self.offset)
+        return any(
+            start <= self.offset < end
+            for layout in self.tools.pymodule.get_source_binding_index().import_layouts()
+            for start, end in (layout.region,)
+        )
 
     def is_called(self):
         return self.tools.word_finder.is_a_function_being_called(self.offset)

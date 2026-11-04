@@ -5,6 +5,7 @@ from textwrap import dedent
 
 import pytest
 
+from rope.base.exceptions import RefactoringError
 from rope.base.project import Project
 from rope.refactor.change_signature import ArgumentAdder, ChangeSignature
 
@@ -151,5 +152,90 @@ def test_multiline_header_preserves_the_original_file_newlines(tmp_path):
         current = {}
         exec(compile(resource.read(), resource.path, "exec"), current)
         assert current["run"](7) == 7
+    finally:
+        project.close()
+
+
+def test_defaulted_addition_preserves_dynamic_import_calls_without_rewriting(tmp_path):
+    project = Project(str(tmp_path), ropefolder=None)
+    try:
+        resource = project.root.create_file("sample.py")
+        resource.write(
+            "import importlib\n"
+            "module_name = 'json'\n"
+            "decoder = importlib.import_module(module_name)\n"
+            "def run(\n    value: int,\n) -> int:\n    return value\n"
+            "answer = run(decoder.loads('7'))\n"
+        )
+        original = {}
+        exec(resource.read(), original)
+        addition = ArgumentAdder(1, "token", default="None", keyword_only=True)
+        project.do(
+            ChangeSignature(project, resource, resource.read().index("run")).get_changes(
+                [addition]
+            )
+        )
+        current = {}
+        exec(resource.read(), current)
+        assert current["answer"] == original["answer"] == 7
+        assert resource.read().endswith("answer = run(decoder.loads('7'))\n")
+    finally:
+        project.close()
+
+
+@pytest.mark.parametrize(
+    "imports,decorator",
+    [
+        ("from contextlib import contextmanager", "contextmanager"),
+        ("import contextlib", "contextlib.contextmanager"),
+        ("from contextlib import contextmanager as manage", "manage"),
+    ],
+)
+@pytest.mark.parametrize("default", [None, "None"])
+def test_native_contextmanager_forwards_signature_keywords(tmp_path, imports, decorator, default):
+    project = Project(str(tmp_path), ropefolder=None)
+    try:
+        resource = project.root.create_file("sample.py")
+        resource.write(
+            imports + "\nclass Resource:\n    @" + decorator
+            + "\n    def open(\n        self,\n        value: int,\n    ):\n"
+            "        yield value\n\nwith Resource().open(7) as answer:\n    observed = answer\n"
+        )
+        previous = {}
+        exec(resource.read(), previous)
+        addition = ArgumentAdder(
+            2, "token", default=default,
+            value="'received'" if default is None else None,
+            keyword_only=True,
+        )
+        project.do(
+            ChangeSignature(project, resource, resource.read().index("open(")).get_changes(
+                [addition]
+            )
+        )
+        current = {}
+        exec(resource.read(), current)
+        assert current["observed"] == previous["observed"] == 7
+        parameter = inspect.signature(current["Resource"]().open).parameters["token"]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is (inspect.Parameter.empty if default is None else None)
+    finally:
+        project.close()
+
+
+def test_contextmanager_homonym_does_not_gain_native_authority(tmp_path):
+    project = Project(str(tmp_path), ropefolder=None)
+    try:
+        resource = project.root.create_file("sample.py")
+        resource.write(
+            "def contextmanager(function):\n    return function\n"
+            "@contextmanager\ndef run(value):\n    return value\n\nanswer = run(7)\n"
+        )
+        previous = resource.read()
+        with pytest.raises(RefactoringError, match="decorator"):
+            ChangeSignature(project, resource, previous.index("run(")).get_changes(
+                [ArgumentAdder(1, "token", default="None", keyword_only=True)]
+            )
+        assert resource.read() == previous
     finally:
         project.close()

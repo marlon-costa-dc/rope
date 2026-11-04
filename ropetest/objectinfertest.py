@@ -3,10 +3,64 @@ from textwrap import dedent
 
 import rope.base.builtins  # Use fully-qualified names for clarity.
 from rope.base import libutils, pyobjects
+from rope.refactor import occurrences
 from ropetest import testutils
 
 
 class ObjectInferTest(unittest.TestCase):
+    def test_formatted_string_type_preserves_nested_call_references(self):
+        code = "def render():\n    return 7\n\nresult = f'{render()!r:>4}'\n"
+        namespace = {}
+        exec(code, namespace)
+        scope = libutils.get_string_scope(self.project, code)
+        self.assertIs(type(namespace["result"]), str)
+        self.assertIs(
+            scope["result"].get_object().get_type(), rope.base.builtins.get_str_type()
+        )
+        references = occurrences.create_finder(
+            self.project, "render", scope["render"]
+        ).find_occurrences(pymodule=scope.pyobject)
+        self.assertEqual(2, len(tuple(references)))
+
+    def test_conditional_callable_does_not_select_last_branch_identity(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                code = f"enabled = {enabled}\nexecute = eval if enabled else str\nresult = execute('7')\n"
+                namespace = {}
+                exec(code, namespace)
+                self.assertEqual(7 if enabled else '7', namespace["result"])
+                scope = libutils.get_string_scope(self.project, code)
+                self.assertIs(pyobjects.get_unknown(), scope["execute"].get_object())
+
+    def test_conditional_callable_preserves_identical_binding(self):
+        code = "enabled = True\nexecute = str if enabled else str\nresult = execute(7)\n"
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual('7', namespace["result"])
+        scope = libutils.get_string_scope(self.project, code)
+        self.assertIs(scope["str"].get_object(), scope["execute"].get_object())
+
+    def test_conditional_method_keeps_receiver_identity_in_the_proof(self):
+        code = (
+            "class Owner:\n    def run(self):\n        return self\n\n"
+            "left = Owner()\nright = Owner()\nenabled = True\n"
+            "execute = left.run if enabled else right.run\nresult = execute()\n"
+        )
+        namespace = {}
+        exec(code, namespace)
+        self.assertIs(namespace['left'], namespace['result'])
+        scope = libutils.get_string_scope(self.project, code)
+        self.assertIs(pyobjects.get_unknown(), scope['execute'].get_object())
+
+    def test_literal_condition_selects_only_the_proven_branch(self):
+        for condition in (True, False):
+            with self.subTest(condition=condition):
+                code = f"execute = eval if {condition} else str\nresult = execute('7')\n"
+                namespace = {}
+                exec(code, namespace)
+                scope = libutils.get_string_scope(self.project, code)
+                self.assertIs(scope['eval' if condition else 'str'].get_object(), scope['execute'].get_object())
+
     def setUp(self):
         super().setUp()
         self.project = testutils.sample_project()

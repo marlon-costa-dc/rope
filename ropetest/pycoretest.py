@@ -1,3 +1,4 @@
+import collections.abc
 import sys
 import typing
 import unittest
@@ -18,6 +19,25 @@ from ropetest import testutils
 
 
 class PyCoreTest(unittest.TestCase):
+    def test_stdlib_runtime_module_election_preserves_declaring_source(self):
+        runtime = collections.abc
+        self.assertIs(runtime, sys.modules[runtime.__spec__.name])
+        result = self.project.get_module('collections.abc')
+        self.assertEqual(runtime.__file__, result.get_resource().real_path)
+        self.assertIn('Sequence', result)
+
+    def test_stdlib_module_election_does_not_cross_project_parent_shadow(self):
+        package = testutils.create_package(self.project, 'collections')
+        package.get_child('__init__.py').write("raise AssertionError('target code must not execute')\n")
+        with self.assertRaises(exceptions.ModuleNotFoundError):
+            self.project.get_module('collections.abc')
+
+    def test_stdlib_module_election_does_not_cross_origin_shadow(self):
+        resource = testutils.create_module(self.project, '_collections_abc')
+        resource.write("raise AssertionError('target code must not execute')\n")
+        with self.assertRaises(exceptions.ModuleNotFoundError):
+            self.project.get_module('collections.abc')
+
     def setUp(self):
         super().setUp()
         self.project = testutils.sample_project()

@@ -14,6 +14,10 @@ Quick Start
 
 This section will help you get started as soon as possible.
 
+Formatted string expressions infer the native ``str`` instance type without
+evaluating their formatted values. Their nested expressions remain visible to
+the existing reference, call and reflection analysis.
+
 Semantic match capture regions
 ------------------------------
 
@@ -28,6 +32,9 @@ returns a frozen set of absolute top-level import names from its indexed
 declarations, including guarded and nested imports.  Relative imports are
 excluded.  This query neither imports the declared packages nor resolves their
 classes, and it preserves declarations whose local bindings are overwritten.
+Occurrence import roles use the same native import-declaration spans. A
+``yield from`` before a later import must not classify an intervening function
+declaration as imported and silently omit its signature change.
 
 ``assignment_string_sequence(name, scope=None, *, class_metadata=False)`` reads the first direct
 assignment in the indexed module or an explicitly supplied class scope.  It
@@ -167,6 +174,16 @@ metaclass; instance operands select their known native class. Unresolved operand
 and metaclass witnesses remain unresolved. This does not change the existing
 three-argument class-construction analysis or make a metaclass instance into a
 source-defined class.
+
+Method-transfer declaration reads authenticate the native receiver getter and
+the member's descriptor behavior. Plain scalar members are recognized by their
+native builtin class identity; absent literal-value metadata is not a known
+``None`` value and cannot admit an arbitrary descriptor. Inherited class members,
+direct module declarations and their existing binding checks remain unchanged.
+The instance-transfer ``resolve_binding`` dependency defaults to native
+``evaluate.eval_node``. A caller may supply its existing source-view resolver;
+the same dependency resolves original and proposed expressions, while native
+getter, descriptor and binding-identity checks remain mandatory.
 
 Native class-construction analysis must retain the supplied class name, ordered
 bases, explicit metaclass and known namespace bindings in the existing
@@ -559,10 +576,35 @@ scope.  These APIs describe bindings and do not serialize a modified signature.
 They do not provide a general annotation-expression scope model; existing
 same-name annotation shadowing remains a separate limitation.
 
-Change Signature, Introduce Parameter, Inline Parameter, and Move Method
-raise ``RefactoringError`` for signatures containing positional-only or
-keyword-only parameters before generating changes.  Use Function refuses
-keyword-only parameters.  Existing positional-only Inline Method calls remain
+Positional Change Signature operations, Introduce Parameter, Inline Parameter,
+and Move Method raise ``RefactoringError`` for signatures containing positional-only
+or keyword-only parameters before generating changes. Explicit keyword-only
+``ArgumentAdder`` operations preserve modern headers and analyze every resource
+the caller selected. Import-connected components classify internal provenance;
+they never exclude selected consumers from validation or rewriting.
+When a multiline header or call closes on its own line, additions retain that
+layout and the existing parameter indentation. A missing separator is inserted
+at the preceding argument's syntactic end, preserving its trailing comment;
+new keywords before ``**kwargs`` retain their own lines as well.
+
+For disconnected source scopes, an unresolved declared callback parameter has no
+target effect to prove; its arguments still require namespace-absence proof.
+Unresolved attribute, subscription, factory and dynamic-import consumers remain
+fail-closed across the full selected resource boundary.
+Import-connected public scopes remain part of that boundary even without a
+local invocation; an idle unresolved callback is not an effect contract. Native
+integer operators are distinguished by the SDK's actual builtin binding when
+analyzing numeric effects, while user-defined/external operators remain checked.
+Required additions build the import-connected effect boundary. Defaulted
+additions preserve existing call arity and omit unrequested keyword values, so
+they retain native occurrence/decorator validation and compilation without an
+inactive required-effect inference pass.
+The single standard-library ``contextlib.contextmanager`` decorator is
+authenticated by its native declaration and forwards the added keywords to
+the original generator, including bound methods. Imported aliases retain that
+identity; local homonyms and unproved decorator stacks remain refused.
+
+Use Function refuses keyword-only parameters. Existing positional-only Inline Method calls remain
 supported, while keyword-only Inline Method calls are refused.  Call inference
 keeps unknown ``*args`` and ``**kwargs`` expansions conservative.
 
@@ -912,6 +954,16 @@ method:
 
 Where the ``destination`` module/package is the destination resource for
 move refactoring.  Other refactorings classes have a similar interface.
+
+``MoveMethod.get_class_changes`` plans transfers of static and class methods
+to an existing source class. When the source and destination share a module,
+their existing module bindings remain in place; the planner must not create a
+self-import for those bindings. Function-local bindings are resolved through
+the function scope's names, including assignments, while native identity and
+collision checks still apply to dependencies outside that scope.
+Cross-module moves select imports used by the moved fragment. A fragment that
+declares export metadata retains that publication dependency set; unrelated
+export metadata from the source module is not imported into a moved method.
 
 
 List Of Refactorings
@@ -1387,3 +1439,20 @@ calling ``project.do(changes)`` for each tuple, or use
   project_and_changes = renamer.get_all_changes('newname')
 
   multiproject.perform(project_and_changes)
+
+
+Unchanged source value descriptors
+---------------------------------
+
+Native attribute inference preserves the identity of a value returned unchanged
+by a source descriptor. This applies when the source constructor stores its
+argument directly and ``__get__`` returns that stored attribute, for both class
+and instance access. Inherited exports and keyword constructor arguments retain
+the same identity. Descriptors whose constructor or getter transforms the value
+do not acquire this identity proof.
+
+The existing override guard consumes the source binding index's attribute-write
+inventory. That lazy inventory belongs to one immutable parsed module snapshot;
+recapturing a changed resource creates a new index rather than reusing previous
+write observations. Declaration identities and refactoring safety remain owned
+by the native binding and occurrence engines.

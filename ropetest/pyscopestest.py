@@ -73,7 +73,7 @@ class PyCoreScopesTest(unittest.TestCase):
                 module = libutils.get_string_module(self.project, source)
                 self.assertEqual(
                     expected,
-                    module.get_source_binding_index().assignment_string_sequence("names"),
+                    module.assignment_string_sequence("names"),
                 )
 
     def test_indexed_assignment_sequence_class_scope_and_module_reference(self):
@@ -81,21 +81,21 @@ class PyCoreScopesTest(unittest.TestCase):
             self.project, "shared = ('value',)\nclass Owner:\n    names = shared\n"
         )
         index = module.get_source_binding_index()
-        self.assertIsNone(index.assignment_string_sequence("names"))
+        self.assertIsNone(index.pymodule.assignment_string_sequence("names"))
         owner_scope = module["Owner"].get_object().get_scope()
-        self.assertEqual(("value",), index.assignment_string_sequence("names", owner_scope))
+        self.assertEqual(("value",), index.pymodule.assignment_string_sequence("names", owner_scope))
 
     def test_indexed_assignment_sequence_cycles_fail(self):
         module = libutils.get_string_module(self.project, "names = other\nother = names\n")
         with self.assertRaisesRegex(ValueError, "Cyclic"):
-            module.get_source_binding_index().assignment_string_sequence("names")
+            module.assignment_string_sequence("names")
 
     def test_indexed_assignment_sequence_rejects_foreign_scope(self):
         local = libutils.get_string_module(self.project, "names = ('local',)\n")
         foreign = libutils.get_string_module(self.project, "class Owner:\n    names = ('foreign',)\n")
         scope = foreign["Owner"].get_object().get_scope()
         with self.assertRaisesRegex(ValueError, "another source module"):
-            local.get_source_binding_index().assignment_string_sequence("names", scope)
+            local.assignment_string_sequence("names", scope)
 
     def test_indexed_assignment_sequence_class_metadata_precedence(self):
         cases = (
@@ -112,9 +112,7 @@ class PyCoreScopesTest(unittest.TestCase):
                 module = libutils.get_string_module(self.project, source)
                 self.assertEqual(
                     expected,
-                    module.get_source_binding_index().assignment_string_sequence(
-                        "names", class_metadata=True
-                    ),
+                    module.assignment_string_sequence("names", class_metadata=True),
                 )
 
     def test_indexed_assignment_sequence_same_name_in_module_and_class(self):
@@ -124,7 +122,7 @@ class PyCoreScopesTest(unittest.TestCase):
         scope = module["Owner"].get_object().get_scope()
         self.assertEqual(
             ("module",),
-            module.get_source_binding_index().assignment_string_sequence("names", scope),
+            module.assignment_string_sequence("names", scope),
         )
 
     def test_simple_function_scope(self):

@@ -1,13 +1,66 @@
 from __future__ import annotations
 
+import collections.abc
 import logging
 import sys
+import types
+import typing
 from typing import TYPE_CHECKING, Optional, Union
 
 import rope.base.utils as base_utils
-from rope.base import evaluate
+from rope.base import builtins, evaluate, pyobjects
 from rope.base.exceptions import AttributeNotFoundError
-from rope.base.pyobjects import PyClass, PyDefinedObject, PyFunction, PyObject
+from rope.base.pyobjects import (
+    AbstractClass,
+    PyClass,
+    PyDefinedObject,
+    PyFunction,
+    PyObject,
+)
+
+
+def hint_instance(value):
+    """Materialize a class hint without wrapping a modeled instance twice."""
+    if isinstance(value, AbstractClass) or value.get_type() is value:
+        return PyObject(value)
+    return value
+
+
+def _hint_binding_value(binding):
+    """Authenticate stdlib declarations before assigning their native models."""
+    value = binding.get_object()
+    if isinstance(value, pyobjects.SampledValue):
+        return None
+    module, line = binding.get_definition_location()
+    resource = module.get_resource() if module is not None else None
+    trusted = (typing, collections.abc, sys.modules.get("_collections_abc"))
+    if resource is not None and resource.real_path in {
+        item.__file__ for item in trusted if item is not None
+    }:
+        declared = module.get_scope().get_name("Sequence")
+        if declared.get_definition_location() == (module, line):
+            return builtins.get_sequence_type()
+    if resource is not None and resource.real_path == types.__file__:
+        declared = module.get_scope().get_name("NoneType")
+        if declared.get_definition_location() == (module, line):
+            return builtins._runtime_class(type(None))
+    if isinstance(value, (builtins.BuiltinClass, builtins.BuiltinUnknown)) and (
+        value.builtin is collections.abc.Sequence or value.builtin is typing.Sequence
+    ):
+        return builtins.get_sequence_type()
+    return _hint_value(value)
+
+
+def _hint_value(value):
+    if isinstance(value, builtins.GenericAlias):
+        origin = _hint_value(value.origin)
+        arguments = tuple(_hint_value(argument) for argument in value.arguments)
+        if origin is None or any(
+            not isinstance(argument, AbstractClass) for argument in arguments
+        ):
+            return None
+        return parametrize_type(origin, *arguments)
+    return value
 
 
 def get_super_func(pyfunc):
@@ -90,6 +143,37 @@ def _source_ancestors(pyclass):
     return [cls for cls in _inheritance_order(pyclass)[1:] if isinstance(cls, PyClass)]
 
 
+def get_hint_scope(pyobject):
+    from rope.base.sourcebindings import AnnotationEnvironment
+
+    owner = pyobject.parent if isinstance(pyobject, PyFunction) else pyobject
+    scope = owner.get_scope()
+    if isinstance(scope, AnnotationEnvironment) and scope.policy.mode == "eager":
+        return evaluate.SourceValueScope(scope, scope, {}, source_epoch=scope.node)
+    return scope
+
+
+def union_type(alternatives):
+    """Preserve PEP 604 only when native type operators govern both operands."""
+    for alternative in alternatives:
+        if not isinstance(alternative, AbstractClass):
+            return None
+        metaclass = alternative.get_metaclass()
+        if not isinstance(metaclass, AbstractClass):
+            return None
+        for name in ("__or__", "__ror__"):
+            if name not in metaclass:
+                return None
+            method = metaclass[name].get_object()
+            if not isinstance(
+                method, builtins.BuiltinFunction
+            ) or method.builtin is not getattr(type, name):
+                return None
+    from rope.base.oi.type_hinting.evaluate import UnionType
+
+    return UnionType(alternatives)
+
+
 def resolve_type(
     type_name: str,
     pyobject: Union[PyDefinedObject, PyObject],
@@ -103,22 +187,18 @@ def resolve_type(
         deprecated_aliases = {"collections": "_collections_abc"}
     ret_type = None
     logging.debug(f"Looking for {type_name}")
-    if "." not in type_name:
-        try:
-            # XXX: this looks incorrect? It doesn't seem like it would work
-            # correctly if you have a type/class not defined in the
-            # module/global scope
-            ret_type = (
-                pyobject.get_module().get_scope().get_name(type_name).get_object()
-            )
-        except AttributeNotFoundError:
-            logging.exception("Cannot resolve type %s", type_name)
-    else:
+    scope = get_hint_scope(pyobject)
+    root = type_name.partition(".")[0]
+    root_binding = scope.lookup(root)
+    if root_binding is not None:
+        binding = evaluate.eval_str(scope, type_name)
+        return _hint_binding_value(binding) if binding is not None else None
+    if "." in type_name:
         mod_name, attr_name = type_name.rsplit(".", 1)
         try:
             mod_finder = evaluate.ScopeNameFinder(pyobject.get_module())
             mod = mod_finder._find_module(mod_name).get_object()
-            ret_type = mod.get_attribute(attr_name).get_object()
+            ret_type = _hint_binding_value(mod.get_attribute(attr_name))
         except AttributeNotFoundError:
             if mod_name in deprecated_aliases:
                 try:
@@ -133,6 +213,12 @@ def resolve_type(
                     logging.exception(f"Cannot resolve type {attr_name} in {dir(mod)}")
     logging.debug("ret_type = %s", ret_type)
     return ret_type
+
+
+def is_annotated_type(pyobject):
+    return builtins._is_runtime_class(
+        pyobject, typing.Annotated
+    ) or builtins._is_runtime_form(pyobject, typing.Annotated)
 
 
 class ParametrizeType:
@@ -152,18 +238,36 @@ class ParametrizeType:
         :type pyobject: rope.base.pyobjects.PyObject
         :rtype: rope.base.pyobjects.PyDefinedObject | rope.base.pyobjects.PyObject or None
         """
+        if is_annotated_type(pyobject):
+            return args[0] if len(args) >= 2 else None
+        if builtins._is_runtime_form(pyobject, typing.Optional):
+            if len(args) != 1 or args[0] is None:
+                return None
+            from rope.base.oi.type_hinting.evaluate import UnionType
+
+            return UnionType((args[0], builtins._runtime_class(type(None))))
+        if isinstance(pyobject, PyFunction):
+            return None
         type_factory = self._get_type_factory(pyobject)
         if type_factory:
-            parametrized_type = type_factory(*args, **kwargs)
+            parametrized_type = type_factory(
+                *(
+                    hint_instance(argument) if argument is not None else None
+                    for argument in args
+                ),
+                **kwargs,
+            )
             if parametrized_type:
-                return parametrized_type
-        return pyobject
+                return parametrized_type.get_type()
+        return None
 
     def _get_type_factory(self, pyobject):
-        type_str = "{}.{}".format(
-            pyobject.get_module().get_name(),
-            pyobject.get_name(),
-        )
+        if isinstance(pyobject, builtins.Sequence):
+            return builtins.get_sequence
+        module = pyobject.get_module()
+        if module is None:
+            return None
+        type_str = "{}.{}".format(module.get_name(), pyobject.get_name())
         if type_str in self._supported_mapping:
             return base_utils.resolve(self._supported_mapping[type_str])
 
