@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import builtins
 import keyword
+import re
 import typing
 from collections.abc import Mapping
 
@@ -434,6 +435,14 @@ class MoveMethod:
         decorator attaches metadata to, and returns, the original function.
         Unknown decorators, receiver expressions, references, or import
         identities fail closed.
+
+        ``resources`` follows rope's usual contract: it is the complete set of
+        files the refactoring analyzes and changes, and defaults to every
+        Python file of the project. Because no forwarding method is left
+        behind, a caller that passes a subset asserts that no file outside it
+        references the method; references are only searched in the selected
+        files. ``new_name`` renames the transferred method and every
+        ``self.<name>`` access inside it.
         """
         if len(moves) != 1:
             raise exceptions.RefactoringError(
@@ -513,7 +522,12 @@ class MoveMethod:
         cls._check_instance_references(project, function, selected, region, new_name)
 
         moved = sourceutils.fix_indentation(moved, 0)
-        moved, imports = moving_code_with_imports(project, resource, moved)
+        if resource == destination_resource:
+            # Same-module transfer: local dependencies stay in scope; importing
+            # them would make the module import itself.
+            imports = []
+        else:
+            moved, imports = moving_code_with_imports(project, resource, moved)
         planned = {item: item.read() for item in selected}
         collector = codeanalyze.ChangeCollector(source)
         replacement = ""
@@ -537,18 +551,7 @@ class MoveMethod:
         candidate = libutils.get_string_module(
             project, destination_source, destination_resource
         )
-        destination_scope = candidate.get_scope()
-        for part in cls._class_path(destination):
-            matches = [
-                scope
-                for scope in destination_scope.get_scopes()
-                if scope.get_kind() == "Class" and scope.pyobject.get_name() == part
-            ]
-            if len(matches) != 1:
-                raise exceptions.RefactoringError(
-                    "Destination class is no longer unique."
-                )
-            destination_scope = matches[0]
+        destination_scope = cls._planned_class_scope(candidate, destination)
         destination_start, destination_end = sourceutils.get_body_region(
             destination_scope.pyobject
         )
@@ -932,7 +935,11 @@ class MoveMethod:
                     identifiers.append(name)
 
         source_name = function.get_name()
-        if cls._class_move_effective_name(
+        private = any(
+            name.startswith("__") and not name.endswith("__")
+            for name in (source_name, new_name)
+        )
+        if private and cls._class_move_effective_name(
             source_name, source
         ) != cls._class_move_effective_name(new_name, destination):
             raise exceptions.RefactoringError(
@@ -1004,7 +1011,7 @@ class MoveMethod:
                     "Instance receiver member is not read-only."
                 )
             member = parent.attr
-            if member == function.get_name() == new_name:
+            if member == function.get_name():
                 replacement = f"{receiver}.{new_name}"
             else:
                 suffix = receiver_rewrites.get(member)
@@ -1034,6 +1041,19 @@ class MoveMethod:
         if used != set(receiver_rewrites):
             raise exceptions.RefactoringError(
                 "Instance receiver mapping includes an unused member."
+            )
+        if new_name != function.get_name():
+            # The transferred declaration takes the requested name.
+            header, _ = positions[function_ast]
+            match = re.compile(
+                r"(?:async\s+)?def\s+(%s)\b" % re.escape(function.get_name())
+            ).match(source, header)
+            if match is None:
+                raise exceptions.RefactoringError(
+                    "Instance transfer cannot locate its method declaration name."
+                )
+            collector.add_change(
+                match.start(1) - region[0], match.end(1) - region[0], new_name
             )
         changed = collector.get_changed()
         return source[region[0] : region[1]] if changed is None else changed
@@ -1069,21 +1089,27 @@ class MoveMethod:
                 )
 
     @classmethod
-    def _check_instance_destination(
-        cls, function, module, destination, name, *, resolve_binding=evaluate.eval_node
-    ):
-        destination_scope = module.get_scope()
-        for part in cls._class_path(destination):
+    def _planned_class_scope(cls, module, pyclass):
+        """Return the scope of `pyclass` re-read from a planned module."""
+        scope = module.get_scope()
+        for part in cls._class_path(pyclass):
             matches = [
-                scope
-                for scope in destination_scope.get_scopes()
-                if scope.get_kind() == "Class" and scope.pyobject.get_name() == part
+                child
+                for child in scope.get_scopes()
+                if child.get_kind() == "Class" and child.pyobject.get_name() == part
             ]
             if len(matches) != 1:
                 raise exceptions.RefactoringError(
                     "Destination class is no longer unique."
                 )
-            destination_scope = matches[0]
+            scope = matches[0]
+        return scope
+
+    @classmethod
+    def _check_instance_destination(
+        cls, function, module, destination, name, *, resolve_binding=evaluate.eval_node
+    ):
+        destination_scope = cls._planned_class_scope(module, destination)
         destination_class = destination_scope.pyobject
         binding = destination_class.get_attributes().get(name)
         moved = None if binding is None else binding.get_object()
@@ -1092,8 +1118,16 @@ class MoveMethod:
                 "Transferred declaration is not an instance method."
             )
         cls._check_identity_decorator(moved, resolve_binding=resolve_binding)
+        source_scope = function.parent.get_scope()
+        if module.get_resource() == function.get_module().get_resource():
+            # Same-module transfer: compare both readings in the planned source.
+            source_scope = cls._planned_class_scope(module, function.parent)
         cls._check_instance_signature_bindings(
-            function, moved, destination_class, resolve_binding=resolve_binding
+            function,
+            moved,
+            source_scope,
+            destination_class,
+            resolve_binding=resolve_binding,
         )
         if len(moved.decorators) != len(function.decorators):
             raise exceptions.RefactoringError(
@@ -1103,9 +1137,7 @@ class MoveMethod:
             raise exceptions.RefactoringError(
                 "Transferred handler decorator arguments changed."
             )
-        before = resolve_binding(
-            function.parent.get_scope(), function.decorators[0].func
-        )
+        before = resolve_binding(source_scope, function.decorators[0].func)
         after = resolve_binding(destination_class.get_scope(), moved.decorators[0].func)
         if (
             occurrences.unsure_pyname(before, unbound=False)
@@ -1116,7 +1148,7 @@ class MoveMethod:
                 "Transferred handler decorator changed its native identity."
             )
         cls._check_expression_bindings(
-            function.parent.get_scope(),
+            source_scope,
             destination_class.get_scope(),
             function.decorators[0],
             moved.decorators[0],
@@ -1126,7 +1158,13 @@ class MoveMethod:
 
     @classmethod
     def _check_instance_signature_bindings(
-        cls, function, moved, destination_class, *, resolve_binding=evaluate.eval_node
+        cls,
+        function,
+        moved,
+        source_scope,
+        destination_class,
+        *,
+        resolve_binding=evaluate.eval_node,
     ):
         source_future = cls._future_annotations(function.get_module())
         destination_future = cls._future_annotations(destination_class.get_module())
@@ -1166,7 +1204,7 @@ class MoveMethod:
             source_expressions, destination_expressions
         ):
             cls._check_expression_bindings(
-                function.parent.get_scope(),
+                source_scope,
                 destination_class.get_scope(),
                 source_expression,
                 target_expression,

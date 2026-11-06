@@ -103,6 +103,67 @@ class InstanceMethodTransferTest(unittest.TestCase):
         target.queue_service = QueuePort()
         self.assertEqual(target.execute(4), 5)
 
+    def test_same_module_transfer_keeps_local_dependencies_without_self_import(
+        self,
+    ) -> None:
+        source = dedent("""\
+            def handler(command):
+                def decorate(func):
+                    setattr(func, "_handler_config", command)
+                    return func
+                return decorate
+
+            class Target:
+                queue_service: object
+
+            class Legacy:
+                @handler(command=int)
+                def execute(self, request):
+                    return self.queue.execute(request)
+        """)
+        self.source.write(source)
+        operation = move.create_move(
+            self.project, self.source, source.index("execute(self") + 1
+        )
+        changes = operation.get_instance_class_changes(
+            self.project,
+            [(self.source, source.index("execute(self") + 1, "execute")],
+            self.source,
+            source.index("Target") + 1,
+            receiver_rewrites={"queue": "queue_service.queue"},
+            resources=[self.source],
+        )
+        self.project.do(changes)
+        self.assertNotIn("import", self.source.read())
+        module = self._load_runtime_module("source")
+        self.assertIs(module.Target.execute._handler_config, int)
+
+    def test_transfer_applies_the_requested_method_name(self) -> None:
+        source = dedent("""\
+            from handlers import h
+
+            class Legacy:
+                @h.handler(command=int)
+                def execute(self, request):
+                    return self.queue.execute(request)
+        """)
+        self.source.write(source)
+        operation = move.create_move(
+            self.project, self.source, source.index("execute(self") + 1
+        )
+        changes = operation.get_instance_class_changes(
+            self.project,
+            [(self.source, source.index("execute(self") + 1, "run")],
+            self.destination,
+            self.destination.read().index("Target") + 1,
+            receiver_rewrites={"queue": "queue_service.queue"},
+            resources=[self.handlers, self.source, self.destination],
+        )
+        self.project.do(changes)
+        destination = self._load_runtime_module("destination")
+        self.assertIs(destination.Target.run._handler_config, int)
+        self.assertFalse(hasattr(destination.Target, "execute"))
+
     def test_refuses_method_private_name_mangling_after_runtime_proof(self) -> None:
         source = dedent("""\
             from handlers import h
