@@ -133,6 +133,29 @@ def test_required_keyword_preserves_existing_runtime_contract(tmp_path, header, 
         project.close()
 
 
+@pytest.mark.parametrize(
+    "value", ["'received'", "dict(label='received')['label']", "'re' 'ceived'"]
+)
+def test_required_keyword_value_inside_fstring_is_written_legally(tmp_path, value):
+    project = Project(str(tmp_path), ropefolder=None)
+    try:
+        resource = project.root.create_file("sample.py")
+        resource.write(
+            "def run(value):\n    return value, token\n\nanswer = f'{run(7)}'\n"
+        )
+        addition = ArgumentAdder(0, "token", value=value, keyword_only=True)
+        project.do(
+            ChangeSignature(project, resource, resource.read().index("run")).get_changes(
+                [addition]
+            )
+        )
+        namespace = {}
+        exec(compile(resource.read(), resource.path, "exec"), namespace)
+        assert namespace["answer"] == "(7, 'received')"
+    finally:
+        project.close()
+
+
 def test_required_keyword_value_is_resolved_for_each_native_caller(tmp_path):
     project = Project(str(tmp_path), ropefolder=None)
     try:

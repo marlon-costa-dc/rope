@@ -24,49 +24,71 @@ from rope.base.oi import soa
 from rope.refactor import functionutils, occurrences, sourceutils
 
 
-def _enclosing_fstring_quote(pymodule, node):
-    """Return the quote of the innermost f-string around `node`, if any."""
+def _fstring_quotes(pymodule):
+    """Return ``(start, end, quote)`` for every f-string of `pymodule`."""
     index = pymodule.get_source_binding_index()
-    start, end = index._span(node)
-    quote = None
-    width = None
+    result = []
     for candidate in ast.walk(pymodule.get_ast()):
-        if not isinstance(candidate, ast.JoinedStr):
-            continue
-        first, last = index._span(candidate)
-        if first <= start and end <= last and (width is None or last - first < width):
-            width = last - first
+        if isinstance(candidate, ast.JoinedStr):
+            first, last = index._span(candidate)
             text = pymodule.source_code[first:last].lstrip("rRfFbBuU")
             quote = text[:3] if text[:3] in ("'''", '"""') else text[:1]
-    return quote
+            result.append((first, last, quote))
+    return result
+
+
+def _enclosing_fstring_quote(fstrings, start, end):
+    """Return the quote of the innermost f-string around ``[start, end)``."""
+    enclosing = [
+        (last - first, quote)
+        for first, last, quote in fstrings
+        if first <= start and end <= last
+    ]
+    return min(enclosing)[1] if enclosing else None
 
 
 def _replacement_field_text(expression, quote):
     """Render `expression` for a replacement field before PEP 701.
 
     Before Python 3.12 an f-string replacement field cannot contain its
-    enclosing quote or a backslash.  A string constant is re-quoted with the
-    other quote character; anything else that cannot be expressed is refused.
+    enclosing quote or a backslash.  String literals anywhere in the
+    expression are written with the other quote character; an expression
+    that still cannot be written there is refused.
     """
     text = ast.unparse(expression)
     if quote is None or sys.version_info >= (3, 12):
         return text
     if quote not in text and "\\" not in text:
         return text
-    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
-        for other in ("'", '"'):
-            literal = other + expression.value + other
+    other = '"' if quote[0] == "'" else "'"
+    literals = {}
+
+    class _Requote(ast.NodeTransformer):
+        def visit_JoinedStr(self, node):
+            return node
+
+        def visit_Constant(self, node):
+            value = node.value
             if (
-                other not in quote
-                and other not in expression.value
-                and "\\" not in expression.value
-                and expression.value.isprintable()
-                and quote not in literal
+                not isinstance(value, str)
+                or other in value
+                or "\\" in value
+                or not value.isprintable()
             ):
-                return literal
-    raise rope.base.exceptions.RefactoringError(
-        "Keyword value cannot be written inside this f-string before Python 3.12"
-    )
+                return node
+            name = "__rope_literal_%d__" % len(literals)
+            literals[name] = other + value + other
+            return ast.copy_location(ast.Name(id=name, ctx=ast.Load()), node)
+
+    if "__rope_literal_" not in text:
+        text = ast.unparse(_Requote().visit(copy.deepcopy(expression)))
+        for name, literal in literals.items():
+            text = text.replace(name, literal)
+    if quote in text or "\\" in text:
+        raise rope.base.exceptions.RefactoringError(
+            "Keyword value cannot be written inside this f-string before Python 3.12"
+        )
+    return text
 
 
 def _keyword_expression(source):
@@ -623,6 +645,7 @@ class _KeywordAdditions:
         }
         words = worder.Worder(source)
         real = simplify.real_code(source)
+        fstrings = None
         for occurrence in occurrences:
             start, end = occurrence.get_primary_range()
             node = calls.get((start, end))
@@ -756,7 +779,9 @@ class _KeywordAdditions:
                 insertion = finish - 1
                 existing = {keyword.arg: keyword.value for keyword in node.keywords}
                 added = []
-                quote = _enclosing_fstring_quote(pymodule, node)
+                if fstrings is None:
+                    fstrings = _fstring_quotes(pymodule)
+                quote = _enclosing_fstring_quote(fstrings, *index._span(node))
                 for addition, requested in selected:
                     expression = _keyword_expression(requested)
                     value = existing.get(addition.name)
