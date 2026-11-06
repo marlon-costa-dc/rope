@@ -9,18 +9,19 @@ _Result = TypeVar("_Result")
 
 
 def same_file_path(first, second):
-    """Tell whether two filesystem paths name the same file.
+    """Tell whether two filesystem paths name the same existing file.
 
-    Runtime ``__file__`` values and project resource paths may differ in
-    spelling, for example in letter case on Windows (``lib`` vs ``Lib``),
-    so both are resolved and case-normalized by the platform's own rules.
+    Runtime ``__file__`` values and project resource paths may spell one
+    file differently (letter case on Windows: ``lib`` vs ``Lib``, links), so
+    identity is the filesystem's.  A path that does not name an existing
+    file (a frozen or zipped module) is not that source file.
     """
-    return (
-        isinstance(first, str)
-        and isinstance(second, str)
-        and os.path.normcase(os.path.realpath(first))
-        == os.path.normcase(os.path.realpath(second))
-    )
+    if not isinstance(first, str) or not isinstance(second, str):
+        return False
+    try:
+        return os.path.samefile(first, second)
+    except (OSError, ValueError):
+        return False
 
 
 def saveit(
