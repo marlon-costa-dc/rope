@@ -48,7 +48,6 @@ doc = [
 dev = [
     'pytest>=7.0.1',
     'pytest-cov>=4.1.0',
-    'pytest-asyncio>=0.24.0',
     'pytest-timeout>=2.1.0',
     'pytest-xdist>=3.8.0',
     'build>=0.7.0',
@@ -90,7 +89,6 @@ profile = "black"
 [tool.pytest.ini_options]
 
 testpaths = "ropetest"
-asyncio_default_fixture_loop_scope = "function"
 python_files = [
     "*test.py",
     "__init__.py",
