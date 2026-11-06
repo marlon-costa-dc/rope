@@ -139,10 +139,10 @@ def test_installed_native_assignment_string_sequence(alias_project):
     resource.write("shared = ('first',)\nclass Owner:\n    names = tuple(shared)\n")
     module = alias_project.get_pymodule(resource)
     index = module.get_source_binding_index()
-    assert index.pymodule.assignment_string_sequence("names") is None
+    assert index.assignment_string_sequence("names") is None
     scope = module["Owner"].get_object().get_scope()
-    assert index.pymodule.assignment_string_sequence("names", scope) == ("first",)
-    assert index.pymodule.assignment_string_sequence("names", class_metadata=True) == ("first",)
+    assert index.assignment_string_sequence("names", scope) == ("first",)
+    assert index.assignment_string_sequence("names", class_metadata=True) == ("first",)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
