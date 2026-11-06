@@ -165,15 +165,23 @@ def descriptor_access(primary, attribute, pyname, access_scope):
         return pyname
     descriptor = constructor.get_object()
     declaration = descriptor.get_ast()
+    statements = declaration.body
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        statements = statements[1:]
+    # Any other class-body statement could rebind __init__ or __get__.
     methods = {
-        node.name: node
-        for node in declaration.body
-        if isinstance(node, ast.FunctionDef)
+        node.name: node for node in statements if isinstance(node, ast.FunctionDef)
     }
     if (
         declaration.bases
         or declaration.keywords
         or declaration.decorator_list
+        or len(statements) != 2
         or set(methods) != {"__init__", "__get__"}
     ):
         return pyname

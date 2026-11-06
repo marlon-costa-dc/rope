@@ -59,6 +59,32 @@ def test_transforming_descriptor_does_not_reuse_constructor_identity(
         project.close()
 
 
+@pytest.mark.parametrize("access", ["Owner", "Owner()"])
+@pytest.mark.parametrize(
+    "rebinding",
+    [
+        "    __get__ = lambda self, instance, owner=None: str\n",
+        "    __init__ = lambda self, value: setattr(self, '_value', str)\n",
+    ],
+)
+def test_rebound_descriptor_method_does_not_reuse_constructor_identity(
+    tmp_path, access, rebinding
+):
+    source = SOURCE.format(access=access, argument="native").replace(
+        "        return self._value\n",
+        "        return self._value\n" + rebinding,
+    )
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["selected"] is not namespace["native"]
+    project = Project(str(tmp_path), ropefolder=None)
+    try:
+        scope = libutils.get_string_scope(project, source)
+        assert scope["selected"].get_object() is not scope["native"].get_object()
+    finally:
+        project.close()
+
+
 def test_attribute_write_index_tracks_recaptured_native_source(tmp_path):
     project = Project(str(tmp_path), ropefolder=None)
     try:
