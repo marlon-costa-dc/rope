@@ -7,6 +7,18 @@ import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import classfunctions, exceptions, pynames, pyobjects
 
 
+def _is_instance_builtin(type_):
+    """Tell whether instances of a canonical builtin class use the generic form.
+
+    Builtin classes with a dedicated textual form (list, dict, tuple, set,
+    str, file, iterators) keep it; every other builtin class, including the
+    canonical ``object`` and ``type`` models, is stored by its builtin name.
+    """
+    return isinstance(type_, rope.base.builtins.BuiltinClass) and not hasattr(
+        PyObjectToTextual, type(type_).__name__ + "_to_textual"
+    )
+
+
 class PyObjectToTextual:
     """For transforming `PyObject` to textual form
 
@@ -49,7 +61,7 @@ class PyObjectToTextual:
         type_ = pyobject.get_type()
         name = getattr(getattr(type_, "builtin", None), "__name__", None)
         if (
-            type(type_) is rope.base.builtins.BuiltinClass
+            _is_instance_builtin(type_)
             and name in rope.base.builtins.builtins
             and rope.base.builtins.builtins[name].get_object() is type_
         ):
@@ -190,7 +202,7 @@ class TextualToPyObject:
     def builtin_instance_to_pyobject(self, textual):
         if textual[2] in rope.base.builtins.builtins:
             type_ = rope.base.builtins.builtins[textual[2]].get_object()
-            if type(type_) is rope.base.builtins.BuiltinClass:
+            if _is_instance_builtin(type_):
                 return rope.base.pyobjects.PyObject(type_)
 
     def builtin_file_to_pyobject(self, textual):

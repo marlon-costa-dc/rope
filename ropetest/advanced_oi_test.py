@@ -329,6 +329,37 @@ class DynamicOITest(unittest.TestCase):
             self.assertEqual(to_textual.transform(var), result)
             self.assertEqual(complex_to_textual(var), result)
 
+    def test_builtin_instance_textual_transformations(self):
+        mod = testutils.create_module(self.project, "mod")
+        mod.write(dedent("""\
+            an_int = int()
+            an_object = object()
+            ints = [an_int]
+        """))
+        to_pyobject = rope.base.oi.transform.TextualToPyObject(self.project)
+        to_textual = rope.base.oi.transform.PyObjectToTextual(self.project)
+        pymod = self.project.get_pymodule(mod)
+        for name, builtin in (
+            ("an_int", "int"),
+            ("an_object", "object"),
+        ):
+            pyobject = pymod[name].get_object()
+            textual = to_textual.transform(pyobject)
+            self.assertEqual(("builtin", "instance", builtin), textual)
+            restored = to_pyobject.transform(textual)
+            self.assertIs(pyobject.get_type(), restored.get_type())
+        ints = pymod["ints"].get_object()
+        self.assertEqual(
+            ("builtin", "list", ("builtin", "instance", "int")),
+            to_textual.transform(ints),
+        )
+        read = rope.base.pyobjects.sampled_value(pymod["an_int"].get_object(), ints)
+        self.assertEqual(("unknown",), to_textual.transform(read))
+        self.assertEqual(
+            ("builtin", "list", ("builtin", "instance", "int")),
+            to_textual.transform(rope.base.builtins.get_list(read)),
+        )
+
     def test_arguments_with_keywords(self):
         mod = testutils.create_module(self.project, "mod")
         code = dedent("""\
