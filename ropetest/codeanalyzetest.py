@@ -1187,10 +1187,6 @@ class TestASTLinesAdapter:
                     assert source[start:end] == expected
 
     class TestLineEndings:
-        def test_partial_utf8_column_floors_to_complete_prefix(self):
-            adapter = ASTLinesAdapter('value = "é"\n')
-            assert adapter._get_line_text(0, 10) == 'value = "'
-
         def test_empty_source_has_one_line(self):
             ast_adapter = ASTLinesAdapter("")
             assert len(ast_adapter) == 1

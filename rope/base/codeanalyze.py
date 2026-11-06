@@ -152,14 +152,7 @@ class ASTLinesAdapter:
         return lineno - 1
 
     def _get_line_text(self, line_idx: int, col_offset: int | None = None) -> str:
-        data = self._get_line_bytes(line_idx, col_offset)
-        try:
-            return data.decode("utf-8")
-        except UnicodeDecodeError as error:
-            # Third-party AST producers can report a character column while
-            # CPython source positions use UTF-8 bytes. Floor at the last
-            # complete code point; callers only need a stable source prefix.
-            return data[: error.start].decode("utf-8")
+        return self._get_line_bytes(line_idx, col_offset).decode("utf-8")
 
     def _get_line_bytes(self, line_idx: int, col_offset: int | None = None) -> bytes:
         start = self._starts_bytes[line_idx]
