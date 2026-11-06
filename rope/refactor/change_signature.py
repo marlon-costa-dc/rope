@@ -271,7 +271,7 @@ class _FunctionChangers:
         return result
 
     def change_definition(self, call):
-        return self.changed_definition_infos[-1].to_string()
+        return self.changed_definition_infos[-1].to_string(annotated=True)
 
     def change_call(self, primary, pyname, call):
         call_info = functionutils.CallInfo.read(

@@ -42,8 +42,8 @@ class DefinitionInfo:
         self.keywords_arg = keywords_arg
         self.annotations = annotations or {}
 
-    def to_string(self):
-        return f"{self.function_name}({self.arguments_to_string(annotated=True)})"
+    def to_string(self, *, annotated=False):
+        return f"{self.function_name}({self.arguments_to_string(annotated=annotated)})"
 
     def arguments_to_string(self, from_index=0, *, annotated=False):
         def parameter(name):
