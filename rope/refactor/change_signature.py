@@ -1,6 +1,7 @@
 import contextlib
 import copy
 import importlib
+import sys
 from functools import partial
 from keyword import iskeyword
 
@@ -21,6 +22,51 @@ from rope.base import (
 from rope.base.change import ChangeContents, ChangeSet
 from rope.base.oi import soa
 from rope.refactor import functionutils, occurrences, sourceutils
+
+
+def _enclosing_fstring_quote(pymodule, node):
+    """Return the quote of the innermost f-string around `node`, if any."""
+    index = pymodule.get_source_binding_index()
+    start, end = index._span(node)
+    quote = None
+    width = None
+    for candidate in ast.walk(pymodule.get_ast()):
+        if not isinstance(candidate, ast.JoinedStr):
+            continue
+        first, last = index._span(candidate)
+        if first <= start and end <= last and (width is None or last - first < width):
+            width = last - first
+            text = pymodule.source_code[first:last].lstrip("rRfFbBuU")
+            quote = text[:3] if text[:3] in ("'''", '"""') else text[:1]
+    return quote
+
+
+def _replacement_field_text(expression, quote):
+    """Render `expression` for a replacement field before PEP 701.
+
+    Before Python 3.12 an f-string replacement field cannot contain its
+    enclosing quote or a backslash.  A string constant is re-quoted with the
+    other quote character; anything else that cannot be expressed is refused.
+    """
+    text = ast.unparse(expression)
+    if quote is None or sys.version_info >= (3, 12):
+        return text
+    if quote not in text and "\\" not in text:
+        return text
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        for other in ("'", '"'):
+            literal = other + expression.value + other
+            if (
+                other not in quote
+                and other not in expression.value
+                and "\\" not in expression.value
+                and expression.value.isprintable()
+                and quote not in literal
+            ):
+                return literal
+    raise rope.base.exceptions.RefactoringError(
+        "Keyword value cannot be written inside this f-string before Python 3.12"
+    )
 
 
 def _keyword_expression(source):
@@ -710,6 +756,7 @@ class _KeywordAdditions:
                 insertion = finish - 1
                 existing = {keyword.arg: keyword.value for keyword in node.keywords}
                 added = []
+                quote = _enclosing_fstring_quote(pymodule, node)
                 for addition, requested in selected:
                     expression = _keyword_expression(requested)
                     value = existing.get(addition.name)
@@ -720,7 +767,9 @@ class _KeywordAdditions:
                                 + addition.name
                             )
                         continue
-                    added.append(addition.name + "=" + ast.unparse(expression))
+                    added.append(
+                        addition.name + "=" + _replacement_field_text(expression, quote)
+                    )
                 if not added:
                     continue
                 generator = (
