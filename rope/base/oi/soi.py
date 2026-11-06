@@ -90,6 +90,10 @@ def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
         ):
             return pyobjects.get_unknown()
         read_point = source_index._span(read_node)[0]
+    elif read_node is not None and read_node is pyname.module.get_ast():
+        # A read after the whole module executed (PEP 649 lazy annotations):
+        # every assignment is visible and each value keeps its own epoch.
+        read_point = pyname.module._get_source_binding_index()._span(read_node)[1]
     elif read_node is not None:
         source_index = pyname.module._get_source_binding_index()
         read_context = source_index.context_for_node(read_node)

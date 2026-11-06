@@ -1,3 +1,4 @@
+import sys
 import unittest
 from textwrap import dedent, indent
 
@@ -230,12 +231,15 @@ class SourceAnnotationHintingTest(AbstractHintingTest):
                 namespace = {}
                 exec(code, namespace)
                 function = namespace['choose'] if 'choose' in namespace else namespace['Owner'].choose
-                self.assertIs(int, function.__annotations__['value'])
+                # Eager before 3.14; PEP 649 evaluates after the module ran.
+                actual = function.__annotations__['value']
+                self.assertIs(int if sys.version_info < (3, 14) or number == 1 else str, actual)
+                expected = {int: builtins.builtins['int'].get_object(), str: builtins.get_str_type()}[actual]
                 resource = testutils.create_module(self.project, 'eager_annotation_' + str(number))
                 resource.write(code)
                 module = self.project.get_pymodule(resource)
                 function = module['choose'].get_object() if 'choose' in module else module['Owner'].get_object()['choose'].get_object()
-                self.assertIs(builtins.builtins['int'].get_object(), function.get_parameters()['value'].get_object().get_type())
+                self.assertIs(expected, function.get_parameters()['value'].get_object().get_type())
 
     def test_postponed_annotation_keeps_late_binding(self):
         code = "from __future__ import annotations\nType = int\ndef choose(value: Type):\n    return value\nType = str\n"
@@ -316,8 +320,12 @@ class SourceAnnotationHintingTest(AbstractHintingTest):
                     self.assertIsInstance(parameter.get_type(), evaluate.UnionType)
                     self.assertIs(builtins.get_str_type(), parameter.get_type().alternatives[0])
                 else:
-                    self.assertIsInstance(parameter.get_type(), builtins.List)
-                    self.assertIs(builtins.get_str_type(), parameter.get_type().holding.get_type())
+                    # `Choice` itself is read eagerly before 3.14 (list) and
+                    # after the module ran under PEP 649 (tuple).
+                    container = {list: builtins.List, tuple: builtins.Tuple}[typing.get_origin(actual)]
+                    self.assertIsInstance(parameter.get_type(), container)
+                    element = parameter.get_type().get_holding_objects()[0]
+                    self.assertIs(builtins.get_str_type(), element.get_type())
 
     def test_class_nested_forward_reference_uses_function_globals(self):
         import typing

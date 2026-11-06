@@ -150,6 +150,12 @@ def get_hint_scope(pyobject):
     scope = owner.get_scope()
     if isinstance(scope, AnnotationEnvironment) and scope.policy.mode == "eager":
         return evaluate.SourceValueScope(scope, scope, {}, source_epoch=scope.node)
+    if isinstance(scope, AnnotationEnvironment) and scope.policy.mode == "lazy":
+        # PEP 649 evaluates the annotation after its module has executed.
+        module = owner.get_module()
+        return evaluate.SourceValueScope(
+            scope, scope, {}, source_epoch=module.get_ast()
+        )
     return scope
 
 
