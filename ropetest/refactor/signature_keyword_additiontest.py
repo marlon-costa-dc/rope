@@ -134,7 +134,7 @@ def test_required_keyword_preserves_existing_runtime_contract(tmp_path, header, 
 
 
 @pytest.mark.parametrize(
-    "value", ["'received'", "dict(label='received')['label']", "'re' 'ceived'"]
+    "value", ["'received'", "dict(label='received')['label']", "'re' + 'ceived'"]
 )
 def test_required_keyword_value_inside_fstring_is_written_legally(tmp_path, value):
     project = Project(str(tmp_path), ropefolder=None)
