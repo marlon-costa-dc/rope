@@ -311,7 +311,10 @@ class SourceAnnotationHintingTest(AbstractHintingTest):
                 namespace = {}
                 exec(code, namespace)
                 actual = typing.get_type_hints(namespace['choose'], namespace)['value']
-                self.assertIn(str, typing.get_args(actual))
+                if sys.version_info >= (3, 11) or number == 1:
+                    # get_type_hints resolves strings nested in builtin
+                    # generics since 3.11; 3.10 leaves list['Type'] as is.
+                    self.assertIn(str, typing.get_args(actual))
                 self.assertEqual(['real'], namespace['choose'](['real']))
                 resource = testutils.create_module(self.project, 'nested_forward_' + str(number))
                 resource.write(code)
@@ -336,7 +339,9 @@ class SourceAnnotationHintingTest(AbstractHintingTest):
         )
         namespace = {}
         exec(code, namespace)
-        self.assertEqual(list[str], typing.get_type_hints(namespace['Owner'].choose, namespace)['value'])
+        hint = typing.get_type_hints(namespace['Owner'].choose, namespace)['value']
+        # get_type_hints resolves strings nested in builtin generics since 3.11.
+        self.assertEqual(list[str] if sys.version_info >= (3, 11) else list['Type'], hint)
         resource = testutils.create_module(self.project, 'class_nested_forward')
         resource.write(code)
         function = self.project.get_pymodule(resource)['Owner'].get_object()['choose'].get_object()
