@@ -216,8 +216,8 @@ Datacosmos internal:
 
 # Release 1.15.1
 
-- #xxx Change runmod.py to pass DOA channel credential in a more secure manner,
-  see CVE-XXX (@AliAAlMousa, @lieryan)
+- Change runmod.py to pass DOA channel credential in a more secure manner,
+  see GHSA-64m2-4gp9-7cqx (@AliAAlMousa, @lieryan)
 
 # Release 1.15.0
 
