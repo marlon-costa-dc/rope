@@ -138,6 +138,37 @@ class InstanceMethodTransferTest(unittest.TestCase):
         module = self._load_runtime_module("source")
         self.assertIs(module.Target.execute._handler_config, int)
 
+    def test_same_module_transfer_from_function_local_class(self) -> None:
+        source = dedent("""\
+            from handlers import h
+
+            class Target:
+                queue_service: object
+
+            def build():
+                class Legacy:
+                    @h.handler(command=int)
+                    def execute(self, request):
+                        return self.queue.execute(request)
+                return Legacy
+        """)
+        self.source.write(source)
+        operation = move.create_move(
+            self.project, self.source, source.index("execute(self") + 1
+        )
+        changes = operation.get_instance_class_changes(
+            self.project,
+            [(self.source, source.index("execute(self") + 1, "execute")],
+            self.source,
+            source.index("Target") + 1,
+            receiver_rewrites={"queue": "queue_service.queue"},
+            resources=[self.handlers, self.source],
+        )
+        self.project.do(changes)
+        module = self._load_runtime_module("source")
+        self.assertIs(module.Target.execute._handler_config, int)
+        self.assertFalse(hasattr(module.build(), "execute"))
+
     def test_transfer_applies_the_requested_method_name(self) -> None:
         source = dedent("""\
             from handlers import h

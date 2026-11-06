@@ -1119,7 +1119,9 @@ class MoveMethod:
             )
         cls._check_identity_decorator(moved, resolve_binding=resolve_binding)
         source_scope = function.parent.get_scope()
-        if module.get_resource() == function.get_module().get_resource():
+        if module.get_resource() == function.get_module().get_resource() and (
+            cls._is_module_owned(function.parent)
+        ):
             # Same-module transfer: compare both readings in the planned source.
             source_scope = cls._planned_class_scope(module, function.parent)
         cls._check_instance_signature_bindings(
@@ -1423,6 +1425,13 @@ class MoveMethod:
             and getattr(binding.get_object(), "builtin", None)
             is object.__getattribute__
         )
+
+    @staticmethod
+    def _is_module_owned(pyclass):
+        scope = pyclass.get_scope().parent
+        while scope.get_kind() == "Class":
+            scope = scope.parent
+        return scope.get_kind() == "Module"
 
     @staticmethod
     def _class_path(pyclass):
