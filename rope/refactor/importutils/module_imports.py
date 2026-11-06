@@ -1,6 +1,6 @@
 from typing import List, Union
 
-from rope.base import ast, exceptions, pynames, pynamesdef, utils
+from rope.base import ast, exceptions, pynames, pynamesdef, pyobjects, utils
 from rope.refactor.importutils import actions, importinfo
 
 
@@ -128,8 +128,9 @@ class ModuleImports:
     def get_used_names(self, defined_pyobject):
         """Return lexical references and a module's declared export names."""
         names = self._get_unbound_names(defined_pyobject)
-        if defined_pyobject is defined_pyobject.get_module():
-            names |= self._get_all_star_list(defined_pyobject)
+        if isinstance(defined_pyobject, pyobjects.AbstractModule):
+            # A package exports through its ``__init__`` module.
+            names |= self._get_all_star_list(defined_pyobject.get_module())
         return names
 
     def get_changed_source(self):
