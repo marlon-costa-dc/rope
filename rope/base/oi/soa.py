@@ -4,21 +4,43 @@ import rope.base.pynames
 from rope.base import arguments, classfunctions, evaluate, nameanalyze, pyobjects
 
 
-def analyze_module(pycore, pymodule, should_analyze, search_subscopes, followed_calls):
+def analyze_module(
+    pycore,
+    pymodule,
+    should_analyze,
+    search_subscopes,
+    followed_calls,
+    *,
+    visitor_factory=None,
+):
     """Analyze `pymodule` for static object inference
 
     Analyzes scopes for collecting object information.  The analysis
     starts from inner scopes.
 
     """
-    _analyze_node(pycore, pymodule, should_analyze, search_subscopes, followed_calls)
+    _analyze_node(
+        pycore,
+        pymodule,
+        should_analyze,
+        search_subscopes,
+        followed_calls,
+        visitor_factory,
+    )
 
 
-def _analyze_node(pycore, pydefined, should_analyze, search_subscopes, followed_calls):
+def _analyze_node(
+    pycore, pydefined, should_analyze, search_subscopes, followed_calls, visitor_factory
+):
     if search_subscopes(pydefined):
         for scope in pydefined.get_scope().get_scopes():
             _analyze_node(
-                pycore, scope.pyobject, should_analyze, search_subscopes, followed_calls
+                pycore,
+                scope.pyobject,
+                should_analyze,
+                search_subscopes,
+                followed_calls,
+                visitor_factory,
             )
     if should_analyze(pydefined):
         new_followed_calls = max(0, followed_calls - 1)
@@ -27,10 +49,16 @@ def _analyze_node(pycore, pydefined, should_analyze, search_subscopes, followed_
 
         def _follow(pyfunction):
             _analyze_node(
-                pycore, pyfunction, return_true, return_false, new_followed_calls
+                pycore,
+                pyfunction,
+                return_true,
+                return_false,
+                new_followed_calls,
+                visitor_factory,
             )
 
-        visitor = SOAVisitor(pycore, pydefined, _follow if followed_calls else None)
+        factory = SOAVisitor if visitor_factory is None else visitor_factory
+        visitor = factory(pycore, pydefined, _follow if followed_calls else None)
         for child in rope.base.ast.iter_child_nodes(pydefined.get_ast()):
             visitor.visit(child)
 
@@ -122,10 +150,105 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
             nodes.extend(visitor.nodes)
         self._evaluate_assign_value(node, nodes)
 
+    def _operator_effects(self, node, left, right, *, inplace=False):
+        for child in rope.base.ast.iter_child_nodes(node):
+            self.visit(child)
+        operation = {
+            rope.base.ast.Add: "add",
+            rope.base.ast.Sub: "sub",
+            rope.base.ast.Mult: "mul",
+            rope.base.ast.MatMult: "matmul",
+            rope.base.ast.Div: "truediv",
+            rope.base.ast.FloorDiv: "floordiv",
+            rope.base.ast.Mod: "mod",
+            rope.base.ast.Pow: "pow",
+            rope.base.ast.LShift: "lshift",
+            rope.base.ast.RShift: "rshift",
+            rope.base.ast.BitOr: "or",
+            rope.base.ast.BitXor: "xor",
+            rope.base.ast.BitAnd: "and",
+        }[type(node.op)]
+        left = evaluate.eval_node(self.scope, left)
+        right = evaluate.eval_node(self.scope, right)
+        effects = [
+            (left, right, "__" + operation + "__"),
+            (right, left, "__r" + operation + "__"),
+        ]
+        if inplace:
+            effects.insert(0, (left, right, "__i" + operation + "__"))
+        for receiver, operand, name in effects:
+            self._protocol_call(receiver, name, [operand])
+
+    def _AugAssign(self, node):
+        self._operator_effects(node, node.target, node.value, inplace=True)
+
+    def _BinOp(self, node):
+        self._operator_effects(node, node.left, node.right)
+
+    def _protocol_call(self, receiver, name, operands=()):
+        if receiver is None or name not in receiver.get_object():
+            return None
+        function = receiver.get_object()[name].get_object()
+        args = arguments.ObjectArguments([receiver, *operands])
+        self._call(function, args)
+        if isinstance(function, pyobjects.AbstractFunction):
+            result = function.get_returned_object(args)
+            if result is not None:
+                return rope.base.pynames.UnboundName(result)
+
+    def _Compare(self, node):
+        for child in rope.base.ast.iter_child_nodes(node):
+            self.visit(child)
+        left = evaluate.eval_node(self.scope, node.left)
+        for operation, expression in zip(node.ops, node.comparators):
+            right = evaluate.eval_node(self.scope, expression)
+            if isinstance(operation, (rope.base.ast.In, rope.base.ast.NotIn)):
+                if right is not None and "__contains__" in right.get_object():
+                    self._protocol_call(right, "__contains__", [left])
+                else:
+                    iterator = self._protocol_call(right, "__iter__")
+                    if iterator is not None:
+                        item = self._protocol_call(iterator, "__next__")
+                    else:
+                        item = self._protocol_call(
+                            right,
+                            "__getitem__",
+                            [
+                                rope.base.pynames.UnboundName(
+                                    pyobjects.PyObject(
+                                        rope.base.builtins.builtins["int"].get_object()
+                                    )
+                                )
+                            ],
+                        )
+                    self._protocol_call(item, "__eq__", [left])
+                    self._protocol_call(left, "__eq__", [item])
+            else:
+                names = {
+                    rope.base.ast.Eq: ("__eq__", "__eq__"),
+                    rope.base.ast.NotEq: ("__ne__", "__ne__"),
+                    rope.base.ast.Lt: ("__lt__", "__gt__"),
+                    rope.base.ast.LtE: ("__le__", "__ge__"),
+                    rope.base.ast.Gt: ("__gt__", "__lt__"),
+                    rope.base.ast.GtE: ("__ge__", "__le__"),
+                }.get(type(operation))
+                if names is not None:
+                    self._protocol_call(left, names[0], [right])
+                    self._protocol_call(right, names[1], [left])
+            left = right
+
     def _evaluate_assign_value(self, node, nodes, type_hint=False):
-        for subscript, levels in nodes:
-            instance = evaluate.eval_node(self.scope, subscript.value)
-            args_pynames = [evaluate.eval_node(self.scope, subscript.slice)]
+        for target, levels in nodes:
+            instance = evaluate.eval_node(self.scope, target.value)
+            if isinstance(target, rope.base.ast.Attribute):
+                operation = "__setattr__"
+                key = rope.base.pynames.UnboundName(
+                    rope.base.builtins.LiteralString(target.attr)
+                )
+            else:
+                operation = "__setitem__"
+                key = evaluate.eval_node(self.scope, target.slice)
+            args_pynames = [key]
             value = rope.base.oi.soi._infer_assignment(
                 rope.base.pynames.AssignmentValue(
                     node.value, levels, type_hint=type_hint
@@ -135,8 +258,8 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
             args_pynames.append(rope.base.pynames.UnboundName(value))
             if instance is not None and value is not None:
                 pyobject = instance.get_object()
-                if "__setitem__" in pyobject:
-                    pyfunction = pyobject["__setitem__"].get_object()
+                if operation in pyobject:
+                    pyfunction = pyobject[operation].get_object()
                     args = arguments.ObjectArguments([instance] + args_pynames)
                     self._call(pyfunction, args)
                 # IDEA: handle `__setslice__`, too
@@ -148,7 +271,8 @@ class _SOAAssignVisitor(nameanalyze._NodeNameCollector):
         self.nodes = []
 
     def _added(self, node, levels):
-        if isinstance(node, rope.base.ast.Subscript) and isinstance(
-            node.slice, (rope.base.ast.Index, rope.base.ast.expr)
+        if isinstance(node, rope.base.ast.Attribute) or (
+            isinstance(node, rope.base.ast.Subscript)
+            and isinstance(node.slice, (rope.base.ast.Index, rope.base.ast.expr))
         ):
             self.nodes.append((node, levels))

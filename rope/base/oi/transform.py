@@ -22,6 +22,8 @@ class PyObjectToTextual:
         """Transform a `PyObject` to textual form"""
         if pyobject is None:
             return ("none",)
+        if pyobjects.contains_sampled(pyobject):
+            return ("unknown",)
         # Subclasses without their own transformation, like literal
         # values, are stored the way their nearest base class is.
         for object_type in type(pyobject).__mro__:

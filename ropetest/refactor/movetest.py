@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import runpy
 import unittest
 from textwrap import dedent
 from typing import TYPE_CHECKING, Union
@@ -1288,6 +1289,86 @@ class MoveRefactoringTest(unittest.TestCase):
                     return sys.version
         """)
         self.assertEqual(code, self.mod2.read())
+
+    def _transfer_static_method(self, body: str) -> None:
+        self.origin_module.write(
+            dedent(
+                """\
+                __all__ = ["Legacy"]
+                TOKEN = "source value"
+
+                class Legacy:
+                    @staticmethod
+                    def execute():
+                """
+            )
+            + "        "
+            + body
+            + "\n"
+        )
+        self.destination_module.write("class Target:\n    pass\n")
+        changes = move.MoveMethod.get_class_changes(
+            self.project,
+            [
+                (
+                    self.origin_module,
+                    self.origin_module.read().index("execute"),
+                    "execute",
+                )
+            ],
+            self.destination_module,
+            self.destination_module.read().index("Target"),
+        )
+        self.project.do(changes)
+
+    def test_transfer_does_not_import_unused_export_metadata(self) -> None:
+        self._transfer_static_method("return TOKEN")
+
+        self.assertIn("from origin_module import TOKEN", self.destination_module.read())
+        self.assertNotIn("from origin_module import __all__", self.destination_module.read())
+        self.assertIn('__all__ = ["Legacy"]', self.origin_module.read())
+
+    def test_transfer_imports_export_metadata_when_method_uses_it(self) -> None:
+        self._transfer_static_method("return __all__")
+
+        self.assertIn("from origin_module import __all__", self.destination_module.read())
+
+    def test_transfer_preserves_future_annotations_without_origin_exports(self) -> None:
+        self.origin_module.write(
+            "from __future__ import annotations\n"
+            "__all__ = ['Legacy']\n"
+            "class Legacy:\n"
+            "    @staticmethod\n"
+            "    def execute(value: float) -> int:\n"
+            "        return int(value)\n"
+        )
+        self.destination_module.write("__all__ = ['Target']\nclass Target:\n    pass\n")
+        changes = move.MoveMethod.get_class_changes(
+            self.project,
+            [(self.origin_module, self.origin_module.read().index("execute"), "execute")],
+            self.destination_module,
+            self.destination_module.read().index("Target", self.destination_module.read().index("class ")),
+        )
+        self.project.do(changes)
+        target = runpy.run_path(self.destination_module.real_path)["Target"]
+        self.assertEqual(3, target.execute(3.7))
+        self.assertEqual({"value": "float", "return": "int"}, target.execute.__annotations__)
+        self.assertNotIn("from origin_module import __all__", self.destination_module.read())
+
+    def test_moving_export_metadata_preserves_its_named_declarations(self) -> None:
+        self.origin_module.write("class Exported:\n    pass\n__all__ = ['Exported']\n")
+        self._move(
+            self.origin_module,
+            self.origin_module.read().index("__all__"),
+            self.destination_module,
+        )
+        source = self.project.get_pymodule(self.origin_module)
+        destination = self.project.get_pymodule(self.destination_module)
+        self.assertIs(
+            source.get_attribute("Exported").get_object(),
+            destination.get_attribute("Exported").get_object(),
+        )
+        self.assertIn("__all__ = ['Exported']", self.destination_module.read())
 
     def test_moving_methods_getting_getting_changes_for_goal_class3(self) -> None:
         self.mod2.write(dedent("""\

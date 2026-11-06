@@ -25,8 +25,9 @@ class ModuleImports:
         return result
 
     def _get_unbound_names(self, defined_pyobject):
-        visitor = _GlobalUnboundNameFinder(self.pymodule, defined_pyobject)
-        visitor.visit(self.pymodule.get_ast())
+        source_module = defined_pyobject.get_module()
+        visitor = _GlobalUnboundNameFinder(source_module, defined_pyobject)
+        visitor.visit(source_module.get_ast())
         return visitor.unbound
 
     def _get_all_star_list(self, pymodule):
@@ -114,7 +115,7 @@ class ModuleImports:
 
     def get_used_imports(self, defined_pyobject):
         result = []
-        can_select = _OneTimeSelector(self._get_unbound_names(defined_pyobject))
+        can_select = _OneTimeSelector(self.get_used_names(defined_pyobject))
         visitor = actions.FilteringVisitor(
             self.project, self._current_folder(), can_select
         )
@@ -123,6 +124,13 @@ class ModuleImports:
             if new_import is not None and not new_import.is_empty():
                 result.append(new_import)
         return result
+
+    def get_used_names(self, defined_pyobject):
+        """Return lexical references and a module's declared export names."""
+        names = self._get_unbound_names(defined_pyobject)
+        if defined_pyobject is defined_pyobject.get_module():
+            names |= self._get_all_star_list(defined_pyobject)
+        return names
 
     def get_changed_source(self):
         if not self.project.prefs.get("pull_imports_to_top") and not self.sorted:
@@ -223,6 +231,9 @@ class ModuleImports:
     def _get_new_import_lineno(self):
         if self.imports:
             return self.imports[-1].end_line
+        for node in self.pymodule.get_ast().body:
+            if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+                return node.lineno + 1
         return 1
 
     def filter_names(self, can_select):

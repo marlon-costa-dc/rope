@@ -19,6 +19,9 @@ class PyObject:
             raise exceptions.AttributeNotFoundError("Attribute %s not found" % name)
         return self.get_attributes()[name]
 
+    def get_holding_objects(self):
+        return (self.type,) if self.type is not self else ()
+
     def get_module(self):
         return None
 
@@ -118,6 +121,41 @@ def get_unknown():
     if PyObject._unknown is None:
         PyObject._unknown = PyObject(get_base_type("Unknown"))
     return PyObject._unknown
+
+
+class SampledValue(PyObject):
+    """A representative value whose container position or cursor is unproved."""
+
+    def __init__(self, representative, origin):
+        super().__init__(representative.get_type())
+        self.representative = representative
+        self.origin = origin
+
+    def get_attributes(self):
+        return self.representative.get_attributes()
+
+    def get_module(self):
+        return self.representative.get_module()
+
+
+def sampled_value(value, origin):
+    if value is None or value is get_unknown() or isinstance(value, SampledValue):
+        return value
+    return SampledValue(value, origin)
+
+
+def contains_sampled(value):
+    pending = [value]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, SampledValue):
+            return True
+        pending.extend(current.get_holding_objects())
+    return False
 
 
 class AbstractClass(PyObject):

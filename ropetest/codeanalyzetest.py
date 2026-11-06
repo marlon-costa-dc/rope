@@ -710,6 +710,29 @@ class ScopeNameFinderTest(unittest.TestCase):
         result = name_finder.get_pyname_at(len(code) - 12)
         self.assertEqual(a_var_pyname, result)
 
+    def test_source_binding_index_reads_module_all_literal_sequence(self):
+        module = libutils.get_string_module(
+            self.project, '__all__ = ("Public", "helper")\n'
+        )
+
+        self.assertEqual(
+            ("Public", "helper"),
+            module.get_source_binding_index().assignment_string_sequence("__all__"),
+        )
+
+    def test_source_binding_index_reads_class_metadata_all_literal_sequence(self):
+        module = libutils.get_string_module(
+            self.project,
+            'class Public:\n    __all__ = ["Public", "helper"]\n',
+        )
+
+        self.assertEqual(
+            ("Public", "helper"),
+            module.get_source_binding_index().assignment_string_sequence(
+                "__all__", class_metadata=True
+            ),
+        )
+
     def test_class_method_attribute_in_class_body(self):
         code = dedent("""\
             class C(object):
@@ -1164,6 +1187,10 @@ class TestASTLinesAdapter:
                     assert source[start:end] == expected
 
     class TestLineEndings:
+        def test_partial_utf8_column_floors_to_complete_prefix(self):
+            adapter = ASTLinesAdapter('value = "é"\n')
+            assert adapter._get_line_text(0, 10) == 'value = "'
+
         def test_empty_source_has_one_line(self):
             ast_adapter = ASTLinesAdapter("")
             assert len(ast_adapter) == 1

@@ -27,28 +27,39 @@ def _check_signature_parameters(pyfunction):
 
 class DefinitionInfo:
     def __init__(
-        self, function_name, is_method, args_with_defaults, args_arg, keywords_arg
+        self,
+        function_name,
+        is_method,
+        args_with_defaults,
+        args_arg,
+        keywords_arg,
+        annotations=None,
     ):
         self.function_name = function_name
         self.is_method = is_method
         self.args_with_defaults = args_with_defaults
         self.args_arg = args_arg
         self.keywords_arg = keywords_arg
+        self.annotations = annotations or {}
 
     def to_string(self):
-        return f"{self.function_name}({self.arguments_to_string()})"
+        return f"{self.function_name}({self.arguments_to_string(annotated=True)})"
 
-    def arguments_to_string(self, from_index=0):
+    def arguments_to_string(self, from_index=0, *, annotated=False):
+        def parameter(name):
+            annotation = self.annotations.get(name) if annotated else None
+            return f"{name}: {annotation}" if annotation is not None else name
+
         params = []
         for arg, default in self.args_with_defaults:
             if default is not None:
-                params.append(f"{arg}={default}")
+                params.append(f"{parameter(arg)}={default}")
             else:
-                params.append(arg)
+                params.append(parameter(arg))
         if self.args_arg is not None:
-            params.append("*" + self.args_arg)
+            params.append("*" + parameter(self.args_arg))
         if self.keywords_arg:
-            params.append("**" + self.keywords_arg)
+            params.append("**" + parameter(self.keywords_arg))
         return ", ".join(params[from_index:])
 
     @staticmethod
@@ -74,6 +85,11 @@ class DefinitionInfo:
             args_with_defaults,
             args_arg,
             keywords_arg,
+            {
+                argument.arg: info._get_source_range(argument.annotation)
+                for argument in ast.walk(info.ast.args)
+                if isinstance(argument, ast.arg) and argument.annotation is not None
+            },
         )
 
     @staticmethod
@@ -244,9 +260,10 @@ class _BaseFunctionParser:
         return self.implicit_arg and "." in self.call[: self.first_parens]
 
     def _get_source_range(self, tree):
-        start = self._lines.get_line_start(tree.lineno) + tree.col_offset
-        end = self._lines.get_line_start(tree.end_lineno) + tree.end_col_offset
-        return self._lines.code[start:end]
+        source = ast.get_source_segment(self._lines.code, tree)
+        if source is None:
+            raise exceptions.RefactoringError("Missing native function source range")
+        return source
 
 
 class _FunctionDefParser(_BaseFunctionParser):
@@ -266,17 +283,16 @@ class _FunctionDefParser(_BaseFunctionParser):
         # properly to handle them properly at some point
         args = []
         kwargs = []
-        args += [arg.arg for arg in self.ast.args.posonlyargs]
-        args += [arg.arg for arg in self.ast.args.args]
+        positional = self.ast.args.posonlyargs + self.ast.args.args
+        defaults = self.ast.args.defaults
+        required = len(positional) - len(defaults)
+        args += [arg.arg for arg in positional[:required]]
+        kwargs += [
+            (argument.arg, self._get_source_range(value))
+            for argument, value in zip(positional[required:], defaults)
+        ]
         if self.ast.args.vararg is not None:
             args += ["*" + self.ast.args.vararg.arg]
-        if len(self.ast.args.defaults) > 0:
-            defaults = self.ast.args.defaults
-            kwargs += [
-                (name, self._get_source_range(value))
-                for name, value in zip(args[-len(defaults) :], defaults)
-            ]
-            del args[-len(self.ast.args.defaults) :]
         if self.ast.args.kwarg is not None:
             args += ["**" + self.ast.args.kwarg.arg]
         if self.ast.args.kwonlyargs:

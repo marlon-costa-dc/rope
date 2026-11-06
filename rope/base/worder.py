@@ -97,8 +97,8 @@ class Worder:
     def is_a_function_being_called(self, offset):
         return self.code_finder.is_a_function_being_called(offset)
 
-    def get_word_parens_range(self, offset):
-        return self.code_finder.get_word_parens_range(offset)
+    def get_word_parens_range(self, offset, opening="(", closing=")"):
+        return self.code_finder.get_word_parens_range(offset, opening, closing)
 
     def is_name_assigned_in_class_body(self, offset):
         return self.code_finder.is_name_assigned_in_class_body(offset)
