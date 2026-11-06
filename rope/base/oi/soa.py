@@ -174,10 +174,52 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
             (left, right, "__" + operation + "__"),
             (right, left, "__r" + operation + "__"),
         ]
+        if self._reflected_first(left, right, effects[1][2]):
+            effects.reverse()
         if inplace:
             effects.insert(0, (left, right, "__i" + operation + "__"))
+        # Python tries each method in order and falls back only when one is
+        # missing or returns NotImplemented.
         for receiver, operand, name in effects:
-            self._protocol_call(receiver, name, [operand])
+            if receiver is None or name not in receiver.get_object():
+                continue
+            result = self._protocol_call(receiver, name, [operand])
+            if not self._may_be_not_implemented(result):
+                break
+
+    @staticmethod
+    def _reflected_first(left, right, name):
+        """A right operand of a proper subclass overriding the method goes first."""
+        if left is None or right is None:
+            return False
+        left_type = left.get_object().get_type()
+        right_type = right.get_object().get_type()
+        if (
+            not isinstance(left_type, pyobjects.PyClass)
+            or not isinstance(right_type, pyobjects.PyClass)
+            or left_type is right_type
+        ):
+            return False
+        from rope.base.pyobjectsdef import _inheritance_order
+
+        if left_type not in _inheritance_order(right_type):
+            return False
+        reflected = right_type.get_attributes().get(name)
+        inherited = left_type.get_attributes().get(name)
+        return reflected is not None and (
+            inherited is None or reflected.get_object() is not inherited.get_object()
+        )
+
+    @staticmethod
+    def _may_be_not_implemented(result):
+        if result is None:
+            return True
+        value = result.get_object()
+        if value is None or value == pyobjects.get_unknown():
+            return True
+        return value.get_type() is rope.base.builtins._runtime_class(
+            type(NotImplemented)
+        )
 
     def _AugAssign(self, node):
         self._operator_effects(node, node.target, node.value, inplace=True)
@@ -208,7 +250,15 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
                 else:
                     iterator = self._protocol_call(right, "__iter__")
                     if iterator is not None:
-                        item = self._protocol_call(iterator, "__next__")
+                        # Rope's builtin iterators model `next`, not `__next__`.
+                        item = self._protocol_call(
+                            iterator,
+                            (
+                                "__next__"
+                                if "__next__" in iterator.get_object()
+                                else "next"
+                            ),
+                        )
                     else:
                         item = self._protocol_call(
                             right,
@@ -258,7 +308,12 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
             args_pynames.append(rope.base.pynames.UnboundName(value))
             if instance is not None and value is not None:
                 pyobject = instance.get_object()
-                if operation in pyobject:
+                if operation == "__setattr__" and isinstance(
+                    pyobject, pyobjects.AbstractClass
+                ):
+                    # Assigning a class attribute calls the metaclass method.
+                    pyobject = pyobject.get_metaclass()
+                if pyobject is not None and operation in pyobject:
                     pyfunction = pyobject[operation].get_object()
                     args = arguments.ObjectArguments([instance] + args_pynames)
                     self._call(pyfunction, args)

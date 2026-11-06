@@ -538,6 +538,78 @@ class NewStaticOITest(unittest.TestCase):
         p_type = f_scope["p"].get_object().get_type()
         self.assertEqual(c_class, p_type)
 
+    def _parameter_type(self, pymod, path, parameter):
+        scope = pymod[path[0]].get_object()
+        for part in path[1:]:
+            scope = scope[part].get_object()
+        return scope.get_scope()[parameter].get_object().get_type()
+
+    def test_static_oi_skips_reflected_operator_after_forward_result(self):
+        code = dedent("""\
+            class Left(object):
+                def __add__(self, other):
+                    return Left()
+            class Right(object):
+                def __radd__(self, other):
+                    return other
+            Left() + Right()
+        """)
+        self.mod.write(code)
+        self.pycore.analyze_module(self.mod)
+        pymod = self.project.get_pymodule(self.mod)
+        self.assertEqual(
+            pymod["Right"].get_object(),
+            self._parameter_type(pymod, ("Left", "__add__"), "other"),
+        )
+        self.assertIsNot(
+            pymod["Left"].get_object(),
+            self._parameter_type(pymod, ("Right", "__radd__"), "other"),
+        )
+
+    def test_static_oi_membership_compares_builtin_iterator_items(self):
+        code = dedent("""\
+            class Item(object):
+                def __eq__(self, other):
+                    return True
+            class Needle(object):
+                pass
+            class Items(object):
+                def __iter__(self):
+                    return iter([Item()])
+            Needle() in Items()
+        """)
+        self.mod.write(code)
+        self.pycore.analyze_module(self.mod)
+        pymod = self.project.get_pymodule(self.mod)
+        self.assertEqual(
+            pymod["Needle"].get_object(),
+            self._parameter_type(pymod, ("Item", "__eq__"), "other"),
+        )
+
+    def test_static_oi_class_attribute_store_uses_metaclass_setattr(self):
+        code = dedent("""\
+            class Value(object):
+                pass
+            class Meta(type):
+                def __setattr__(cls, name, value):
+                    type.__setattr__(cls, name, value)
+            class Owner(metaclass=Meta):
+                def __setattr__(self, name, value):
+                    object.__setattr__(self, name, value)
+            Owner.attribute = Value()
+        """)
+        self.mod.write(code)
+        self.pycore.analyze_module(self.mod)
+        pymod = self.project.get_pymodule(self.mod)
+        self.assertEqual(
+            pymod["Value"].get_object(),
+            self._parameter_type(pymod, ("Meta", "__setattr__"), "value"),
+        )
+        self.assertIsNot(
+            pymod["Value"].get_object(),
+            self._parameter_type(pymod, ("Owner", "__setattr__"), "value"),
+        )
+
     def test_static_oi_not_failing_when_callin_callables(self):
         code = dedent("""\
             class C(object):
