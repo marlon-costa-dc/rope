@@ -844,10 +844,6 @@ class _KeywordAdditions:
                     self._check_opaque_value(pymodule, value, internal)
 
     def _check_opaque_value(self, pymodule, value, internal):
-        if pyobjects.contains_sampled(value):
-            raise rope.base.exceptions.RefactoringError(
-                "Sampled value cannot prove absence of an opaque signature consumer"
-            )
         if not internal and (value is None or value == pyobjects.get_unknown()):
             raise rope.base.exceptions.RefactoringError(
                 "Unresolved value cannot prove absence of an opaque signature consumer"
@@ -947,6 +943,11 @@ class _KeywordAdditions:
             if value is None or id(value) in seen:
                 continue
             seen.add(id(value))
+            if isinstance(value, pyobjects.SampledValue):
+                # A sampled read leaves its container position unproved; the
+                # element itself is the value an opaque consumer receives.
+                pending.append(value.representative)
+                continue
             yield value
             if isinstance(value, builtins.NamespaceItems):
                 pending.append(value.receiver.get_object())

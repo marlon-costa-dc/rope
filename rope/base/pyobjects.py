@@ -144,18 +144,11 @@ def sampled_value(value, origin):
     return SampledValue(value, origin)
 
 
-def contains_sampled(value):
-    pending = [value]
-    seen = set()
-    while pending:
-        current = pending.pop()
-        if current is None or id(current) in seen:
-            continue
-        seen.add(id(current))
-        if isinstance(current, SampledValue):
-            return True
-        pending.extend(current.get_holding_objects())
-    return False
+def unsampled(value):
+    """Return the representative behind a sampled read, else ``value``."""
+    while isinstance(value, SampledValue):
+        value = value.representative
+    return value
 
 
 class AbstractClass(PyObject):

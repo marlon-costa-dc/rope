@@ -534,7 +534,11 @@ class _CallContext:
         scope, name = self._get_scope_and_pyname(pyname)
         if name is not None:
             pymodule = pyname.get_definition_location()[0]
-            pymodule.pycore.object_info.save_per_name(scope, name, value)
+            # Per-name container state records element types, not positions,
+            # so a value sampled from another container keeps its type.
+            pymodule.pycore.object_info.save_per_name(
+                scope, name, pyobjects.unsampled(value)
+            )
 
 
 class _AttributeCollector:
@@ -825,12 +829,15 @@ class Dict(BuiltinClass):
 
     def _new_dict(self, args):
         supplied = args.get_pynames(["sequence"])
-        if (
-            supplied
-            and supplied[0] is not None
-            and isinstance(supplied[0].get_object(), NamespaceItems)
-        ):
-            return supplied[0].get_object().namespace
+        items = (
+            pyobjects.unsampled(supplied[0].get_object())
+            if supplied and supplied[0] is not None
+            else None
+        )
+        if isinstance(items, NamespaceItems):
+            # Namespace pairs describe the element type; the sampled position
+            # of the read that produced them is irrelevant to their entries.
+            return items.namespace
 
         def do_create(holding=None):
             if holding is None:
@@ -1078,9 +1085,10 @@ class BuiltinName(pynames.PyName):
 class Iterator(pyobjects.AbstractClass):
     def __init__(self, holding=None):
         super().__init__()
-        self.holding = _read_mutable_holding(holding, self)
+        # The element type is proven; only the cursor position of a read is not.
+        self.holding = holding
         self.attributes = {
-            "next": BuiltinName(BuiltinFunction(self.holding)),
+            "next": BuiltinName(BuiltinFunction(_read_mutable_holding(holding, self))),
             "__iter__": BuiltinName(BuiltinFunction(self)),
         }
 
@@ -1091,7 +1099,7 @@ class Iterator(pyobjects.AbstractClass):
         return self.attributes
 
     def get_returned_object(self, args):
-        return self.holding
+        return _read_mutable_holding(self.holding, self)
 
 
 get_iterator = _create_builtin_getter(Iterator)
@@ -1100,10 +1108,10 @@ get_iterator = _create_builtin_getter(Iterator)
 class Generator(pyobjects.AbstractClass):
     def __init__(self, holding=None):
         super().__init__()
-        self.holding = _read_mutable_holding(holding, self)
+        self.holding = holding
         self.attributes = {
-            "next": BuiltinName(BuiltinFunction(self.holding)),
-            "__iter__": BuiltinName(BuiltinFunction(get_iterator(self.holding))),
+            "next": BuiltinName(BuiltinFunction(_read_mutable_holding(holding, self))),
+            "__iter__": BuiltinName(BuiltinFunction(get_iterator(holding))),
             "close": BuiltinName(BuiltinFunction()),
             "send": BuiltinName(BuiltinFunction()),
             "throw": BuiltinName(BuiltinFunction()),
