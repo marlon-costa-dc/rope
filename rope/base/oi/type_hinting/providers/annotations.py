@@ -60,7 +60,7 @@ def _resolve_annotation(annotation, function, resolver):
     except (TypeError, RecursionError):
         resolved = None
     if not isinstance(resolved, pyobjects.AbstractClass):
-        return pyobjects.get_unknown().get_type()
+        return pyobjects.get_unknown()
     return resolved
 
 

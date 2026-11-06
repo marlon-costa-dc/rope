@@ -64,6 +64,13 @@ class UnionAlternativeHintingTest(AbstractHintingTest):
 
 
 class SourceAnnotationHintingTest(AbstractHintingTest):
+    def test_unresolved_annotation_is_the_unknown_sentinel(self):
+        resource = testutils.create_module(self.project, 'unresolved_annotation')
+        resource.write("def choose(value: Missing) -> Missing:\n    return value\n")
+        function = self.project.get_pymodule(resource)['choose'].get_object()
+        self.assertIs(pyobjects.get_unknown(), function.get_parameters()['value'].get_object())
+        self.assertIs(pyobjects.get_unknown(), function.get_returned_object(None))
+
     def test_sequence_invalid_arity_is_not_a_guessed_element_contract(self):
         code = (
             "from collections.abc import Sequence\n"
