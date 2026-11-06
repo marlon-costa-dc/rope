@@ -203,6 +203,11 @@ Datacosmos internal:
 
 - Project(external_project=...) and NoProject(fscommands=...) share one captured filesystem so native module resolution survives source-tree changes
 
+# Release 1.15.1
+
+- #xxx Change runmod.py to pass DOA channel credential in a more secure manner,
+  see CVE-XXX (@AliAAlMousa, @lieryan)
+
 # Release 1.15.0
 
 - #850 Update and pin black version in pre-commit and Github Actions (@lieryan)
