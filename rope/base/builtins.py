@@ -1303,6 +1303,16 @@ def _getattr_function(context):
         and value.get_metaclass() is not builtins["type"].get_object()
     ):
         return pyobjects.get_unknown()
+    name = context.get_argument("name")
+    default = context.get_pyname("default")
+    if (
+        default is not None
+        and isinstance(name, LiteralString)
+        and name.value not in value
+    ):
+        # Without access hooks, a member absent from the receiver's model
+        # makes getattr() return its default.
+        return default.get_object()
     return _attribute_access(
         _CallContext(
             ["self", "name"],

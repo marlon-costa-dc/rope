@@ -60,6 +60,26 @@ class BuiltinTypesTest(unittest.TestCase):
         module = self.project.get_pymodule(self.mod)
         self.assertIs(pyobjects.get_unknown(), module['result'].get_object())
 
+    def test_getattr_default_for_absent_member(self):
+        cases = [
+            ("getattr(Owner(), 'missing', Value())", "Value"),
+            ("getattr(Owner, 'missing', Value())", "Value"),
+            ("getattr(Owner(), 'read', Other())()", "Value"),
+        ]
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                code = (
+                    "class Value:\n    pass\n\nclass Other:\n    pass\n\n"
+                    "class Owner:\n    def read(self):\n        return Value()\n\n"
+                    + "result = " + expression + "\n"
+                )
+                namespace = {}
+                exec(code, namespace)
+                self.assertIsInstance(namespace['result'], namespace[expected])
+                self.mod.write(code)
+                module = self.project.get_pymodule(self.mod)
+                self.assertIs(module[expected].get_object(), module['result'].get_object().get_type())
+
     def test_getattr_dynamic_hook_has_no_invented_callable_identity(self):
         code = (
             "class Owner:\n"
