@@ -34,13 +34,17 @@ def _hint_binding_value(binding):
     module, line = binding.get_definition_location()
     resource = module.get_resource() if module is not None else None
     trusted = (typing, collections.abc, sys.modules.get("_collections_abc"))
-    if resource is not None and resource.real_path in {
-        item.__file__ for item in trusted if item is not None
-    }:
+    if resource is not None and any(
+        base_utils.same_file_path(resource.real_path, item.__file__)
+        for item in trusted
+        if item is not None
+    ):
         declared = module.get_scope().get_name("Sequence")
         if declared.get_definition_location() == (module, line):
             return builtins.get_sequence_type()
-    if resource is not None and resource.real_path == types.__file__:
+    if resource is not None and base_utils.same_file_path(
+        resource.real_path, types.__file__
+    ):
         declared = module.get_scope().get_name("NoneType")
         if declared.get_definition_location() == (module, line):
             return builtins._runtime_class(type(None))

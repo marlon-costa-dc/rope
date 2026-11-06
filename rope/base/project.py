@@ -100,7 +100,9 @@ class _Project:
         stdlib = os.path.realpath(sysconfig.get_path("stdlib"))
         filename = os.path.realpath(filename)
         try:
-            contained = os.path.commonpath((stdlib, filename)) == stdlib
+            contained = os.path.normcase(
+                os.path.commonpath((stdlib, filename))
+            ) == os.path.normcase(stdlib)
         except ValueError:
             return None
         if not contained:
@@ -117,11 +119,9 @@ class _Project:
             if not declared_parent.has_child("__init__.py"):
                 return None
             declared_parent = declared_parent.get_child("__init__.py")
-        if (
-            os.path.realpath(declared_parent.real_path)
-            != os.path.realpath(parent_filename)
-            or os.path.realpath(declared_origin.real_path) != filename
-        ):
+        if not utils.same_file_path(
+            declared_parent.real_path, parent_filename
+        ) or not utils.same_file_path(declared_origin.real_path, filename):
             return None
         return self.pycore.resource_to_pyobject(declared_origin)
 

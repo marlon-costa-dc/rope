@@ -1,4 +1,5 @@
 import collections.abc
+import os
 import sys
 import typing
 import unittest
@@ -23,7 +24,8 @@ class PyCoreTest(unittest.TestCase):
         runtime = collections.abc
         self.assertIs(runtime, sys.modules[runtime.__spec__.name])
         result = self.project.get_module('collections.abc')
-        self.assertEqual(runtime.__file__, result.get_resource().real_path)
+        # Same file, whatever spelling the runtime used (Windows: lib vs Lib).
+        self.assertTrue(os.path.samefile(runtime.__file__, result.get_resource().real_path))
         self.assertIn('Sequence', result)
 
     def test_stdlib_module_election_does_not_cross_project_parent_shadow(self):

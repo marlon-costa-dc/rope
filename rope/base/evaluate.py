@@ -17,6 +17,7 @@ from rope.base import (
     pyobjects,
     pyobjectsdef,
     pyscopes,
+    utils,
     worder,
 )
 
@@ -61,7 +62,7 @@ def _has_stdlib_import_prelude(module, node):
                 if not origin.has_child("__init__.py"):
                     return False
                 origin = origin.get_child("__init__.py")
-            if not isinstance(runtime_file, str) or origin.real_path != runtime_file:
+            if not utils.same_file_path(origin.real_path, runtime_file):
                 return False
     return False
 

@@ -178,7 +178,7 @@ def _is_runtime_class(value, runtime_class):
         and value.get_name() == runtime_class.__name__
         and resource is not None
         and runtime_module is not None
-        and resource.real_path == runtime_module.__file__
+        and utils.same_file_path(resource.real_path, runtime_module.__file__)
     )
 
 
@@ -201,7 +201,7 @@ def _is_runtime_form(value, runtime_form):
         and value.get_name() == getattr(runtime_form, "__name__", None)
         and resource is not None
         and runtime_module is not None
-        and resource.real_path == runtime_module.__file__
+        and utils.same_file_path(resource.real_path, runtime_module.__file__)
     )
 
 
