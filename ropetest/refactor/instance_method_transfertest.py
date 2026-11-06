@@ -7,7 +7,6 @@ from textwrap import dedent
 
 from rope.base import exceptions
 from rope.refactor import move
-
 from ropetest import testutils
 
 
