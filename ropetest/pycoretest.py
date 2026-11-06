@@ -33,10 +33,21 @@ class PyCoreTest(unittest.TestCase):
             self.project.get_module('collections.abc')
 
     def test_stdlib_module_election_does_not_cross_origin_shadow(self):
+        import collections.abc
+
+        import _collections_abc
+
         resource = testutils.create_module(self.project, '_collections_abc')
         resource.write("raise AssertionError('target code must not execute')\n")
-        with self.assertRaises(exceptions.ModuleNotFoundError):
-            self.project.get_module('collections.abc')
+        if collections.abc is _collections_abc:
+            # Python 3.13+ aliases collections.abc to _collections_abc, so a
+            # project module of that name would cross the stdlib origin.
+            with self.assertRaises(exceptions.ModuleNotFoundError):
+                self.project.get_module('collections.abc')
+        else:
+            # Earlier versions ship collections/abc.py as its own module.
+            module = self.project.get_module('collections.abc')
+            self.assertNotEqual(resource, module.get_resource())
 
     def setUp(self):
         super().setUp()

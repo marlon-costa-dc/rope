@@ -392,6 +392,7 @@ def test_required_keyword_preserves_generator_argument_evaluation(tmp_path, call
         project.close()
 
 
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12")
 @pytest.mark.parametrize(
     "header",
     [
