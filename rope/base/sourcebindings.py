@@ -1058,6 +1058,7 @@ class SourceBindingIndex:
         self.fragments = []
         self._fragment_positions = {}
         self.node_contexts = {}
+        self._node_ids = None
         self._branch_context = ()
         self.token_bindings = []
         self.source_callables = {}
@@ -1580,9 +1581,24 @@ class SourceBindingIndex:
         return SourceContext(scope, scope, self.pymodule.get_ast(), "structure")
 
     def context_for_node(self, node):
-        if id(node) not in self.node_contexts and hasattr(node, "lineno"):
+        if (
+            id(node) not in self.node_contexts
+            and hasattr(node, "lineno")
+            and id(node) in self._module_node_ids()
+        ):
             self._materialize_at(self._span(node)[0])
         return self.node_contexts.get(id(node))
+
+    def _module_node_ids(self):
+        # Why: a node from another AST (another module, or a consumer's own
+        # parse of this text) carries positions that do not belong to this
+        # source; it can never be recorded here, and spanning it reads
+        # arbitrary bytes, possibly inside a UTF-8 code point.
+        if self._node_ids is None:
+            self._node_ids = frozenset(
+                id(node) for node in ast.walk(self.pymodule.get_ast())
+            )
+        return self._node_ids
 
     def binding_for_token(self, offset):
         self._materialize_at(offset)
