@@ -1,5 +1,8 @@
 # **Upcoming release**
 
+- Classify declared bases by their native class identity instead of their
+  metatype marker. Non-class values retain an `UnresolvedBase` entry rather
+  than reaching the C3 merger without the class capabilities it requires.
 - Infer `super(cls, obj)` along the method resolution order of `cls` past
   `cls` itself instead of as an instance of its first base. Methods and
   classmethods called through it bind the real receiver.

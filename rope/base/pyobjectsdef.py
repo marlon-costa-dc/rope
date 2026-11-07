@@ -260,7 +260,7 @@ class PyClass(pyobjects.PyClass):
             base = rope.base.evaluate.eval_node(self.parent.get_scope(), base_node)
             if base is None:
                 result.append(pyobjects.UnresolvedBase(base_node))
-            elif base.get_object().get_type() == pyobjects.get_base_type("Type"):
+            elif isinstance(base.get_object(), pyobjects.AbstractClass):
                 result.append(base.get_object())
             else:
                 result.append(pyobjects.UnresolvedBase(base_node, base.get_object()))

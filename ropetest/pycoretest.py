@@ -2,7 +2,7 @@ import sys
 import unittest
 from textwrap import dedent
 
-from rope.base import exceptions, libutils
+from rope.base import exceptions, libutils, pynames
 from rope.base.builtins import BuiltinClass, File
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
@@ -416,6 +416,46 @@ class PyCoreTest(unittest.TestCase):
         self.assertEqual(mod["value"].get_object(), unresolved.pyobject)
         self.assertEqual([], derived.get_superclasses())
         self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_base_type_markers_are_not_class_objects(self):
+        for name in ("Type", "Module", "Function", "Unknown"):
+            with self.subTest(marker=name):
+                marker = get_base_type(name)
+                self.assertEqual(get_base_type("Type"), marker.get_type())
+                mod = libutils.get_string_module(
+                    self.project, "class Derived(marker):\n    pass\n"
+                )
+                mod.get_scope().get_names()["marker"] = pynames.UnboundName(marker)
+                derived = mod["Derived"].get_object()
+                (unresolved,) = derived.get_bases()
+                self.assertIsInstance(unresolved, UnresolvedBase)
+                self.assertIs(marker, unresolved.pyobject)
+                self.assertEqual([], derived.get_superclasses())
+                self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_imported_nonclass_bases_preserve_resolved_ancestors(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write("def function():\n    pass\n")
+        for expression in ("provider", "provider.function", "provider.missing"):
+            with self.subTest(expression=expression):
+                code = dedent(f"""\
+                    import provider
+                    class Base(object):
+                        pass
+                    class Derived(Base, {expression}):
+                        pass
+                """)
+                mod = libutils.get_string_module(self.project, code)
+                base = mod["Base"].get_object()
+                derived = mod["Derived"].get_object()
+                resolved, unresolved = derived.get_bases()
+                self.assertIs(base, resolved)
+                self.assertIsInstance(unresolved, UnresolvedBase)
+                self.assertEqual([base], derived.get_superclasses())
+                self.assertEqual(
+                    [derived, *base.get_mro(), unresolved],
+                    derived.get_mro(),
+                )
 
     def test_inconsistent_mro(self):
         code = dedent("""\
