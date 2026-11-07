@@ -154,7 +154,14 @@ def contains_sampled(value):
         seen.add(id(current))
         if isinstance(current, SampledValue):
             return True
-        pending.extend(current.get_holding_objects())
+        # Why: a holding-object provider may expose sample payloads (for
+        # example a builtin tuple of native ``str`` annotations); those are
+        # values, not PyObjects, and must not enter the traversal.
+        pending.extend(
+            item
+            for item in current.get_holding_objects()
+            if isinstance(item, PyObject)
+        )
     return False
 
 
