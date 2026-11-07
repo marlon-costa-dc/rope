@@ -12,7 +12,7 @@ All behaviour is already in the fork release. Each fork branch is deleted when i
 
 - [ ] python-rope/rope#938 — Fix the warnings the test suite emits at their source (`pr/test-suite-warnings`)
 - [ ] python-rope/rope#922 — Classify autoimport project sources by path containment (`pr/autoimport-project-containment`)
-- [ ] python-rope/rope#921 — Patch the else suite of try statements that also have a finally (`pr/try-else-finally-regions`)
+- [x] python-rope/rope#921 (merged upstream as 456b210d) — Patch the else suite of try statements that also have a finally (`pr/try-else-finally-regions`)
 - [ ] python-rope/rope#920 — Resolve inherited class attributes along the C3 method resolution order (`pr/c3-mro`)
 - [ ] python-rope/rope#919 — Type saveit so decorated members keep their return type (`pr/typed-saveit`)
 - [ ] python-rope/rope#918 — Add match_filter and import_filter hooks to Restructure (`pr/restructure-hooks`)
@@ -28,14 +28,14 @@ All behaviour is already in the fork release. Each fork branch is deleted when i
 ## Consumer propagation (measured 2026-11-07, installed `.venv`)
 
 - [x] flext root — 1.15.2+dc.4
-- [ ] flext-infra pin on `0.12.0-dev` (gates every consumer below; generated `pyproject` pins derive from it)
+- [x] flext-infra pin on `0.12.0-dev` (flext-sh/flext-infra#2171); lock-drift gate added (flext-sh/flext-infra#2174)
 - [ ] flext member `uv.lock` files — 21 still resolve `datacosmos#7a6494e8` (blocked on flext bead `flext-zzynv`)
-- [ ] ai-hub — 1.15.0+dc.12; `editable_sources: rope: ../rope-dc15` to be rewired to the pin
-- [ ] algar-oud-mig, devops-oud-iac — 1.15.0+dc.12
+- [ ] ai-hub — 1.15.0+dc.12; `editable_sources` dropped, awaiting its `make upg`
+- [ ] algar-oud-mig (= devops-oud-iac) — lane `chore/rope-dc4-20261107` (2e6a0486) locks dc.4; landing owned by the algar session
 - [ ] gruponos/merges (dc-recon) — 1.15.2+dc.2, own codegen pin
 - [ ] cosmos-main, docsmos-main, invest, mcb — no `.venv`; locks pin dc.2 or `datacosmos`
 
 ## Branch retirement
 
 - [ ] `datacosmos`, `Sync` — delete once no consumer lock references them
-- [ ] `~/rope-dc15` back to `dc-use` once ai-hub and the editable consumers stop pointing at it
+- [x] `~/rope-dc15` on the `dc-use` tip (editable source for `make setup FLEXT=`)
