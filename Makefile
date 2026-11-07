@@ -4,6 +4,7 @@ UV ?= uv
 BOOTSTRAP_PYTHON ?= 3.13
 TEST_PROFILE ?=
 TEST_WORKERS ?= 2
+EDITABLE_MODE ?=
 export PYTHONDONTWRITEBYTECODE :=
 export PYTHONPYCACHEPREFIX := $(VENV)/pycache
 export COVERAGE_FILE := $(VENV)/.coverage
@@ -32,7 +33,7 @@ setup:
 	else \
 		$(UV) venv --python "$$expected_python" "$(VENV)"; \
 	fi
-	$(UV) pip install --python "$(PYTHON)" -e '$(CURDIR)[doc,dev]'
+	$(UV) pip install --python "$(PYTHON)" $(if $(EDITABLE_MODE),--config-setting 'editable_mode=$(EDITABLE_MODE)') -e '$(CURDIR)[doc,dev]'
 
 test:
 	@set -- --cov -v -ra -o cache_dir="$(VENV)/pytest-cache" \

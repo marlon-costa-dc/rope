@@ -327,7 +327,12 @@ def evaluate(self, pyobject):
 @method(symbol("or"))  # type: ignore
 @method(symbol("|"))
 def evaluate(self, pyobject):
-    return UnionType((self.first.evaluate(pyobject), self.second.evaluate(pyobject)))
+    alternatives = (self.first.evaluate(pyobject), self.second.evaluate(pyobject))
+    if any(alternative is None for alternative in alternatives):
+        return None
+    return (
+        utils.union_type(alternatives) if self.name == "|" else UnionType(alternatives)
+    )
 
 
 class Compiler:

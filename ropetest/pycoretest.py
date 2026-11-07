@@ -1,9 +1,12 @@
+import collections.abc
+import os
 import sys
+import tempfile
 import typing
 import unittest
 from textwrap import dedent
 
-from rope.base import evaluate, exceptions, libutils
+from rope.base import evaluate, exceptions, libutils, pynames
 from rope.base.builtins import BuiltinClass, File, builtins
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
@@ -18,6 +21,37 @@ from ropetest import testutils
 
 
 class PyCoreTest(unittest.TestCase):
+    def test_stdlib_runtime_module_election_preserves_declaring_source(self):
+        runtime = collections.abc
+        self.assertIs(runtime, sys.modules[runtime.__spec__.name])
+        result = self.project.get_module('collections.abc')
+        # Same file, whatever spelling the runtime used (Windows: lib vs Lib).
+        self.assertTrue(os.path.samefile(runtime.__file__, result.get_resource().real_path))
+        self.assertIn('Sequence', result)
+
+    def test_stdlib_module_election_does_not_cross_project_parent_shadow(self):
+        package = testutils.create_package(self.project, 'collections')
+        package.get_child('__init__.py').write("raise AssertionError('target code must not execute')\n")
+        with self.assertRaises(exceptions.ModuleNotFoundError):
+            self.project.get_module('collections.abc')
+
+    def test_stdlib_module_election_does_not_cross_origin_shadow(self):
+        import collections.abc
+
+        import _collections_abc
+
+        resource = testutils.create_module(self.project, '_collections_abc')
+        resource.write("raise AssertionError('target code must not execute')\n")
+        if collections.abc is _collections_abc:
+            # Python 3.13+ aliases collections.abc to _collections_abc, so a
+            # project module of that name would cross the stdlib origin.
+            with self.assertRaises(exceptions.ModuleNotFoundError):
+                self.project.get_module('collections.abc')
+        else:
+            # Earlier versions ship collections/abc.py as its own module.
+            module = self.project.get_module('collections.abc')
+            self.assertNotEqual(resource, module.get_resource())
+
     def setUp(self):
         super().setUp()
         self.project = testutils.sample_project()
@@ -271,6 +305,46 @@ class PyCoreTest(unittest.TestCase):
                 expected = [cls.__name__ for cls in namespace[name].__mro__]
                 actual = [cls.get_name() for cls in mod[name].get_object().get_mro()]
                 self.assertEqual(expected, actual)
+
+    def test_base_type_markers_are_not_class_objects(self):
+        for name in ("Type", "Module", "Function", "Unknown"):
+            with self.subTest(marker=name):
+                marker = get_base_type(name)
+                self.assertEqual(get_base_type("Type"), marker.get_type())
+                mod = libutils.get_string_module(
+                    self.project, "class Derived(marker):\n    pass\n"
+                )
+                mod.get_scope().get_names()["marker"] = pynames.UnboundName(marker)
+                derived = mod["Derived"].get_object()
+                (unresolved,) = derived.get_bases()
+                self.assertIsInstance(unresolved, UnresolvedBase)
+                self.assertIs(marker, unresolved.pyobject)
+                self.assertEqual([], derived.get_superclasses())
+                self.assertEqual([derived, unresolved], derived.get_mro())
+
+    def test_imported_nonclass_bases_preserve_resolved_ancestors(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write("def function():\n    pass\n")
+        for expression in ("provider", "provider.function", "provider.missing"):
+            with self.subTest(expression=expression):
+                code = dedent(f"""\
+                    import provider
+                    class Base(object):
+                        pass
+                    class Derived(Base, {expression}):
+                        pass
+                """)
+                mod = libutils.get_string_module(self.project, code)
+                base = mod["Base"].get_object()
+                derived = mod["Derived"].get_object()
+                resolved, unresolved = derived.get_bases()
+                self.assertIs(base, resolved)
+                self.assertIsInstance(unresolved, UnresolvedBase)
+                self.assertEqual([base], derived.get_superclasses())
+                self.assertEqual(
+                    [derived, *base.get_mro(), unresolved],
+                    derived.get_mro(),
+                )
 
     def test_mro_of_diamond_inheritance(self):
         code = dedent("""\
@@ -1307,6 +1381,25 @@ class PyCoreTest(unittest.TestCase):
         testutils.create_module(self.project, "child", namespace)
         testutils.create_module(self.project, "sample")
         self.assertIsNone(self.project.find_module("sample.child"))
+
+    def test_find_module_skips_python_path_files(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        # Rope reports real paths; temporary directories may sit behind a
+        # symlink (macOS /var) or a short name (Windows RUNNER~1).
+        root = os.path.realpath(external.name)
+        archive = os.path.join(root, "archive.zip")
+        libs = os.path.join(root, "libs")
+        os.mkdir(libs)
+        open(archive, "w").close()
+        with open(os.path.join(libs, "sample.py"), "w") as sample:
+            sample.write("")
+        self.project.close()
+        self.project = Project(self.project.address, python_path=[archive, libs])
+        self.assertEqual(
+            os.path.join(libs, "sample.py"),
+            self.project.find_module("sample").real_path,
+        )
 
     def test_find_module_defers_namespace_to_later_source_module(self):
         first = self.project.root.create_folder("first")

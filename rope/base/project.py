@@ -4,6 +4,8 @@ import contextlib
 import json
 import os
 import sys
+import sysconfig
+import types
 import warnings
 from contextlib import ExitStack
 from typing import Optional, Union
@@ -66,8 +68,62 @@ class _Project:
             return pymod
         module = self.find_module(name, folder)
         if module is None:
+            observed = self._stdlib_module_alias(name, folder)
+            if observed is not None:
+                return observed
             raise ModuleNotFoundError("Module %s not found" % name)
         return self.pycore.resource_to_pyobject(module)
+
+    def _stdlib_module_alias(self, name, folder):
+        """Read an existing stdlib module election without importing target code."""
+        observed = sys.modules.get(name)
+        if not isinstance(observed, types.ModuleType) or observed.__spec__ is None:
+            return None
+        origin = observed.__spec__.name
+        if origin == name or sys.modules.get(origin) is not observed:
+            return None
+        if not hasattr(sys, "stdlib_module_names") or (
+            origin.partition(".")[0] not in sys.stdlib_module_names
+            or name.partition(".")[0] not in sys.stdlib_module_names
+        ):
+            return None
+        parent_name, separator, _ = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        filename = getattr(observed, "__file__", None)
+        parent_filename = getattr(parent, "__file__", None)
+        if (
+            not separator
+            or not isinstance(filename, str)
+            or not isinstance(parent_filename, str)
+        ):
+            return None
+        stdlib = os.path.realpath(sysconfig.get_path("stdlib"))
+        filename = os.path.realpath(filename)
+        try:
+            contained = os.path.normcase(
+                os.path.commonpath((stdlib, filename))
+            ) == os.path.normcase(stdlib)
+        except ValueError:
+            return None
+        if not contained:
+            return None
+        declared_parent = self.find_module(parent_name, folder)
+        declared_origin = self.find_module(origin, folder)
+        if (
+            declared_parent is None
+            or declared_origin is None
+            or declared_origin.is_folder()
+        ):
+            return None
+        if declared_parent.is_folder():
+            if not declared_parent.has_child("__init__.py"):
+                return None
+            declared_parent = declared_parent.get_child("__init__.py")
+        if not utils.same_file_path(
+            declared_parent.real_path, parent_filename
+        ) or not utils.same_file_path(declared_origin.real_path, filename):
+            return None
+        return self.pycore.resource_to_pyobject(declared_origin)
 
     def get_python_path_folders(self):
         result = []

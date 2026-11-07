@@ -1,3 +1,4 @@
+import os
 import sys
 import warnings
 from typing import Callable, Concatenate, ParamSpec, TypeVar
@@ -5,6 +6,22 @@ from typing import Callable, Concatenate, ParamSpec, TypeVar
 _Self = TypeVar("_Self")
 _Params = ParamSpec("_Params")
 _Result = TypeVar("_Result")
+
+
+def same_file_path(first, second):
+    """Tell whether two filesystem paths name the same existing file.
+
+    Runtime ``__file__`` values and project resource paths may spell one
+    file differently (letter case on Windows: ``lib`` vs ``Lib``, links), so
+    identity is the filesystem's.  A path that does not name an existing
+    file (a frozen or zipped module) is not that source file.
+    """
+    if not isinstance(first, str) or not isinstance(second, str):
+        return False
+    try:
+        return os.path.samefile(first, second)
+    except (OSError, ValueError):
+        return False
 
 
 def saveit(

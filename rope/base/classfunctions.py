@@ -111,24 +111,136 @@ def _has_override(module, primary, owner, storage, attribute):
     from rope.base import evaluate
 
     receiver = primary.get_object()
-    for target in ast.walk(module.get_ast()):
-        if (
-            isinstance(target, ast.Attribute)
-            and target.attr == attribute
-            and isinstance(target.ctx, (ast.Store, ast.Del))
-        ):
-            if not isinstance(target.value, ast.Name):
+    for target in module._get_source_binding_index().attribute_writes(attribute):
+        if not isinstance(target.value, ast.Name):
+            return True
+        scope = module.get_scope().get_inner_scope_for_line(target.lineno)
+        target_name = evaluate.eval_node(scope, target.value)
+        if target_name == primary:
+            return True
+        if target_name is not None:
+            target_object = target_name.get_object()
+            if (
+                target_object is receiver
+                or target_object is owner
+                or target_object is storage
+            ):
                 return True
-            scope = module.get_scope().get_inner_scope_for_line(target.lineno)
-            target_name = evaluate.eval_node(scope, target.value)
-            if target_name == primary:
-                return True
-            if target_name is not None:
-                target_object = target_name.get_object()
-                if (
-                    target_object is receiver
-                    or target_object is owner
-                    or target_object is storage
-                ):
-                    return True
     return False
+
+
+def descriptor_access(primary, attribute, pyname, access_scope):
+    """Resolve a source descriptor that returns its unchanged constructor value."""
+    if not isinstance(pyname, pynames.AssignedName) or len(pyname.assignments) != 1:
+        return pyname
+    receiver = primary.get_object()
+    owner = (
+        receiver
+        if isinstance(receiver, pyobjects.AbstractClass)
+        else receiver.get_type()
+    )
+    if not isinstance(owner, pyobjects.PyClass):
+        return pyname
+    assignment = pyname.assignments[0]
+    call = assignment.ast_node
+    if (
+        not isinstance(call, ast.Call)
+        or assignment.levels
+        or assignment.evaluation
+        or assignment.assign_type
+    ):
+        return pyname
+    module, _ = pyname.get_definition_location()
+    if module is None:
+        return pyname
+    scope = module.get_scope().get_inner_scope_for_line(assignment.get_lineno())
+    if scope.get_kind() != "Class" or scope.pyobject not in owner.get_mro():
+        return pyname
+    from rope.base import evaluate
+
+    constructor = evaluate.eval_node(scope, call.func)
+    if constructor is None or not isinstance(
+        constructor.get_object(), pyobjects.PyClass
+    ):
+        return pyname
+    descriptor = constructor.get_object()
+    declaration = descriptor.get_ast()
+    statements = declaration.body
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        statements = statements[1:]
+    # Any other class-body statement could rebind __init__ or __get__.
+    methods = {
+        node.name: node for node in statements if isinstance(node, ast.FunctionDef)
+    }
+    if (
+        declaration.bases
+        or declaration.keywords
+        or declaration.decorator_list
+        or len(statements) != 2
+        or set(methods) != {"__init__", "__get__"}
+    ):
+        return pyname
+    initializer, getter = methods["__init__"], methods["__get__"]
+    if initializer.decorator_list or getter.decorator_list:
+        return pyname
+    bodies = []
+    for method in (initializer, getter):
+        body = method.body
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        bodies.append(body)
+    if len(bodies[0]) != 1 or len(bodies[1]) != 1:
+        return pyname
+    store, returned = bodies[0][0], bodies[1][0]
+    positional = (*initializer.args.posonlyargs, *initializer.args.args)
+    get_positional = (*getter.args.posonlyargs, *getter.args.args)
+    if len(positional) != 2 or len(get_positional) != 3:
+        return pyname
+    if (
+        not isinstance(store, ast.Assign)
+        or len(store.targets) != 1
+        or not isinstance(store.value, ast.Name)
+    ):
+        return pyname
+    target = store.targets[0]
+    if (
+        not isinstance(target, ast.Attribute)
+        or not isinstance(target.value, ast.Name)
+        or target.value.id != positional[0].arg
+        or store.value.id != positional[1].arg
+    ):
+        return pyname
+    if (
+        not isinstance(returned, ast.Return)
+        or not isinstance(returned.value, ast.Attribute)
+        or not isinstance(returned.value.value, ast.Name)
+        or returned.value.value.id != get_positional[0].arg
+        or returned.value.attr != target.attr
+    ):
+        return pyname
+    if any(
+        _has_override(current, primary, owner, scope.pyobject, attribute)
+        for current in dict.fromkeys(
+            (module, owner.get_module(), access_scope.pyobject.get_module())
+        )
+    ):
+        return pyname
+    function = descriptor["__init__"].get_object()
+    supplied = arguments.create_arguments(
+        None, function, call, scope, ignore_instance=True
+    )
+    supplied = arguments.MixedArguments(
+        pynames.UnboundName(pyname.get_object()), supplied, scope
+    )
+    value = supplied.get_pynames(function.get_param_names())[1]
+    return value if value is not None else pyname

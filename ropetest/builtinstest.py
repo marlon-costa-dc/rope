@@ -7,6 +7,147 @@ from ropetest import testutils
 
 
 class BuiltinTypesTest(unittest.TestCase):
+    def test_generic_alias_inequality_preserves_not_implemented(self):
+        code = "Alias = list[str]\nSame = list[str]\n"
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual(namespace['Alias'], namespace['Same'])
+        self.assertNotEqual(namespace['Alias'], object())
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        alias = module['Alias'].get_object()
+        same = module['Same'].get_object()
+        self.assertIsInstance(alias, builtins.GenericAlias)
+        self.assertEqual(alias, same)
+        self.assertFalse(alias != same)
+        self.assertIs(NotImplemented, alias.__ne__(pyobjects.get_unknown()))
+        self.assertNotEqual(alias, pyobjects.get_unknown())
+
+    def test_native_getattribute_preserves_callable_descriptor_binding(self):
+        cases = [
+            ("object.__getattribute__(Owner(), 'read')()", "Value"),
+            ("type.__getattribute__(Owner, 'read')(Owner())", "Value"),
+            ("object.__getattribute__(Owner(), 'static')()", "Value"),
+            ("type.__getattribute__(Owner, 'static')()", "Value"),
+            ("object.__getattribute__(Owner(), 'build')()", "Owner"),
+            ("type.__getattribute__(Owner, 'build')()", "Owner"),
+            ("getattr(Owner(), 'read')()", "Value"),
+            ("getattr(Owner, 'read')(Owner())", "Value"),
+            ("getattr(Owner(), 'static')()", "Value"),
+            ("getattr(Owner, 'build')()", "Owner"),
+        ]
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                code = (
+                    "class Value:\n    pass\n\n"
+                    "class Owner:\n    def read(self):\n        return Value()\n"
+                    "    @staticmethod\n    def static():\n        return Value()\n"
+                    "    @classmethod\n    def build(cls):\n        return cls()\n\n"
+                    + "result = " + expression + "\n"
+                )
+                namespace = {}
+                exec(code, namespace)
+                self.assertIsInstance(namespace['result'], namespace[expected])
+                self.mod.write(code)
+                module = self.project.get_pymodule(self.mod)
+                self.assertIs(module[expected].get_object(), module['result'].get_object().get_type())
+
+    def test_native_getattribute_unknown_member_has_no_invented_result(self):
+        code = "class Owner:\n    pass\n\nresult = object.__getattribute__(Owner(), 'missing')\n"
+        with self.assertRaises(AttributeError):
+            exec(code, {})
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        self.assertIs(pyobjects.get_unknown(), module['result'].get_object())
+
+    def test_getattr_default_for_absent_member(self):
+        cases = [
+            ("getattr(Owner(), 'missing', Value())", "Value"),
+            ("getattr(Owner, 'missing', Value())", "Value"),
+            ("getattr(Owner(), 'read', Other())()", "Value"),
+        ]
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                code = (
+                    "class Value:\n    pass\n\nclass Other:\n    pass\n\n"
+                    "class Owner:\n    def read(self):\n        return Value()\n\n"
+                    + "result = " + expression + "\n"
+                )
+                namespace = {}
+                exec(code, namespace)
+                self.assertIsInstance(namespace['result'], namespace[expected])
+                self.mod.write(code)
+                module = self.project.get_pymodule(self.mod)
+                self.assertIs(module[expected].get_object(), module['result'].get_object().get_type())
+
+    def test_getattr_dynamic_hook_has_no_invented_callable_identity(self):
+        code = (
+            "class Owner:\n"
+            "    def __getattribute__(self, name):\n        return lambda: 7\n"
+            "result = getattr(Owner(), 'read')()\n"
+        )
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual(7, namespace['result'])
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        self.assertIs(pyobjects.get_unknown(), module['result'].get_object())
+
+    def test_inspect_members_preserves_selected_callable_in_heterogeneous_namespace(self):
+        for receiver, call in (("Owner()", "()"), ("Owner", "(Owner())")):
+            with self.subTest(receiver=receiver):
+                code = (
+                    "import inspect\nclass Value:\n    pass\n\n"
+                    "class Owner:\n    label = 'other member'\n"
+                    "    def run(self):\n        return Value()\n\n"
+                    + "result = dict(inspect.getmembers(" + receiver + "))['run']" + call + "\n"
+                )
+                namespace = {}
+                exec(code, namespace)
+                self.assertIsInstance(namespace['result'], namespace['Value'])
+                self.mod.write(code)
+                module = self.project.get_pymodule(self.mod)
+                self.assertIs(module['Value'].get_object(), module['result'].get_object().get_type())
+
+    def test_inspect_members_dynamic_hooks_remain_unresolved(self):
+        code = (
+            "import inspect\nclass Owner:\n"
+            "    def __dir__(self):\n        return ['run']\n"
+            "    def run(self):\n        return 7\n\n"
+            "result = dict(inspect.getmembers(Owner()))['run']()\n"
+        )
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual(7, namespace['result'])
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        self.assertIs(pyobjects.get_unknown(), module['result'].get_object())
+
+    def test_inspect_member_model_does_not_adopt_homonymous_source(self):
+        code = (
+            "class inspect:\n    @staticmethod\n    def getmembers(value):\n        return 'custom'\n\n"
+            "result = inspect.getmembers(7)\n"
+        )
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual('custom', namespace['result'])
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        self.assertIsInstance(module['result'].get_object(), builtins.LiteralString)
+        self.assertEqual('custom', module['result'].get_object().value)
+
+    def test_map_next_preserves_callable_element_flow(self):
+        code = (
+            "class Value:\n    pass\n\n"
+            "result = next(map(lambda value: value, [Value()]))\n"
+        )
+        namespace = {}
+        exec(code, namespace)
+        self.assertIsInstance(namespace['result'], namespace['Value'])
+        self.mod.write(code)
+        module = self.project.get_pymodule(self.mod)
+        self.assertIs(module['Value'].get_object(), module['result'].get_object().get_type())
+
     def setUp(self):
         super().setUp()
         self.project = testutils.sample_project()

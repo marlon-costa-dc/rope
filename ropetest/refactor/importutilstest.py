@@ -10,7 +10,12 @@ from rope.base.prefs import (
     Prefs,
     get_preferred_import_style,
 )
-from rope.refactor.importutils import ImportTools, add_import, importinfo
+from rope.refactor.importutils import (
+    ImportTools,
+    add_import,
+    get_module_imports,
+    importinfo,
+)
 from ropetest import testutils
 
 
@@ -1708,6 +1713,23 @@ class ImportUtilsTest(unittest.TestCase):
         self.mod.write(code)
         pymod = self.project.get_pymodule(self.mod)
         self.assertEqual(expected, self.import_tools.organize_imports(pymod))
+
+    def test_package_used_imports_include_its_declared_exports(self):
+        self.pkg1.get_child("__init__.py").write(dedent("""\
+            from os import path
+
+
+            __all__ = ["path"]
+        """))
+        package = self.project.get_module("pkg1")
+        module_imports = get_module_imports(self.project, package)
+        self.assertEqual(
+            ["from os import path"],
+            [
+                statement.get_import_statement()
+                for statement in module_imports.get_used_imports(package)
+            ],
+        )
 
     def test_organizing_imports_all_star_with_variables(self):
         code = expected = dedent("""\

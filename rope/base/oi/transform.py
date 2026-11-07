@@ -7,6 +7,18 @@ import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import classfunctions, exceptions, pynames, pyobjects
 
 
+def _is_instance_builtin(type_):
+    """Tell whether instances of a canonical builtin class use the generic form.
+
+    Builtin classes with a dedicated textual form (list, dict, tuple, set,
+    str, file, iterators) keep it; every other builtin class, including the
+    canonical ``object`` and ``type`` models, is stored by its builtin name.
+    """
+    return isinstance(type_, rope.base.builtins.BuiltinClass) and not hasattr(
+        PyObjectToTextual, type(type_).__name__ + "_to_textual"
+    )
+
+
 class PyObjectToTextual:
     """For transforming `PyObject` to textual form
 
@@ -22,6 +34,10 @@ class PyObjectToTextual:
         """Transform a `PyObject` to textual form"""
         if pyobject is None:
             return ("none",)
+        if isinstance(pyobject, pyobjects.SampledValue):
+            # A read whose container position or cursor is unproved is not
+            # persisted; container element types below are (`_element`).
+            return ("unknown",)
         # Subclasses without their own transformation, like literal
         # values, are stored the way their nearest base class is.
         for object_type in type(pyobject).__mro__:
@@ -38,7 +54,18 @@ class PyObjectToTextual:
     def __call__(self, pyobject):
         return self.transform(pyobject)
 
+    def _element(self, pyobject):
+        return self.transform(pyobjects.unsampled(pyobject))
+
     def PyObject_to_textual(self, pyobject):
+        type_ = pyobject.get_type()
+        name = getattr(getattr(type_, "builtin", None), "__name__", None)
+        if (
+            _is_instance_builtin(type_)
+            and name in rope.base.builtins.builtins
+            and rope.base.builtins.builtins[name].get_object() is type_
+        ):
+            return ("builtin", "instance", name)
         if isinstance(pyobject.get_type(), rope.base.pyobjects.AbstractClass):
             result = self.transform(pyobject.get_type())
             if result[0] == "defined":
@@ -77,30 +104,28 @@ class PyObjectToTextual:
         return ("defined", self._get_pymodule_path(pyobject))
 
     def List_to_textual(self, pyobject):
-        return ("builtin", "list", self.transform(pyobject.holding))
+        return ("builtin", "list", self._element(pyobject.holding))
 
     def Dict_to_textual(self, pyobject):
         return (
             "builtin",
             "dict",
-            self.transform(pyobject.keys),
-            self.transform(pyobject.values),
+            self._element(pyobject.keys),
+            self._element(pyobject.values),
         )
 
     def Tuple_to_textual(self, pyobject):
-        objects = [
-            self.transform(holding) for holding in pyobject.get_holding_objects()
-        ]
+        objects = [self._element(holding) for holding in pyobject.get_holding_objects()]
         return tuple(["builtin", "tuple"] + objects)
 
     def Set_to_textual(self, pyobject):
-        return ("builtin", "set", self.transform(pyobject.holding))
+        return ("builtin", "set", self._element(pyobject.holding))
 
     def Iterator_to_textual(self, pyobject):
-        return ("builtin", "iter", self.transform(pyobject.holding))
+        return ("builtin", "iter", self._element(pyobject.holding))
 
     def Generator_to_textual(self, pyobject):
-        return ("builtin", "generator", self.transform(pyobject.holding))
+        return ("builtin", "generator", self._element(pyobject.holding))
 
     def Str_to_textual(self, pyobject):
         return ("builtin", "str")
@@ -173,6 +198,12 @@ class TextualToPyObject:
     def builtin_generator_to_pyobject(self, textual):
         holding = self.transform(textual[2])
         return rope.base.builtins.get_generator(holding)
+
+    def builtin_instance_to_pyobject(self, textual):
+        if textual[2] in rope.base.builtins.builtins:
+            type_ = rope.base.builtins.builtins[textual[2]].get_object()
+            if _is_instance_builtin(type_):
+                return rope.base.pyobjects.PyObject(type_)
 
     def builtin_file_to_pyobject(self, textual):
         return rope.base.builtins.get_file()
@@ -295,6 +326,8 @@ class DOITextualToPyObject(TextualToPyObject):
                 return result
 
     def _find_occurrence(self, name, source):
+        if not name.isidentifier():
+            return
         pattern = re.compile(r"^\s*class\s*" + name + r"\b")
         lines = source.split("\n")
         for i in range(len(lines)):

@@ -8,6 +8,7 @@ package.
 import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import arguments, ast, evaluate, pynames, pyobjects, utils
 from rope.base.oi.type_hinting.factory import get_type_hinting_factory
+from rope.base.oi.type_hinting.utils import hint_instance
 
 _ignore_inferred = utils.ignore_exception(pyobjects.IsBeingInferredError)
 
@@ -33,7 +34,7 @@ def infer_returned_object(pyfunction, args):
     ).make_return_provider()
     type_ = hint_return(pyfunction)
     if type_ is not None:
-        return pyobjects.PyObject(type_)
+        return hint_instance(type_)
 
 
 @_ignore_inferred
@@ -80,7 +81,7 @@ def relevant_branch_context(pyname, branch_context):
 def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
     read_point = None
     if pyname.initial_binding is not None:
-        source_index = pyname.module.get_source_binding_index()
+        source_index = pyname.module._get_source_binding_index()
         read_context = source_index.context_for_node(read_node)
         if (
             read_context is None
@@ -89,6 +90,15 @@ def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
         ):
             return pyobjects.get_unknown()
         read_point = source_index._span(read_node)[0]
+    elif read_node is not None and read_node is pyname.module.get_ast():
+        # A read after the whole module executed (PEP 649 lazy annotations):
+        # every assignment is visible and each value keeps its own epoch.
+        read_point = pyname.module._get_source_binding_index()._span(read_node)[1]
+    elif read_node is not None:
+        source_index = pyname.module._get_source_binding_index()
+        read_context = source_index.context_for_node(read_node)
+        if read_context is not None:
+            read_point = source_index._span(read_node)[0]
     context = dict(relevant_branch_context(pyname, branch_context))
     context.update(pyname._inference_assignment_context)
     limit = pyname._inference_assignment_limit
@@ -127,7 +137,7 @@ def infer_assigned_object(pyname, *, branch_context=(), read_node=None):
     ).make_assignment_provider()
     hinting_result = hint_assignment(pyname)
     if hinting_result is not None:
-        return pyobjects.PyObject(hinting_result)
+        return hint_instance(hinting_result)
     return result
 
 
@@ -143,7 +153,7 @@ def _infer_assignment_path(pyname, index, context, recursive, read_point=None):
         if branch_context is None:
             return pyobjects.get_unknown(), True
         if read_point is not None:
-            source_index = pyname.module.get_source_binding_index()
+            source_index = pyname.module._get_source_binding_index()
             if source_index.context_for_node(assignment.ast_node) is None:
                 return pyobjects.get_unknown(), True
             if source_index._span(assignment.ast_node)[1] > read_point:
@@ -189,6 +199,8 @@ def _infer_assignment_path(pyname, index, context, recursive, read_point=None):
                     assignment,
                     pyname.module,
                     branch_context=tuple(context.items()) + branch_context,
+                    source_epoch=read_point is not None
+                    and pyname.initial_binding is None,
                 )
                 ambiguous = pyname._inference_assignment_ambiguous
             finally:
@@ -209,7 +221,7 @@ def _infer_assignment_path(pyname, index, context, recursive, read_point=None):
 
 def _assignment_branch_context(assignment, pymodule):
     node = assignment.type_hint or assignment.ast_node
-    context = pymodule.get_source_binding_index().context_for_node(node)
+    context = pymodule._get_source_binding_index().context_for_node(node)
     if context is not None:
         return context.branch_context
     if assignment.branch_context is not None:
@@ -266,7 +278,7 @@ def _parameter_objects(pyobject):
     for name in params:
         type_ = hint_param(pyobject, name)
         if type_ is not None:
-            result.append(pyobjects.PyObject(type_))
+            result.append(hint_instance(type_))
         else:
             result.append(pyobjects.get_unknown())
     return result
@@ -276,11 +288,13 @@ def _parameter_objects(pyobject):
 
 
 @_ignore_inferred
-def _infer_assignment(assignment, pymodule, *, branch_context=()):
+def _infer_assignment(assignment, pymodule, *, branch_context=(), source_epoch=False):
     assign_node = assignment.type_hint or assignment.ast_node
     if isinstance(assign_node, ast.pattern):
         return pyobjects.get_unknown()
-    result = _follow_pyname(assignment, pymodule, branch_context=branch_context)
+    result = _follow_pyname(
+        assignment, pymodule, branch_context=branch_context, source_epoch=source_epoch
+    )
     if result is None:
         return None
     pyname, pyobject = result
@@ -308,18 +322,24 @@ def _follow_levels(assignment, pyobject):
 
 
 @_ignore_inferred
-def _follow_pyname(assignment, pymodule, lineno=None, *, branch_context=()):
+def _follow_pyname(
+    assignment, pymodule, lineno=None, *, branch_context=(), source_epoch=False
+):
     assign_node = assignment.type_hint or assignment.ast_node
     if lineno is None:
         lineno = _get_lineno_for_node(assign_node)
     holding_scope = pymodule.get_scope().get_inner_scope_for_line(lineno)
     holding_kind = holding_scope.get_kind()
-    if branch_context:
-        context = pymodule.get_source_binding_index().context_for_node(assign_node)
+    if branch_context or source_epoch:
+        context = pymodule._get_source_binding_index().context_for_node(assign_node)
         if context is not None:
             holding_scope = context.environment
         holding_scope = evaluate.SourceValueScope(
-            holding_scope, holding_scope, {}, branch_context=branch_context
+            holding_scope,
+            holding_scope,
+            {},
+            branch_context=branch_context,
+            source_epoch=assign_node if source_epoch else None,
         )
     pyname = evaluate.eval_node(holding_scope, assign_node)
     if pyname is not None:

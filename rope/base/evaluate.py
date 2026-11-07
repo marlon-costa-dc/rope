@@ -17,6 +17,7 @@ from rope.base import (
     pyobjects,
     pyobjectsdef,
     pyscopes,
+    utils,
     worder,
 )
 
@@ -61,7 +62,7 @@ def _has_stdlib_import_prelude(module, node):
                 if not origin.has_child("__init__.py"):
                     return False
                 origin = origin.get_child("__init__.py")
-            if not isinstance(runtime_file, str) or origin.real_path != runtime_file:
+            if not utils.same_file_path(origin.real_path, runtime_file):
                 return False
     return False
 
@@ -137,16 +138,35 @@ def _header_version_guard(module, names, node):
 class SourceValueScope(pyscopes.TemporaryScope):
     """A call's value overlay, without replacing canonical source binders."""
 
-    def __init__(self, canonical_scope, capture_scope, names, *, branch_context=()):
+    def __init__(
+        self,
+        canonical_scope,
+        capture_scope,
+        names,
+        *,
+        branch_context=(),
+        source_epoch=None,
+    ):
         super().__init__(canonical_scope.pycore, canonical_scope, names)
         self.pyobject = canonical_scope.pyobject
         self.canonical_scope = canonical_scope
         self.capture_scope = capture_scope
         self.branch_context = branch_context
+        self.source_epoch = source_epoch
 
     def lookup(self, name, *, read_node=None):
         if name in self.names:
             return self.names[name]
+        if self.source_epoch is not None:
+            from rope.base import pynamesdef
+            from rope.base.sourcebindings import SourceValueName
+
+            binding = self.canonical_scope.lookup(name)
+            if isinstance(binding, pynamesdef.AssignedName):
+                return SourceValueName(
+                    binding, binding.get_object(read_node=self.source_epoch)
+                )
+            return binding
         if name in self.canonical_scope.get_names():
             binding = self.canonical_scope.get_names()[name]
             from rope.base import pynamesdef
@@ -198,7 +218,7 @@ def eval_node(scope, node):
 
 def eval_node2(scope, node):
     module = scope.pyobject.get_module()
-    context = module.get_source_binding_index().context_for_node(node)
+    context = module._get_source_binding_index().context_for_node(node)
     if context is not None and scope.get_kind() != "Temporary":
         scope = context.environment
     parameter_facts = False
@@ -219,6 +239,7 @@ def eval_node2(scope, node):
                     scope.capture_scope,
                     scope.names,
                     branch_context=tuple(branches.items()),
+                    source_epoch=scope.source_epoch,
                 )
         elif scope.get_kind() != "Temporary":
             scope = SourceValueScope(
@@ -226,6 +247,19 @@ def eval_node2(scope, node):
             )
     evaluator = StatementEvaluator(scope)
     evaluator.visit(node)
+    if (
+        evaluator.result is not None
+        and evaluator.old_result is not None
+        and isinstance(evaluator.old_result.get_object(), pyobjects.SampledValue)
+    ):
+        from rope.base.sourcebindings import SourceValueName
+
+        evaluator.result = SourceValueName(
+            evaluator.result,
+            pyobjects.sampled_value(
+                evaluator.result.get_object(), evaluator.old_result.get_object()
+            ),
+        )
     return evaluator.old_result, evaluator.result
 
 
@@ -316,7 +350,7 @@ class ScopeNameFinder:
         offset: int,
     ) -> Tuple[Optional[rope.base.pynames.PyName], Optional[rope.base.pynames.PyName]]:
         lineno = self.lines.get_line_number(offset)
-        index = self.module_scope.pyobject.get_source_binding_index()
+        index = self.module_scope.pyobject._get_source_binding_index()
         context = index.context_at(offset)
         holding_scope = context.environment
         structural_scope = context.structural_scope
@@ -465,6 +499,30 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         else:
             self.result = self.scope.lookup(node.id)
 
+    def _IfExp(self, node):
+        if isinstance(node.test, ast.Constant):
+            self.old_result, self.result = eval_node2(
+                self.scope, node.body if node.test.value else node.orelse
+            )
+            return
+        left_primary, left = eval_node2(self.scope, node.body)
+        right_primary, right = eval_node2(self.scope, node.orelse)
+        same_receiver = left_primary is right_primary or (
+            left_primary is not None
+            and right_primary is not None
+            and left_primary.get_object() is right_primary.get_object()
+        )
+        if (
+            left is not None
+            and right is not None
+            and left.get_object() is right.get_object()
+            and same_receiver
+        ):
+            self.result = left
+            self.old_result = left_primary
+        else:
+            self.result = rope.base.pynames.UnboundName()
+
     def _Attribute(self, node):
         pyname = eval_node(self.scope, node.value)
         if pyname is None:
@@ -474,6 +532,9 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             try:
                 self.result = pyname.get_object()[node.attr]
                 self.result = classfunctions.instance_access(
+                    pyname, node.attr, self.result, self.scope
+                )
+                self.result = classfunctions.descriptor_access(
                     pyname, node.attr, self.result, self.scope
                 )
                 from rope.base.sourcebindings import (
@@ -502,6 +563,22 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             pyobject = func_pyname.get_object()
         if pyobject is None:
             return
+        self.old_result = (
+            func_pyname if isinstance(pyobject, pyobjects.SampledValue) else primary
+        )
+        if not isinstance(pyobject, pyobjects.SampledValue):
+            for argument in (*node.args, *node.keywords):
+                expression = (
+                    argument.value
+                    if isinstance(argument, (ast.Starred, ast.keyword))
+                    else argument
+                )
+                binding = eval_node(self.scope, expression)
+                if binding is not None and isinstance(
+                    binding.get_object(), pyobjects.SampledValue
+                ):
+                    self.old_result = binding
+                    break
 
         if (
             isinstance(pyobject, rope.base.builtins.BuiltinType)
@@ -522,7 +599,18 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                 node,
                 self.scope,
             )
+            modeled = rope.base.builtins.infer_runtime_call(pyobject, args)
+            if modeled is not None:
+                return modeled
             return pyobject.get_returned_object(args)
+
+        if isinstance(pyobject, pyobjects.SampledValue) and isinstance(
+            pyobject.representative, pyobjects.AbstractFunction
+        ):
+            self.result = rope.base.pynames.UnboundName(
+                _get_returned(pyobject.representative)
+            )
+            return
 
         if isinstance(pyobject, rope.base.pyobjects.AbstractClass):
             from rope.base.sourcebindings import SourceLambdaFunction
@@ -590,6 +678,9 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         type_name = type(node.n).__name__
         self.result = self._get_builtin_name(type_name)
 
+    def _JoinedStr(self, node):
+        self.result = self._get_builtin_name("str")
+
     def _Constant(self, node):
         if isinstance(node.value, str):
             self.result = rope.base.pynames.UnboundName(
@@ -608,9 +699,30 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         return rope.base.pynames.UnboundName(rope.base.pyobjects.PyObject(pytype))
 
     def _BinOp(self, node):
-        self.result = rope.base.pynames.UnboundName(
-            self._get_object_for_node(node.left)
-        )
+        left = self._get_object_for_node(node.left)
+        if isinstance(node.op, ast.BitOr):
+            right = self._get_object_for_node(node.right)
+            parts = (node.left, node.right)
+            values = (left, right)
+            if any(
+                isinstance(
+                    value, (pyobjects.AbstractClass, rope.base.builtins.GenericAlias)
+                )
+                for value in values
+            ):
+                from rope.base.oi.type_hinting.utils import _hint_value, union_type
+
+                alternatives = tuple(
+                    (
+                        rope.base.builtins._runtime_class(type(None))
+                        if isinstance(part, ast.Constant) and part.value is None
+                        else _hint_value(value)
+                    )
+                    for part, value in zip(parts, values)
+                )
+                self.result = rope.base.pynames.UnboundName(union_type(alternatives))
+                return
+        self.result = rope.base.pynames.UnboundName(left)
 
     def _BoolOp(self, node):
         pyobject = self._get_object_for_node(node.values[0])
@@ -704,7 +816,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
 
     def _make_comprehension_scope(self, node):
         module = self.scope.pyobject.get_module()
-        binding_scope = module.get_source_binding_index().comprehension_scope(node)
+        binding_scope = module._get_source_binding_index().comprehension_scope(node)
         if binding_scope is not None:
             if self.scope.get_kind() == "Temporary":
                 values = {
@@ -777,6 +889,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
         receiver = eval_node(self.scope, node.value)
         if receiver is None:
             return
+        self.old_result = receiver
         value = receiver.get_object()
         is_class = isinstance(value, pyobjects.AbstractClass)
         owner = value.get_metaclass() if is_class else value.get_type()
@@ -803,17 +916,26 @@ class StatementEvaluator(ast.RopeNodeVisitor):
                 )
             )
             return
-        if isinstance(owner, rope.base.builtins.Tuple) and (
-            isinstance(node.slice, ast.Constant)
-            and isinstance(node.slice.value, int)
-            or isinstance(node.slice, ast.UnaryOp)
-            and isinstance(node.slice.op, (ast.UAdd, ast.USub))
-            and isinstance(node.slice.operand, ast.Constant)
-            and isinstance(node.slice.operand.value, int)
-        ):
-            self.result = rope.base.pynames.UnboundName(
-                owner.get_item(ast.literal_eval(node.slice))
-            )
+        if isinstance(owner, rope.base.builtins.Tuple):
+            try:
+                if isinstance(node.slice, ast.Slice):
+                    bounds = (
+                        ast.literal_eval(bound) if bound is not None else None
+                        for bound in (
+                            node.slice.lower,
+                            node.slice.upper,
+                            node.slice.step,
+                        )
+                    )
+                    result = rope.base.builtins.get_tuple(
+                        *owner.get_holding_objects()[slice(*bounds)]
+                    )
+                else:
+                    key = ast.literal_eval(node.slice)
+                    result = owner.get_item(key) if isinstance(key, int) else None
+            except (ValueError, TypeError):
+                result = None
+            self.result = rope.base.pynames.UnboundName(result)
             return
         if "__getitem__" in owner:
             called, callable_receiver = get_callable(owner["__getitem__"])
@@ -885,7 +1007,7 @@ class StatementEvaluator(ast.RopeNodeVisitor):
 
     def _Lambda(self, node):
         module = self.scope.pyobject.get_module()
-        function = module.get_source_binding_index().callable_for_node(node)
+        function = module._get_source_binding_index().callable_for_node(node)
         if function is None:
             function = rope.base.builtins.Lambda(node, self.scope)
         elif self.scope.get_kind() == "Temporary":

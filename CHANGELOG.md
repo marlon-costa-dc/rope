@@ -1,5 +1,16 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.1
+
+- Move the fork base to upstream release 1.15.2 (integrated by merge commit),
+  which carries the 1.15.1 DOA channel credential hardening in `runmod.py`.
+  The local suffix restarts at 1 for the new upstream base.
+- Add `MoveMethod.get_instance_class_changes()` to transfer an
+  identity-decorated instance handler into a source class, rewriting
+  `self.member` accesses through explicit `receiver_rewrites`.
+- Materialize function bodies of definition bindings on native query demand.
+- Include the `annotations` type-hinting provider in the package.
+
 # Release 1.15.0+dc.12
 
 - Never offer the literal pieces or format specs of an f-string as similar
@@ -202,6 +213,11 @@ Fork contributions (also proposed upstream):
 Datacosmos internal:
 
 - Project(external_project=...) and NoProject(fscommands=...) share one captured filesystem so native module resolution survives source-tree changes
+
+# Release 1.15.1
+
+- Change runmod.py to pass DOA channel credential in a more secure manner,
+  see GHSA-64m2-4gp9-7cqx (@AliAAlMousa, @lieryan)
 
 # Release 1.15.0
 
