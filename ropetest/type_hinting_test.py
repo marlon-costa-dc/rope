@@ -788,6 +788,23 @@ class DocstringParamHintingTest(AbstractHintingTest):
         result = self._assist(code)
         self.assert_completion_in_result("is_alive", "attribute", result)
 
+    def test_hint_param_on_a_hierarchy_python_refuses(self):
+        code = dedent('''\
+            class Base(object):
+                def a_method(self, a_arg):
+                    """:type a_arg: threading.Thread"""
+
+
+            class Left(Base):
+                pass
+
+
+            class Sample(Base, Left):
+                def a_method(self, a_arg):
+                    a_arg.is_''')
+        result = self._assist(code)
+        self.assert_completion_in_result("is_alive", "attribute", result)
+
     def test_hint_param_follows_the_method_resolution_order(self):
         code = dedent('''\
             class Base(object):
@@ -1018,6 +1035,18 @@ class AbstractAssignmentHintingTest(AbstractHintingTest):
                     self.a_attr.is_a""")
         result = self._assist(code)
         self.assert_completion_in_result("is_alive", "attribute", result)
+
+    def test_assignment_hints_ignore_names_that_are_not_assigned(self):
+        from rope.base import libutils
+        from rope.base.oi.type_hinting import utils
+        from rope.base.oi.type_hinting.providers.pep0484_type_comments import (
+            AssignmentProvider,
+        )
+
+        pymodule = libutils.get_string_module(self.project, "def a_func():\n    pass\n")
+        defined_name = pymodule["a_func"]
+        self.assertIsNone(AssignmentProvider(None)(defined_name))
+        self.assertIsNone(utils.get_class_with_attr_name(defined_name))
 
     def test_hint_or_keeps_first_alternative_attributes(self):
         code = dedent(f"""\

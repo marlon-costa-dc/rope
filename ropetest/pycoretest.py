@@ -1,6 +1,7 @@
 import collections.abc
 import os
 import sys
+import tempfile
 import typing
 import unittest
 from textwrap import dedent
@@ -1380,6 +1381,25 @@ class PyCoreTest(unittest.TestCase):
         testutils.create_module(self.project, "child", namespace)
         testutils.create_module(self.project, "sample")
         self.assertIsNone(self.project.find_module("sample.child"))
+
+    def test_find_module_skips_python_path_files(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        # Rope reports real paths; temporary directories may sit behind a
+        # symlink (macOS /var) or a short name (Windows RUNNER~1).
+        root = os.path.realpath(external.name)
+        archive = os.path.join(root, "archive.zip")
+        libs = os.path.join(root, "libs")
+        os.mkdir(libs)
+        open(archive, "w").close()
+        with open(os.path.join(libs, "sample.py"), "w") as sample:
+            sample.write("")
+        self.project.close()
+        self.project = Project(self.project.address, python_path=[archive, libs])
+        self.assertEqual(
+            os.path.join(libs, "sample.py"),
+            self.project.find_module("sample").real_path,
+        )
 
     def test_find_module_defers_namespace_to_later_source_module(self):
         first = self.project.root.create_folder("first")
