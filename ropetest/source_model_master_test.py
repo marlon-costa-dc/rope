@@ -1557,3 +1557,18 @@ def test_generic_class_bound_query_and_outer_rename_keep_runtime_bound(model_pro
     model_project.do(rename.Rename(model_project, resource, 0).get_changes("changed"))
     assert runtime_observed(resource.read()) == before is True
     assert "class Owner[T: changed]" in resource.read()
+
+
+def test_foreign_node_has_no_context_and_reads_no_source(model_project):
+    source = 'nome = "ação"\nvalor: int = 1\n'
+    resource = module(model_project, source)
+    pymodule = model_project.get_pymodule(resource)
+    index = pymodule.get_source_binding_index()
+    # A consumer's own parse of another text: its end column (10) falls
+    # inside the two-byte "ç" of this module's first line.
+    foreign = ast.parse("valorxxxxx\n").body[0].value
+    assert (foreign.lineno, foreign.end_col_offset) == (1, 10)
+    assert index.context_for_node(foreign) is None
+    assert evaluate.eval_node(pymodule.get_scope(), foreign) is None
+    owned = pymodule.get_ast().body[1].annotation
+    assert index.context_for_node(owned) is not None
