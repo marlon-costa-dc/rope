@@ -1,5 +1,12 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.2
+
+- `SourceBindingIndex.context_for_node` spans only nodes of its own module's
+  AST. A node from another AST gets no context without reading this source;
+  before, its columns could fall inside a UTF-8 code point and raise
+  `UnicodeDecodeError` (non-ASCII modules, through `evaluate.eval_node`).
+
 # Release 1.15.2+dc.1
 
 - Move the fork base to upstream release 1.15.2 (integrated by merge commit),
