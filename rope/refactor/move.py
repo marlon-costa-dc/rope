@@ -156,6 +156,7 @@ class MoveMethod:
                     "Duplicate or occupied method destination."
                 )
             cls._check_class_method(function)
+            cls._check_class_move_definition_time(function, destination)
             if (
                 cls._class_move_effective_name(function.get_name(), function.parent)
                 != function.get_name()
@@ -170,6 +171,7 @@ class MoveMethod:
             regions[function] = cls._class_method_region(function)
         if not methods:
             raise exceptions.RefactoringError("No methods selected for class transfer.")
+        cls._check_same_module_class_move(destination, methods)
         if destination_resource not in selected or any(
             function.get_module().get_resource() not in selected for function in methods
         ):
@@ -231,6 +233,15 @@ class MoveMethod:
                         ),
                         None,
                     )
+                    if resource == destination_resource and enclosing is None:
+                        context = module.get_source_binding_index().context_at(start)
+                        if (
+                            context.structural_scope.get_kind() != "Module"
+                            or occurrence.lineno <= destination.get_ast().end_lineno
+                        ):
+                            raise exceptions.RefactoringError(
+                                "Transfer cannot prove destination exists before reference."
+                            )
                     words = worder.Worder(module.source_code)
                     prefix, _, _ = words.get_splitted_primary_before(end)
                     environment = (
@@ -297,7 +308,10 @@ class MoveMethod:
             moving = sourceutils.fix_indentation(
                 collector.get_changed() or sources[resource][start:end], 0
             )
-            moving, used_imports = moving_code_with_imports(project, resource, moving)
+            if resource == destination_resource:
+                used_imports = []
+            else:
+                moving, used_imports = moving_code_with_imports(project, resource, moving)
             moved_sources.append(moving.rstrip())
             imports.extend(used_imports)
         planned = {}
@@ -611,10 +625,131 @@ class MoveMethod:
                 )
                 if occurrences.unsure_pyname(
                     new_name, unbound=False
-                ) or not occurrences.same_pyname(old_name, new_name):
+                ) or not (
+                    occurrences.same_pyname(old_name, new_name)
+                    or cls._class_move_same_module_binding(old.id, old_name, new_name)
+                ):
                     raise exceptions.RefactoringError(
                         f"Transferred method changes binding: {old.id}"
                     )
+
+    @staticmethod
+    def _class_move_same_module_binding(name, old, new):
+        old_module, old_line = old.get_definition_location()
+        new_module, new_line = new.get_definition_location()
+        if (
+            old_module is None
+            or new_module is None
+            or old_line is None
+            or new_line is None
+            or old_module.get_resource() != new_module.get_resource()
+            or old_module.get_scope().get_names().get(name) is not old
+            or new_module.get_scope().get_names().get(name) is not new
+            or type(old) is not type(new)
+            or len(getattr(old, "assignments", ())) > 1
+            or len(getattr(new, "assignments", ())) > 1
+        ):
+            return False
+
+        def declaration(module, line):
+            return [
+                ast.dump(node)
+                for node in module.get_ast().body
+                if node.lineno <= line <= node.end_lineno
+            ]
+
+        before = declaration(old_module, old_line)
+        return len(before) == 1 and before == declaration(new_module, new_line)
+
+    @staticmethod
+    def _check_same_module_class_move(destination, methods):
+        same_module = [
+            function for function in methods
+            if function.get_module().get_resource()
+            == destination.get_module().get_resource()
+        ]
+        if len(same_module) != len(methods):
+            raise exceptions.RefactoringError(
+                "Transfer cannot prove cross-module descriptor equivalence."
+            )
+
+        def inert(node):
+            return isinstance(node, ast.Pass) or (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            )
+
+        parents = {function.parent for function in same_module}
+        if len(parents) != 1:
+            raise exceptions.RefactoringError("Transfer order is not proven.")
+        parent = next(iter(parents))
+        parent_node = parent.get_ast()
+        destination_node = destination.get_ast()
+        selected = {function.get_ast() for function in same_module}
+        if (
+            parent.parent is not destination
+            or destination_node.bases
+            or destination_node.keywords
+            or destination_node.decorator_list
+            or parent_node.bases
+            or parent_node.keywords
+            or parent_node.decorator_list
+            or parent_node not in destination_node.body
+            or any(not inert(node) and node not in selected for node in parent_node.body)
+            or any(
+                not inert(node)
+                for node in destination_node.body if node is not parent_node
+            )
+        ):
+            raise exceptions.RefactoringError(
+                "Transfer cannot prove descriptor evaluation order."
+            )
+
+    @staticmethod
+    def _check_class_move_definition_time(function, destination):
+        node = function.get_ast()
+        arguments = node.args
+        defaults = list(arguments.defaults) + [
+            value for value in arguments.kw_defaults if value is not None
+        ]
+        annotations = [
+            arg.annotation
+            for arg in (
+                list(arguments.posonlyargs)
+                + list(arguments.args)
+                + list(arguments.kwonlyargs)
+                + [arg for arg in (arguments.vararg, arguments.kwarg) if arg]
+            )
+            if arg.annotation is not None
+        ]
+        if node.returns is not None:
+            annotations.append(node.returns)
+
+        def postponed(module):
+            return any(
+                isinstance(item, ast.ImportFrom)
+                and item.module == "__future__"
+                and any(alias.name == "annotations" for alias in item.names)
+                for item in module.get_ast().body
+            )
+
+        if annotations:
+            before = postponed(function.get_module())
+            after = postponed(destination.get_module())
+            if before != after:
+                raise exceptions.RefactoringError(
+                    "Transfer changes annotation evaluation mode."
+                )
+            if not before:
+                defaults.extend(annotations)
+        for expression in defaults:
+            try:
+                ast.literal_eval(expression)
+            except (ValueError, TypeError, SyntaxError):
+                raise exceptions.RefactoringError(
+                    "Transfer cannot prove definition-time evaluation."
+                ) from None
 
     @staticmethod
     def _class_move_local_binding(context, name, binding, root_scope):
@@ -632,7 +767,11 @@ class MoveMethod:
         for scope in (context.environment, *scopes):
             if (
                 scope.get_kind() != "Class"
-                and scope.get_defined_names().get(name) is binding
+                and scope.get_names().get(name) is binding
+                and not any(
+                    isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names
+                    for node in ast.walk(scope.pyobject.get_ast())
+                )
             ):
                 return True
         return False
