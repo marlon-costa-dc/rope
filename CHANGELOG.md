@@ -1,5 +1,17 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.3
+
+- `MoveMethod.get_class_changes` proves that a class transfer keeps program
+  behaviour. Defaults, and annotations still evaluated eagerly, must be
+  literals. The destination's metaclass must be `type`. Its import-time code
+  must not rebind names through `globals()`, `vars()`, `locals()`, `exec`,
+  `eval` or the builtins module. A reference that runs before the destination
+  class exists is refused.
+- A same-module transfer to an enclosing class now keeps module-level
+  bindings it reads, when the binding's single declaration is unchanged and
+  the method does not declare the name global or nonlocal.
+
 # Release 1.15.2+dc.2
 
 - `SourceBindingIndex.context_for_node` spans only nodes of its own module's

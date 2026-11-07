@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import runpy
+import sys
 import unittest
 from textwrap import dedent
 from typing import TYPE_CHECKING, Union
@@ -67,6 +68,287 @@ class MoveRefactoringTest(unittest.TestCase):
         assert isinstance(mover, move.MoveMethod)
         changes = mover.get_changes(dest_attr, new_name=new_name)
         self.project.do(changes)
+
+    def test_transfer_methods_to_enclosing_class_in_same_module(self):
+        self.mod1.write(dedent("""\
+            value = 7
+
+            class Owner:
+                class Helpers:
+                    @staticmethod
+                    def make(number=2):
+                        return value + number
+
+                    @classmethod
+                    def name(cls):
+                        return "name"
+
+            result = Owner.Helpers.make()
+        """))
+        self.mod2.write("from mod1 import Owner\nresult = Owner.Helpers.make(5)\n")
+        source = self.mod1.read()
+        changes = move.MoveMethod.get_class_changes(
+            self.project,
+            [
+                (self.mod1, source.index("def make") + 4, "make"),
+                (self.mod1, source.index("def name") + 4, "name"),
+            ],
+            self.mod1,
+            source.index("class Owner") + 6,
+            resources=[self.mod1, self.mod2],
+        )
+        self.project.do(changes)
+        changed = self.mod1.read()
+        self.assertNotIn("from mod1 import", changed)
+        namespace = {}
+        exec(changed, namespace)
+        owner = namespace["Owner"]
+        self.assertIsInstance(owner.__dict__["make"], staticmethod)
+        self.assertIsInstance(owner.__dict__["name"], classmethod)
+        self.assertEqual(9, namespace["result"])
+        self.assertEqual(12, owner.make(5))
+        self.assertEqual("name", owner.name())
+        self.assertIn("Owner.make(5)", self.mod2.read())
+
+    def test_transfer_rejects_changed_class_scope_default(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                value = 1
+                class Helpers:
+                    value = 2
+                    @staticmethod
+                    def make(number=value):
+                        return number
+        """))
+        source = self.mod1.read()
+        with self.assertRaises(exceptions.RefactoringError):
+            move.MoveMethod.get_class_changes(
+                self.project,
+                [(self.mod1, source.index("def make") + 4, "make")],
+                self.mod1,
+                source.index("class Owner") + 6,
+                resources=[self.mod1],
+            )
+        self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_changed_module_binding(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Helpers:
+                    @staticmethod
+                    def make():
+                        return value
+
+            value = Owner.Helpers.make
+        """))
+        source = self.mod1.read()
+        with self.assertRaises(exceptions.RefactoringError):
+            move.MoveMethod.get_class_changes(
+                self.project,
+                [(self.mod1, source.index("def make") + 4, "make")],
+                self.mod1,
+                source.index("class Owner") + 6,
+                resources=[self.mod1],
+            )
+        self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_ambiguous_module_reassignment(self):
+        self.mod1.write(dedent("""\
+            value = 1
+            class Owner:
+                class Helpers:
+                    @staticmethod
+                    def make():
+                        return value
+
+            value = Owner.Helpers.make
+        """))
+        source = self.mod1.read()
+        with self.assertRaises(exceptions.RefactoringError):
+            move.MoveMethod.get_class_changes(
+                self.project,
+                [(self.mod1, source.index("def make") + 4, "make")],
+                self.mod1,
+                source.index("class Owner") + 6,
+                resources=[self.mod1],
+            )
+        self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_cross_module_redirected_globals(self):
+        for statement in ("return value", "value = 3\n        return value"):
+            with self.subTest(statement=statement):
+                source = (
+                    "value = 1\nclass A:\n    @staticmethod\n    def f():\n"
+                    "        global value\n        " + statement + "\n"
+                )
+                destination = "value = 2\nclass B:\n    pass\n"
+                self.mod1.write(source)
+                self.mod2.write(destination)
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod2,
+                        destination.index("class B") + 6,
+                        resources=[self.mod1, self.mod2],
+                    )
+                self.assertEqual(source, self.mod1.read())
+                self.assertEqual(destination, self.mod2.read())
+
+    def test_transfer_rejects_definition_time_changes(self):
+        declarations = [
+            "@staticmethod\n    def f(x=values[0]):",
+            "@staticmethod if values[0] else classmethod\n    def f(x):",
+        ]
+        if sys.version_info < (3, 14):
+            # Python 3.14+ evaluates annotations lazily on access, in the same
+            # module globals before and after the move, so only eager
+            # annotations change with the definition time.
+            declarations.append("@staticmethod\n    def f(x: values[0]):")
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                source = (
+                    "values = [1]\nclass A:\n    " + declaration
+                    + "\n        return x\nvalues[0] = 2\nclass B:\n    pass\n"
+                )
+                self.mod1.write(source)
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod1,
+                        source.index("class B") + 6,
+                        resources=[self.mod1],
+                    )
+                self.assertEqual(source, self.mod1.read())
+
+    @unittest.skipIf(
+        sys.version_info < (3, 14), "lazy function annotations require Python 3.14"
+    )
+    def test_transfer_keeps_lazy_annotations(self):
+        source = (
+            "values = [1]\nclass A:\n    @staticmethod\n    def f(x: values[0]):\n"
+            "        return x\nvalues[0] = 2\nclass B:\n    pass\n"
+        )
+        self.mod1.write(source)
+        original = {}
+        exec(source, original)
+        self.project.do(
+            move.MoveMethod.get_class_changes(
+                self.project,
+                [(self.mod1, source.index("def f") + 4, "f")],
+                self.mod1,
+                source.index("class B") + 6,
+                resources=[self.mod1],
+            )
+        )
+        moved = {}
+        exec(self.mod1.read(), moved)
+        self.assertEqual(
+            original["A"].f.__annotations__, moved["B"].f.__annotations__
+        )
+
+    def test_transfer_rejects_early_same_module_references(self):
+        for early in ("result = A.f()", "class C:\n    result = A.f()"):
+            with self.subTest(early=early):
+                source = (
+                    "class A:\n    @staticmethod\n    def f():\n        return 1\n"
+                    + early + "\nclass B:\n    pass\n"
+                )
+                self.mod1.write(source)
+                original = {}
+                exec(source, original)
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod1,
+                        source.index("class B") + 6,
+                        resources=[self.mod1],
+                    )
+                self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_descriptor_mutation_during_class_execution(self):
+        for statement in (
+            "globals()['staticmethod'] = lambda f: 42",
+            "globals()['classmethod'] = lambda f: 42",
+        ):
+            with self.subTest(statement=statement):
+                descriptor = "classmethod" if "classmethod" in statement else "staticmethod"
+                source = (
+                    "class Owner:\n    class Helpers:\n        @" + descriptor
+                    + "\n        def f(x=None):\n            return x\n    "
+                    + statement + "\n"
+                )
+                self.mod1.write(source)
+                original = {}
+                exec(source, original)
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod1,
+                        source.index("class Owner") + 6,
+                        resources=[self.mod1],
+                    )
+                self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_destination_metaclass_effects(self):
+        for meta in (
+            "    @classmethod\n    def __prepare__(cls, name, bases):\n"
+            "        return {'staticmethod': lambda f: 42}\n",
+            "    def __new__(cls, name, bases, namespace):\n"
+            "        namespace['observed'] = 'f' in namespace\n"
+            "        return super().__new__(cls, name, bases, namespace)\n",
+        ):
+            with self.subTest(meta=meta):
+                source = (
+                    "class Meta(type):\n" + meta
+                    + "class Owner(metaclass=Meta):\n    class Helpers:\n"
+                    "        @staticmethod\n        def f():\n            return 1\n"
+                )
+                self.mod1.write(source)
+                original = {}
+                exec(source, original)
+                self.assertEqual(1, original["Owner"].Helpers.f())
+                if "__new__" in meta:
+                    self.assertFalse(original["Owner"].observed)
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod1,
+                        source.index("class Owner") + 6,
+                        resources=[self.mod1],
+                    )
+                self.assertEqual(source, self.mod1.read())
+
+    def test_transfer_rejects_cross_module_descriptor_mutation(self):
+        for descriptor in ("staticmethod", "classmethod"):
+            with self.subTest(descriptor=descriptor):
+                source = (
+                    "class A:\n    @" + descriptor
+                    + "\n    def f(x=None):\n        return 1\n"
+                )
+                destination = (
+                    "globals()['" + descriptor + "'] = lambda f: 42\n"
+                    "class B:\n    pass\n"
+                )
+                self.mod1.write(source)
+                self.mod2.write(destination)
+                original = {}
+                exec(source, original)
+                self.assertEqual(1, original["A"].f())
+                with self.assertRaises(exceptions.RefactoringError):
+                    move.MoveMethod.get_class_changes(
+                        self.project,
+                        [(self.mod1, source.index("def f") + 4, "f")],
+                        self.mod2,
+                        destination.index("class B") + 6,
+                        resources=[self.mod1, self.mod2],
+                    )
+                self.assertEqual(source, self.mod1.read())
+                self.assertEqual(destination, self.mod2.read())
 
     def test_move_constant(self) -> None:
         self.origin_module.write("foo = 123\n")
