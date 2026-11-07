@@ -1,5 +1,12 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.4
+
+- `AutoImport.generate_cache` and `generate_modules_cache` start their worker
+  processes with `forkserver` (or `spawn` where it is unavailable) instead of
+  the platform default. Forking a process that runs other threads can
+  deadlock the child, and Python 3.12+ warns on every such fork.
+
 # Release 1.15.2+dc.3
 
 - `MoveMethod.get_class_changes` proves that a class transfer keeps program
