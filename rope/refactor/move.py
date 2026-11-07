@@ -156,6 +156,7 @@ class MoveMethod:
                     "Duplicate or occupied method destination."
                 )
             cls._check_class_method(function)
+            cls._check_class_move_definition_time(function, destination)
             if (
                 cls._class_move_effective_name(function.get_name(), function.parent)
                 != function.get_name()
@@ -170,6 +171,7 @@ class MoveMethod:
             regions[function] = cls._class_method_region(function)
         if not methods:
             raise exceptions.RefactoringError("No methods selected for class transfer.")
+        cls._check_class_move_construction(destination)
         if destination_resource not in selected or any(
             function.get_module().get_resource() not in selected for function in methods
         ):
@@ -231,6 +233,15 @@ class MoveMethod:
                         ),
                         None,
                     )
+                    if (
+                        resource == destination_resource
+                        and enclosing is None
+                        and occurrence.lineno <= destination.get_ast().end_lineno
+                        and cls._class_move_runs_at_import(module, start)
+                    ):
+                        raise exceptions.RefactoringError(
+                            "Transfer cannot prove destination exists before reference."
+                        )
                     words = worder.Worder(module.source_code)
                     prefix, _, _ = words.get_splitted_primary_before(end)
                     environment = (
@@ -1470,6 +1481,117 @@ class MoveMethod:
             )
 
     @staticmethod
+    def _class_move_runs_at_import(module, offset):
+        """Whether code at `offset` runs while its module executes.
+
+        Module-level code and class bodies run at import; a function body
+        runs only when called.
+        """
+        scope = module.get_source_binding_index().context_at(offset).structural_scope
+        while scope is not None:
+            if scope.get_kind() == "Function":
+                return False
+            scope = scope.parent
+        return True
+
+    @staticmethod
+    def _check_class_move_definition_time(function, destination):
+        """Refuse a definition whose defaults may change with its definition time.
+
+        The destination class body runs at another moment, so a default
+        (and an annotation that is still evaluated eagerly after the move)
+        is only proven unchanged when it is a literal. The transfer carries a
+        postponing `from __future__ import annotations` with the method, so
+        annotations run at definition time only when neither module
+        postpones them.
+        """
+        node = function.get_ast()
+        arguments = node.args
+        expressions = list(arguments.defaults) + [
+            value for value in arguments.kw_defaults if value is not None
+        ]
+        if all(
+            module.get_source_binding_index().policy.mode == "eager"
+            for module in (function.get_module(), destination.get_module())
+        ):
+            expressions.extend(
+                arg.annotation
+                for arg in (
+                    *arguments.posonlyargs,
+                    *arguments.args,
+                    *arguments.kwonlyargs,
+                    *(arg for arg in (arguments.vararg, arguments.kwarg) if arg),
+                )
+                if arg.annotation is not None
+            )
+            if node.returns is not None:
+                expressions.append(node.returns)
+        for expression in expressions:
+            try:
+                ast.literal_eval(expression)
+            except (ValueError, TypeError, SyntaxError):
+                raise exceptions.RefactoringError(
+                    "Transfer cannot prove definition-time evaluation."
+                ) from None
+
+    _DYNAMIC_NAMESPACE_CALLS = frozenset(("globals", "vars", "locals", "exec", "eval"))
+    _BUILTIN_MODULE_NAMES = frozenset(("builtins", "__builtins__"))
+
+    @classmethod
+    def _check_class_move_construction(cls, destination):
+        """Refuse a destination whose class construction static analysis cannot see.
+
+        A metaclass other than `type` can supply or inspect the namespace
+        (`__prepare__`, `__new__`), and code run at import time can rebind
+        any name through `globals()`, `vars()`, `exec` or the builtins module.
+        Either may change what the moved decorator or body resolves to.
+        """
+        metaclass = destination.get_metaclass()
+        if getattr(metaclass, "builtin", None) is not type:
+            raise exceptions.RefactoringError(
+                "Transfer cannot prove destination class construction."
+            )
+        functions = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+        pending = [destination.get_module().get_ast()]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, ast.Call) and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id in cls._DYNAMIC_NAMESPACE_CALLS
+                )
+                or (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id in ("setattr", "delattr")
+                    and node.args
+                    and isinstance(node.args[0], ast.Name)
+                    and node.args[0].id in cls._BUILTIN_MODULE_NAMES
+                )
+            ):
+                raise exceptions.RefactoringError(
+                    "Transfer cannot prove destination namespace bindings."
+                )
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                and isinstance(node.value, ast.Name)
+                and node.value.id in cls._BUILTIN_MODULE_NAMES
+            ):
+                raise exceptions.RefactoringError(
+                    "Transfer cannot prove destination namespace bindings."
+                )
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, functions):
+                    # Only definition-time parts of a function run at import.
+                    pending.extend(
+                        child.decorator_list if hasattr(child, "decorator_list") else ()
+                    )
+                    pending.extend(child.args.defaults)
+                    pending.extend(d for d in child.args.kw_defaults if d is not None)
+                    continue
+                pending.append(child)
+
+    @staticmethod
     def _class_method_region(function):
         module = function.get_module()
         return (
@@ -1649,12 +1771,56 @@ class MoveMethod:
                 new_name = evaluate.eval_node(
                     after.context_for_node(new).environment, new
                 )
-                if occurrences.unsure_pyname(
-                    new_name, unbound=False
-                ) or not occurrences.same_pyname(old_name, new_name):
+                if occurrences.unsure_pyname(new_name, unbound=False) or not (
+                    occurrences.same_pyname(old_name, new_name)
+                    or cls._class_move_same_module_binding(
+                        original, old.id, old_name, new_name
+                    )
+                ):
                     raise exceptions.RefactoringError(
                         f"Transferred method changes binding: {old.id}"
                     )
+
+    @staticmethod
+    def _class_move_same_module_binding(function, name, old, new):
+        """Prove a module-level binding is the same one after a same-module move.
+
+        The moved source is re-parsed, so its module bindings are new objects.
+        They denote the same binding when both are the one module-level
+        definition of `name` in the same resource, with an identical
+        declaration statement. A name the method declares `global` or
+        `nonlocal` stays unproven, because the method itself can rebind it.
+        """
+        if any(
+            isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names
+            for node in ast.walk(function.get_ast())
+        ):
+            return False
+        old_module, old_line = old.get_definition_location()
+        new_module, new_line = new.get_definition_location()
+        if (
+            old_module is None
+            or new_module is None
+            or old_line is None
+            or new_line is None
+            or old_module.get_resource() != new_module.get_resource()
+            or old_module.get_scope().get_names().get(name) is not old
+            or new_module.get_scope().get_names().get(name) is not new
+            or type(old) is not type(new)
+            or len(getattr(old, "assignments", ())) > 1
+            or len(getattr(new, "assignments", ())) > 1
+        ):
+            return False
+
+        def declaration(module, line):
+            return [
+                ast.dump(node)
+                for node in module.get_ast().body
+                if node.lineno <= line <= node.end_lineno
+            ]
+
+        before = declaration(old_module, old_line)
+        return len(before) == 1 and before == declaration(new_module, new_line)
 
     @staticmethod
     def _class_move_local_binding(context, name, binding, root_scope):
