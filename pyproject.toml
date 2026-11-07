@@ -93,6 +93,7 @@ python_files = [
     "*test.py",
     "__init__.py",
 ]
+filterwarnings = ["error"]
 
 [build-system]
 requires = [
