@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import runpy
+import sys
 import unittest
 from textwrap import dedent
 from typing import TYPE_CHECKING, Union
@@ -195,11 +196,16 @@ class MoveRefactoringTest(unittest.TestCase):
                 self.assertEqual(destination, self.mod2.read())
 
     def test_transfer_rejects_definition_time_changes(self):
-        for declaration in (
+        declarations = [
             "@staticmethod\n    def f(x=values[0]):",
-            "@staticmethod\n    def f(x: values[0]):",
             "@staticmethod if values[0] else classmethod\n    def f(x):",
-        ):
+        ]
+        if sys.version_info < (3, 14):
+            # Python 3.14+ evaluates annotations lazily on access, in the same
+            # module globals before and after the move, so only eager
+            # annotations change with the definition time.
+            declarations.append("@staticmethod\n    def f(x: values[0]):")
+        for declaration in declarations:
             with self.subTest(declaration=declaration):
                 source = (
                     "values = [1]\nclass A:\n    " + declaration
@@ -215,6 +221,32 @@ class MoveRefactoringTest(unittest.TestCase):
                         resources=[self.mod1],
                     )
                 self.assertEqual(source, self.mod1.read())
+
+    @unittest.skipIf(
+        sys.version_info < (3, 14), "lazy function annotations require Python 3.14"
+    )
+    def test_transfer_keeps_lazy_annotations(self):
+        source = (
+            "values = [1]\nclass A:\n    @staticmethod\n    def f(x: values[0]):\n"
+            "        return x\nvalues[0] = 2\nclass B:\n    pass\n"
+        )
+        self.mod1.write(source)
+        original = {}
+        exec(source, original)
+        self.project.do(
+            move.MoveMethod.get_class_changes(
+                self.project,
+                [(self.mod1, source.index("def f") + 4, "f")],
+                self.mod1,
+                source.index("class B") + 6,
+                resources=[self.mod1],
+            )
+        )
+        moved = {}
+        exec(self.mod1.read(), moved)
+        self.assertEqual(
+            original["A"].f.__annotations__, moved["B"].f.__annotations__
+        )
 
     def test_transfer_rejects_early_same_module_references(self):
         for early in ("result = A.f()", "class C:\n    result = A.f()"):
