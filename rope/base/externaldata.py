@@ -202,6 +202,8 @@ def _plan_context(module):
             if isinstance(node, ast.Global)
             for name in node.names
         }
+        if not globals_:
+            continue
         for node in scoped:
             names = set()
             if isinstance(node, ast.Name) and isinstance(

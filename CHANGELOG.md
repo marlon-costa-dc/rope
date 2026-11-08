@@ -1,5 +1,11 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.5
+
+- Module-identity planning skips the write scan of function and class scopes
+  that declare no `global` names, whose writes cannot reach module identity:
+  26% less time in `externaldata._plan_context` on large modules.
+
 # Release 1.15.2+dc.4
 
 - `AutoImport.generate_cache` and `generate_modules_cache` start their worker
