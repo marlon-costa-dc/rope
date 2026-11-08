@@ -71,6 +71,28 @@ def _base_binding_at_position(pyname, base_node):
     return prior
 
 
+def _scope_at_base_position(pycore, scope, base_node):
+    """Bind the root name of a compound base as it is at the class statement.
+
+    ``s[T]`` or ``pkg.Base`` evaluates its root name before any position
+    correction can apply to the result; a later rebinding of that name (the
+    facade alias ``s = Derived``) would make the class its own base.
+
+    """
+    root = base_node
+    while isinstance(root, (ast.Subscript, ast.Attribute)):
+        root = root.value
+    if root is base_node or not isinstance(root, ast.Name):
+        return scope
+    pyname = scope.lookup(root.id)
+    if pyname is None:
+        return scope
+    positioned = _base_binding_at_position(pyname, base_node)
+    if positioned is pyname:
+        return scope
+    return rope.base.pyscopes.TemporaryScope(pycore, scope, {root.id: positioned})
+
+
 def _base_is_external(cls, base_node):
     """Whether a failing base node lives in an installed third-party module.
 
@@ -455,6 +477,7 @@ class PyClass(pyobjects.PyClass):
                 if isinstance(scope, TypeParameterEnvironment):
                     names.update(scope.get_defined_names())
                 scope = rope.base.pyscopes.TemporaryScope(self.pycore, scope, names)
+            scope = _scope_at_base_position(self.pycore, scope, base_node)
             try:
                 evaluated = rope.base.evaluate.eval_node(scope, base_node)
                 bindings.append(_base_binding_at_position(evaluated, base_node))
