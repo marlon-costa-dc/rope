@@ -1143,6 +1143,49 @@ class PyCoreTest(unittest.TestCase):
         self.assertEqual([derived, imported], derived.get_mro())
         self.assertIs(derived["member"], imported["member"])
 
+    def test_subscripted_base_uses_import_before_a_later_self_alias(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Service:
+                member = 1
+                def __class_getitem__(cls, item):
+                    return cls
+            s = Service
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            from provider import s
+            class Guards:
+                pass
+            class AppService(Guards, s[dict]):
+                pass
+            s = AppService
+        """))
+        imported = self.project.get_pymodule(provider)["Service"].get_object()
+        consumer = self.project.get_pymodule(resource)
+        derived = consumer["AppService"].get_object()
+        guards = consumer["Guards"].get_object()
+        self.assertEqual([derived, guards, imported], derived.get_mro())
+        self.assertIs(derived["member"], imported["member"])
+
+    def test_attribute_base_uses_module_before_a_later_rebinding(self):
+        provider = testutils.create_module(self.project, "provider")
+        provider.write(dedent("""\
+            class Base:
+                member = 1
+        """))
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(dedent("""\
+            import provider
+            class Derived(provider.Base):
+                pass
+            provider = Derived
+        """))
+        imported = self.project.get_pymodule(provider)["Base"].get_object()
+        derived = self.project.get_pymodule(resource)["Derived"].get_object()
+        self.assertEqual([derived, imported], derived.get_mro()[:2])
+        self.assertIs(derived["member"], imported["member"])
+
     @unittest.skipUnless(sys.version_info >= (3, 12), "PEP 695 requires Python 3.12")
     def test_generic_class_base_uses_import_before_rebinding_its_name(self):
         self.project.prefs.set("import_dynload_stdmods", True)

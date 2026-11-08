@@ -1,5 +1,11 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.6
+
+- A compound class base (`s[T]`, `pkg.Base`) resolves its root name as it is
+  bound at the class statement. A later facade alias (`s = Derived`) no longer
+  makes the class its own base, which recursed until `RecursionError`.
+
 # Release 1.15.2+dc.5
 
 - Module-identity planning skips the write scan of function and class scopes
