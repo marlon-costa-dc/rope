@@ -2,9 +2,16 @@
 
 Open follow-ups for the `marlon-costa-dc/rope` fork. Update this file whenever an item changes.
 
+## Working rule
+
+- External PRs are followed until their cycle ends (merged or closed).
+- Only remote branches are kept. A local worktree is removed as soon as its work is pushed, and recreated when the branch needs work again.
+- Unique local work is first pushed to a `preserve/*` ref, judged, then adopted or retired.
+
 ## Fork state
 
-- `dc-use` = 64cbd65b, release [1.15.2+dc.4](https://github.com/marlon-costa-dc/rope/releases/tag/1.15.2%2Bdc.4) (base: upstream 1.15.2). Publish verification green.
+- `dc-use` = d94d3c1d, release [1.15.2+dc.5](https://github.com/marlon-costa-dc/rope/releases/tag/1.15.2%2Bdc.5) (base: upstream 1.15.2). Publish verification green.
+- Remote branches: `dc-use`, `master`, one head per open upstream PR, and `datacosmos`/`Sync` (see below).
 
 ## Upstream PRs (python-rope/rope), awaiting maintainer review
 
@@ -12,7 +19,7 @@ All behaviour is already in the fork release. Each fork branch is deleted when i
 
 - [ ] python-rope/rope#938 — Fix the warnings the test suite emits at their source (`pr/test-suite-warnings`)
 - [ ] python-rope/rope#922 — Classify autoimport project sources by path containment (`pr/autoimport-project-containment`)
-- [x] python-rope/rope#921 (merged upstream as 456b210d) — Patch the else suite of try statements that also have a finally (`pr/try-else-finally-regions`)
+- [x] python-rope/rope#921 (merged upstream as 456b210d; branch deleted) — Patch the else suite of try statements that also have a finally
 - [ ] python-rope/rope#920 — Resolve inherited class attributes along the C3 method resolution order (`pr/c3-mro`)
 - [ ] python-rope/rope#919 — Type saveit so decorated members keep their return type (`pr/typed-saveit`)
 - [ ] python-rope/rope#918 — Add match_filter and import_filter hooks to Restructure (`pr/restructure-hooks`)
@@ -25,17 +32,19 @@ All behaviour is already in the fork release. Each fork branch is deleted when i
 - [ ] python-rope/rope#882 — patchedast: locate multi-line f-strings, replacement fields and match-sequence delimiters by parser coordinates (`pr/parser-coordinates`)
 - [ ] python-rope/rope#844 — Fix patchedast aborting on ''' inside a double-quoted f-string (`fix/joinedstr-triple-quote-in-body`)
 
-## Consumer propagation (measured 2026-11-07, installed `.venv`)
+## Consumer propagation (measured 2026-11-07, installed `.venv`, real rename probe)
 
-- [x] flext root — 1.15.2+dc.4
-- [x] flext-infra pin on `0.12.0-dev` (flext-sh/flext-infra#2171); lock-drift gate added (flext-sh/flext-infra#2174)
-- [ ] flext member `uv.lock` files — 21 still resolve `datacosmos#7a6494e8` (blocked on flext bead `flext-zzynv`)
-- [ ] ai-hub — 1.15.0+dc.12; `editable_sources` dropped, awaiting its `make upg`
-- [ ] algar-oud-mig (= devops-oud-iac) — lane `chore/rope-dc4-20261107` (2e6a0486) locks dc.4; landing owned by the algar session
-- [ ] gruponos/merges (dc-recon) — 1.15.2+dc.2, own codegen pin
-- [ ] cosmos-main, docsmos-main, invest, mcb — no `.venv`; locks pin dc.2 or `datacosmos`
+- [x] flext root, ai-hub (`dev`), gruponos/merges (`main`), algar-oud-mig = devops-oud-iac (`dev` f470eaa3): 1.15.2+dc.4
+- [x] Lock-drift gate in flext-infra `check` (flext-sh/flext-infra#2174)
+- [ ] 1.15.2+dc.5 pin in flext-infra `codegen.yaml`, then each consumer `gen` → `upg`
+- [ ] flext member `uv.lock` files still resolving `datacosmos` (flext bead `flext-zzynv`)
+- [ ] mcb: kind `internal_flext` declared on lane `preserve/chore-rope-dc4-20261107`; `gen` blocked by flext bead `flext-wmzp6` and the absent FLEXT family facades
+- [ ] invest (kind `internal_flext`; member vectorbt.pro `third_party_fork`), cosmos-main and docsmos-main: same path as mcb
+
+## Retired local lanes
+
+- `~/flext/.kilo/native/rope` and its codex worktrees: every branch was already on a remote. `b2957ab0` (lazy index with `complete=`) is superseded by the dc.2 index. The global-free scan guard from `rope-zero-global-20261102` was adopted in dc.5. The FLEXT markdown formatting on the fork's docs was not adopted, since the fork follows upstream style.
 
 ## Branch retirement
 
-- [ ] `datacosmos`, `Sync` — delete once no consumer lock references them
-- [x] `~/rope-dc15` on the `dc-use` tip (editable source for `make setup FLEXT=`)
+- [ ] `datacosmos`, `Sync`: delete once no consumer lock references them
