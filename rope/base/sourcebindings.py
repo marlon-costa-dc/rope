@@ -1682,6 +1682,13 @@ class SourceBindingIndex:
                 roots.append(node.value)
         references = []
         for node in roots:
+            if not any(
+                isinstance(part, ast.Constant)
+                and isinstance(part.value, str)
+                and name in part.value
+                for part in ast.walk(node)
+            ):
+                continue
             context = self.context_for_node(node)
             references.extend(
                 self._quoted_type_operands(node, self.source, None, context, name)
