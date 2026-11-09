@@ -6,7 +6,7 @@ import unittest
 from textwrap import dedent
 from typing import TYPE_CHECKING, Union
 
-from rope.base import exceptions
+from rope.base import exceptions, libutils
 from rope.refactor import move, occurrences
 from ropetest import testutils
 
@@ -99,6 +99,37 @@ class MoveRefactoringTest(unittest.TestCase):
         self.assertIn("mod2.Target.Inner()", self.mod3.read())
         namespace = runpy.run_path(self.mod2.real_path)
         self.assertEqual(1, namespace["Target"].Inner().size({"a": 1}))
+
+    def test_move_nested_class_preserves_explicit_namespace_import_root(self):
+        project = testutils.sample_project(source_folders=[""])
+        try:
+            namespace = project.root.create_folder("infra")
+            package = testutils.create_package(project, "contracts", namespace)
+            origin = testutils.create_module(project, "origin", package)
+            target = testutils.create_module(project, "current", package)
+            consumer = testutils.create_module(project, "consumer")
+            origin.write(dedent("""\
+                class Owner:
+                    class Inner:
+                        pass
+            """))
+            target.write(dedent("""\
+                class Target:
+                    pass
+            """))
+            consumer.write(dedent("""\
+                from infra.contracts.origin import Owner
+                value = Owner.Inner()
+            """))
+            self.assertIs(project.get_module("infra.contracts.current"), project.get_pymodule(target))
+            self.assertEqual("infra.contracts.current", libutils.modname(target))
+            mover = move.create_move(project, origin, origin.read().index("Inner"))
+            project.do(mover.get_changes(target, destination_offset=target.read().index("Target")))
+            self.assertIn("infra.contracts.current", consumer.read())
+            namespace = runpy.run_path(target.real_path)
+            self.assertIsInstance(namespace["Target"].Inner(), namespace["Target"].Inner)
+        finally:
+            testutils.remove_project(project)
 
     def test_move_nested_class_with_recursive_nested_references(self):
         self.mod1.write(dedent("""\
