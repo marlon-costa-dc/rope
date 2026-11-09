@@ -942,6 +942,17 @@ representing this operation (which will be an instance of e.g.
 
   mover = create_move(project, resource, offset)
 
+For a nested class, ``create_move`` returns ``MoveClass``. Its
+``get_changes(destination_resource, destination_offset=None, resources=None)``
+transfers the declaration to a module or, when an offset is supplied, an existing
+class. Native references and required imports move with the declaration; the
+returned ``ChangeSet`` does not change resources until applied. Unresolved
+references, occupied destinations and dependencies on an enclosing class are
+rejected before publication.
+An optional ``match_filter(occurrence)`` predicate can retain references whose
+public access path is maintained by the caller's composed destination; direct
+source references otherwise follow the native declaration identity.
+
 Where ``resource`` and ``offset`` is the location to perform the
 refactoring.
 

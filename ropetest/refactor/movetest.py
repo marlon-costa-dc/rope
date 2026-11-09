@@ -69,6 +69,214 @@ class MoveRefactoringTest(unittest.TestCase):
         changes = mover.get_changes(dest_attr, new_name=new_name)
         self.project.do(changes)
 
+    def test_move_nested_class_to_existing_class(self):
+        self.mod1.write(dedent("""\
+            from collections.abc import Mapping
+
+            class Owner:
+                class Inner:
+                    def size(self, value: Mapping[str, int]) -> int:
+                        return len(value)
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        self.mod3.write(dedent("""\
+            from mod1 import Owner
+            value = Owner.Inner()
+        """))
+        mover = move.create_move(
+            self.project, self.mod1, self.mod1.read().index("Inner")
+        )
+        changes = mover.get_changes(
+            self.mod2, destination_offset=self.mod2.read().index("Target")
+        )
+        self.project.do(changes)
+        self.assertNotIn("class Inner", self.mod1.read())
+        self.assertIn("class Inner", self.mod2.read())
+        self.assertIn("Mapping", self.mod2.read())
+        self.assertIn("mod2.Target.Inner()", self.mod3.read())
+        namespace = runpy.run_path(self.mod2.real_path)
+        self.assertEqual(1, namespace["Target"].Inner().size({"a": 1}))
+
+    def test_move_nested_class_with_recursive_nested_references(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    class Child:
+                        pass
+                    def clone(self):
+                        return Owner.Inner()
+                    def child(self):
+                        return Owner.Inner.Child()
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        self.project.do(mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target")))
+        namespace = runpy.run_path(self.mod2.real_path)
+        inner = namespace["Target"].Inner
+        self.assertIsInstance(inner().clone(), inner)
+        self.assertIsInstance(inner().child(), inner.Child)
+
+    def test_move_nested_class_to_module(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+        """))
+        self.mod3.write(dedent("""\
+            from mod1 import Owner
+            value = Owner.Inner()
+        """))
+        self._move(self.mod1, self.mod1.read().index("Inner"), self.mod2)
+        self.assertIn("mod2.Inner()", self.mod3.read())
+        self.assertIn("class Inner:", self.mod2.read())
+        compile(self.mod1.read(), self.mod1.path, "exec")
+
+    def test_move_nested_class_in_same_module(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+            class Target:
+                pass
+            value = Owner.Inner()
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        self.project.do(mover.get_changes(self.mod1, destination_offset=self.mod1.read().index("Target")))
+        namespace = runpy.run_path(self.mod1.real_path)
+        self.assertIsInstance(namespace["value"], namespace["Target"].Inner)
+
+    def test_move_nested_class_rejects_enclosing_class_dependency(self):
+        source = dedent("""\
+            class Owner:
+                class Base:
+                    pass
+                class Inner(Base):
+                    pass
+        """)
+        self.mod1.write(source)
+        mover = move.create_move(self.project, self.mod1, source.index("Inner"))
+        with self.assertRaisesRegex(exceptions.RefactoringError, "enclosing"):
+            mover.get_changes(self.mod2)
+        self.assertEqual(source, self.mod1.read())
+
+    def test_move_nested_class_rejects_shadowed_enclosing_dependency(self):
+        source = dedent("""\
+            Base = object
+            class Owner:
+                class Base:
+                    pass
+                class Inner(Base):
+                    pass
+        """)
+        self.mod1.write(source)
+        mover = move.create_move(self.project, self.mod1, source.index("Inner"))
+        with self.assertRaisesRegex(exceptions.RefactoringError, "enclosing"):
+            mover.get_changes(self.mod2)
+        self.assertEqual(source, self.mod1.read())
+
+    def test_move_decorated_nested_class_copies_imports(self):
+        self.mod1.write(dedent("""\
+            from dataclasses import dataclass
+            class Owner:
+                @dataclass
+                class Inner:
+                    value: int
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        self.project.do(mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target")))
+        namespace = runpy.run_path(self.mod2.real_path)
+        self.assertEqual(3, namespace["Target"].Inner(3).value)
+
+    def test_move_nested_class_rejects_destination_collision(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+        """))
+        destination = dedent("""\
+            class Target:
+                class Inner:
+                    pass
+        """)
+        self.mod2.write(destination)
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        with self.assertRaisesRegex(exceptions.RefactoringError, "Occupied"):
+            mover.get_changes(self.mod2, destination_offset=destination.index("Target"))
+        self.assertEqual(destination, self.mod2.read())
+
+    def test_move_nested_class_reference_filter_keeps_composed_access(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+            class Public(Owner):
+                pass
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        self.mod3.write(dedent("""\
+            from mod1 import Owner, Public
+            direct = Owner.Inner
+            composed = Public.Inner
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        public = self.project.get_pymodule(self.mod1)["Public"].get_object()
+        changes = mover.get_changes(
+            self.mod2,
+            destination_offset=self.mod2.read().index("Target"),
+            match_filter=lambda occurrence: occurrence.get_primary_and_pyname()[0].get_object() is not public,
+        )
+        self.project.do(changes)
+        self.assertIn("direct = mod2.Target.Inner", self.mod3.read())
+        self.assertIn("composed = Public.Inner", self.mod3.read())
+
+    def test_move_nested_class_rejects_import_collision(self):
+        self.mod1.write(dedent("""\
+            from collections.abc import Mapping
+            class Owner:
+                class Inner:
+                    value: Mapping
+        """))
+        self.mod2.write(dedent("""\
+            Mapping = str
+            class Target:
+                pass
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        with self.assertRaisesRegex(exceptions.RefactoringError, "import conflicts"):
+            mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target"))
+
+    def test_move_nested_class_rejects_consumer_import_shadow(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        self.mod3.write(dedent("""\
+            from mod1 import Owner
+            def use(mod2):
+                return Owner.Inner()
+        """))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        with self.assertRaisesRegex(exceptions.RefactoringError, "consumer binding"):
+            mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target"))
+
     def test_transfer_methods_to_enclosing_class_in_same_module(self):
         self.mod1.write(dedent("""\
             value = 7
