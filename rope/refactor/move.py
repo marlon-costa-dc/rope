@@ -2213,10 +2213,9 @@ class MoveClass:
                         "Cannot move a written class reference."
                     )
                 start, end = occurrence.get_primary_range()
-                words = worder.Worder(module.source_code)
-                prefix, _, _ = words.get_splitted_primary_before(end)
-                if prefix and not all(
-                    part.isidentifier() for part in prefix.split(".")
+                if not all(
+                    part.isidentifier()
+                    for part in occurrence.get_primary_text().split(".")
                 ):
                     raise exceptions.RefactoringError(
                         "Class reference has an effectful receiver."

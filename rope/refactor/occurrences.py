@@ -82,8 +82,21 @@ class Finder:
         tools = _OccurrenceToolsCreator(
             self.project, resource=resource, pymodule=pymodule, docs=self.docs
         )
-        for offset in self._textual_finder.find_offsets(tools.source_code):
-            occurrence = Occurrence(tools, offset)
+        quoted = (
+            {
+                reference[0]: reference
+                for reference in tools.pymodule.get_source_binding_index().quoted_annotation_references(
+                    self.name
+                )
+            }
+            if self.name in tools.source_code or "\\" in tools.source_code
+            else {}
+        )
+        offsets = (
+            set(self._textual_finder.find_offsets(tools.source_code)) | quoted.keys()
+        )
+        for offset in sorted(offsets):
+            occurrence = Occurrence(tools, offset, quoted.get(offset))
             for filter in self.filters:
                 result = filter(occurrence)
                 if result is None:
@@ -140,26 +153,41 @@ def create_finder(
 
 
 class Occurrence:
-    def __init__(self, tools, offset):
+    def __init__(self, tools, offset, quoted=None):
         self.tools = tools
         self.offset = offset
         self.resource = tools.resource
+        self.quoted = quoted
 
     @utils.saveit
     def get_word_range(self):
+        if self.quoted is not None:
+            return self.quoted[:2]
         return self.tools.word_finder.get_word_range(self.offset)
 
     @utils.saveit
     def get_primary_range(self):
+        if self.quoted is not None:
+            return self.quoted[2:4]
         return self.tools.word_finder.get_primary_range(self.offset)
+
+    def get_primary_text(self):
+        if self.quoted is not None:
+            return self.quoted[5]
+        start, end = self.get_primary_range()
+        return self.tools.source_code[start:end]
 
     @utils.saveit
     def get_pyname(self):
+        if self.quoted is not None:
+            return self.get_primary_and_pyname()[1]
         with contextlib.suppress(exceptions.BadIdentifierError):
             return self.tools.name_finder.get_pyname_at(self.offset)
 
     @utils.saveit
     def get_primary_and_pyname(self):
+        if self.quoted is not None:
+            return evaluate.eval_str2(self.quoted[4].environment, self.quoted[5])
         with contextlib.suppress(exceptions.BadIdentifierError):
             return self.tools.name_finder.get_primary_and_pyname_at(self.offset)
 
@@ -172,23 +200,33 @@ class Occurrence:
         )
 
     def is_called(self):
+        if self.quoted is not None:
+            return False
         return self.tools.word_finder.is_a_function_being_called(self.offset)
 
     def is_defined(self):
+        if self.quoted is not None:
+            return False
         return self.tools.word_finder.is_a_class_or_function_name_in_header(self.offset)
 
     def is_a_fixed_primary(self):
+        if self.quoted is not None:
+            return False
         return self.tools.word_finder.is_a_class_or_function_name_in_header(
             self.offset
         ) or self.tools.word_finder.is_a_name_after_from_import(self.offset)
 
     def is_written(self):
+        if self.quoted is not None:
+            return False
         return self.tools.word_finder.is_assigned_here(self.offset)
 
     def is_unsure(self):
         return unsure_pyname(self.get_pyname())
 
     def is_function_keyword_parameter(self):
+        if self.quoted is not None:
+            return False
         return self.tools.word_finder.is_function_keyword_parameter(self.offset)
 
     @property

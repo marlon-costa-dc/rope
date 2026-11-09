@@ -230,6 +230,8 @@ class MoveRefactoringTest(unittest.TestCase):
             from mod1 import Owner, Public
             direct = Owner.Inner
             composed = Public.Inner
+            direct_annotation: 'Owner.Inner'
+            composed_annotation: 'Public.Inner'
         """))
         mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
         public = self.project.get_pymodule(self.mod1)["Public"].get_object()
@@ -241,6 +243,8 @@ class MoveRefactoringTest(unittest.TestCase):
         self.project.do(changes)
         self.assertIn("direct = mod2.Target.Inner", self.mod3.read())
         self.assertIn("composed = Public.Inner", self.mod3.read())
+        self.assertIn("direct_annotation: 'mod2.Target.Inner'", self.mod3.read())
+        self.assertIn("composed_annotation: 'Public.Inner'", self.mod3.read())
 
     def test_move_nested_class_filter_preserves_exact_proven_destination_sites(self):
         for unknown in (False, True):
@@ -306,6 +310,41 @@ class MoveRefactoringTest(unittest.TestCase):
         mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
         with self.assertRaisesRegex(exceptions.RefactoringError, "import conflicts"):
             mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target"))
+
+    def test_move_nested_class_rewrites_quoted_type_operands_only(self):
+        self.mod1.write(dedent("""\
+            class Owner:
+                class Inner:
+                    pass
+        """))
+        self.mod2.write(dedent("""\
+            class Target:
+                pass
+        """))
+        self.mod3.write(dedent('''\
+            from typing import Annotated as Meta, Literal as Value, ForwardRef as Ref
+            from mod1 import Owner as Legacy
+            text = "Legacy.Inner"
+            def consume(value: 'Legacy.Inner') -> "list['Legacy.Inner']":
+                """Legacy.Inner is explanatory text."""
+                return [value]
+            variable: 'Legacy.Inner'
+            literal: Value['Legacy.Inner']
+            metadata: Meta['Legacy.Inner', 'Legacy.Inner']
+            explicit: Ref('Legacy.Inner')
+            escaped: "list[\\\"Legacy.Inner\\\"]"
+        '''))
+        mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+        self.project.do(mover.get_changes(self.mod2, destination_offset=self.mod2.read().index("Target")))
+        self.assertIn("value: 'mod2.Target.Inner'", self.mod3.read())
+        self.assertIn('"list[\'mod2.Target.Inner\']"', self.mod3.read())
+        self.assertIn("variable: 'mod2.Target.Inner'", self.mod3.read())
+        self.assertIn("Value['Legacy.Inner']", self.mod3.read())
+        self.assertIn("Meta['mod2.Target.Inner', 'Legacy.Inner']", self.mod3.read())
+        self.assertIn("Ref('mod2.Target.Inner')", self.mod3.read())
+        self.assertIn('escaped: "list[\\\"mod2.Target.Inner\\\"]"', self.mod3.read())
+        self.assertIn('text = "Legacy.Inner"', self.mod3.read())
+        self.assertIn('"""Legacy.Inner is explanatory text."""', self.mod3.read())
 
     def test_move_nested_class_rejects_consumer_import_shadow(self):
         self.mod1.write(dedent("""\

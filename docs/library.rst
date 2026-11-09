@@ -952,6 +952,9 @@ rejected before publication.
 An optional ``match_filter(occurrence)`` predicate can retain references whose
 public access path is maintained by the caller's composed destination; direct
 source references otherwise follow the native declaration identity.
+Quoted type annotations use the native source-binding index, including nested
+forward references. Literal values, annotation metadata, executable strings and
+docstrings remain outside this semantic type-reference surface.
 
 Where ``resource`` and ``offset`` is the location to perform the
 refactoring.
