@@ -1692,7 +1692,6 @@ class SourceBindingIndex:
     def _quoted_type_operands(self, node, source, coordinates, context, name):
         from rope.base import builtins, evaluate
 
-        positions = codeanalyze.ASTLinesAdapter(source)
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if name not in node.value:
                 return
@@ -1700,6 +1699,11 @@ class SourceBindingIndex:
                 expression = ast.parse(node.value, mode="eval").body
             except SyntaxError:
                 return
+            positions = (
+                self.lines
+                if coordinates is None
+                else codeanalyze.ASTLinesAdapter(source)
+            )
             start, end = positions[node]
             token = source[start:end]
             opening = next(index for index, char in enumerate(token) if char in "\"'")
@@ -1739,6 +1743,7 @@ class SourceBindingIndex:
                 coordinates is not None
                 and (node.id if isinstance(node, ast.Name) else node.attr) == name
             ):
+                positions = codeanalyze.ASTLinesAdapter(source)
                 first, last = positions[node]
                 word = last - len(name)
                 yield (
