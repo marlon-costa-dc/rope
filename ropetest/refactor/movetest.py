@@ -352,8 +352,11 @@ class MoveRefactoringTest(unittest.TestCase):
             class Target:
                 pass
         """))
+        self.mod4.write("class ForwardRef: pass\n")
         self.mod3.write(dedent('''\
             from typing import Annotated as Meta, Literal as Value, ForwardRef as Ref
+            import typing as ty
+            from pkg.mod4 import ForwardRef as Fake
             from mod1 import Owner as Legacy
             text = "Legacy.Inner"
             def consume(value: 'Legacy.Inner') -> "list['Legacy.Inner']":
@@ -363,6 +366,8 @@ class MoveRefactoringTest(unittest.TestCase):
             literal: Value['Legacy.Inner']
             metadata: Meta['Legacy.Inner', 'Legacy.Inner']
             explicit: Ref('Legacy.Inner')
+            qualified: ty.ForwardRef('Legacy.Inner')
+            unrelated: Fake('Legacy.Inner')
             escaped: "list[\\\"Legacy.Inner\\\"]"
         '''))
         mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
@@ -373,6 +378,8 @@ class MoveRefactoringTest(unittest.TestCase):
         self.assertIn("Value['Legacy.Inner']", self.mod3.read())
         self.assertIn("Meta['mod2.Target.Inner', 'Legacy.Inner']", self.mod3.read())
         self.assertIn("Ref('mod2.Target.Inner')", self.mod3.read())
+        self.assertIn("ty.ForwardRef('mod2.Target.Inner')", self.mod3.read())
+        self.assertIn("Fake('Legacy.Inner')", self.mod3.read())
         self.assertIn('escaped: "list[\\\"mod2.Target.Inner\\\"]"', self.mod3.read())
         self.assertIn('text = "Legacy.Inner"', self.mod3.read())
         self.assertIn('"""Legacy.Inner is explanatory text."""', self.mod3.read())

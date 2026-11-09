@@ -1779,9 +1779,19 @@ class SourceBindingIndex:
                     argument, source, coordinates, context, name
                 )
         elif isinstance(node, ast.Call):
+            forward_ref = typing.ForwardRef
             binding = evaluate.eval_node(context.environment, node.func)
             origin = None if binding is None else binding.get_object()
-            if builtins._is_runtime_class(origin, typing.ForwardRef) and node.args:
+            attribute = None
+            if binding is None and isinstance(node.func, ast.Attribute):
+                binding = evaluate.eval_node(context.environment, node.func.value)
+                attribute = node.func.attr
+            if (
+                builtins._is_runtime_class(
+                    origin, forward_ref, binding=binding, attribute=attribute
+                )
+                and node.args
+            ):
                 yield from self._quoted_type_operands(
                     node.args[0], source, coordinates, context, name
                 )
