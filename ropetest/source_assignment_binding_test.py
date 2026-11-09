@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from rope.base import evaluate
+from rope.base import codeanalyze, evaluate
 from rope.base.project import Project
 
 
@@ -39,3 +39,11 @@ def test_unpack_targets_resolve_to_later_references_and_preserve_keywords(tmp_pa
         assert keyword is parameter
     finally:
         project.close()
+
+
+def test_name_offsets_exclude_literals_and_comments_and_include_fstrings():
+    source = 'árvore = 1  # árvore\ntext = "árvore"\nprint(fr"{árvore}")\n'
+    assert codeanalyze.name_offsets(source, 'árvore') == (
+        source.index('árvore'),
+        source.rindex('árvore'),
+    )
