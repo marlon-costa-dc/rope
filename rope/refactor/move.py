@@ -2195,14 +2195,18 @@ class MoveClass:
         for resource in selected:
             module = self.project.get_pymodule(resource)
             for occurrence in finder.find_occurrences(pymodule=module):
+                if (
+                    not occurrence.is_defined()
+                    and match_filter is not None
+                    and not match_filter(occurrence)
+                ):
+                    continue
                 actual = occurrence.get_pyname()
                 if occurrences.unsure_pyname(
                     actual, unbound=False
                 ) or not occurrences.same_pyname(self.pyname, actual):
                     raise exceptions.RefactoringError("Unproven class reference.")
                 if occurrence.is_defined():
-                    continue
-                if match_filter is not None and not match_filter(occurrence):
                     continue
                 if occurrence.is_written() or occurrence.is_in_import_statement():
                     raise exceptions.RefactoringError(

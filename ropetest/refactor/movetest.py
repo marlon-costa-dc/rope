@@ -7,7 +7,7 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Union
 
 from rope.base import exceptions
-from rope.refactor import move
+from rope.refactor import move, occurrences
 from ropetest import testutils
 
 if TYPE_CHECKING:
@@ -241,6 +241,55 @@ class MoveRefactoringTest(unittest.TestCase):
         self.project.do(changes)
         self.assertIn("direct = mod2.Target.Inner", self.mod3.read())
         self.assertIn("composed = Public.Inner", self.mod3.read())
+
+    def test_move_nested_class_filter_preserves_exact_proven_destination_sites(self):
+        for unknown in (False, True):
+            with self.subTest(unknown=unknown):
+                self.mod1.write(dedent("""\
+                    class Owner:
+                        class Inner:
+                            pass
+                """))
+                self.mod2.write(dedent("""\
+                    class Target:
+                        class Inner:
+                            pass
+                """))
+                self.mod3.write(dedent("""\
+                    import mod1
+                    import mod2
+                    direct = mod1.Owner.Inner()
+                    current = mod2.Target.Inner()
+                """) + (dedent("""\
+                    def unresolved(value):
+                        return value.Inner
+                """) if unknown else ""))
+                current = self.project.get_pymodule(self.mod2)["Target"].get_object()["Inner"]
+                finder = occurrences.create_finder(self.project, "Inner", current)
+                proven = {
+                    (site.resource.path, site.get_primary_range())
+                    for site in finder.find_occurrences(self.mod3)
+                }
+                self.assertEqual(1, len(proven))
+                self.mod2.write(dedent("""\
+                    class Target:
+                        pass
+                """))
+                mover = move.create_move(self.project, self.mod1, self.mod1.read().index("Inner"))
+                destination_offset = self.mod2.read().index("Target")
+                with self.assertRaisesRegex(exceptions.RefactoringError, "Unproven"):
+                    mover.get_changes(self.mod2, destination_offset=destination_offset)
+                def selected(site):
+                    return (site.resource.path, site.get_primary_range()) not in proven
+                if unknown:
+                    with self.assertRaisesRegex(exceptions.RefactoringError, "Unproven"):
+                        mover.get_changes(self.mod2, destination_offset=destination_offset, match_filter=selected)
+                else:
+                    self.project.do(mover.get_changes(self.mod2, destination_offset=destination_offset, match_filter=selected))
+                    self.assertNotIn("mod1.Owner.Inner", self.mod3.read())
+                    self.assertIn("current = mod2.Target.Inner()", self.mod3.read())
+                    namespace = runpy.run_path(self.mod2.real_path)
+                    self.assertIsInstance(namespace["Target"].Inner(), namespace["Target"].Inner)
 
     def test_move_nested_class_rejects_import_collision(self):
         self.mod1.write(dedent("""\
