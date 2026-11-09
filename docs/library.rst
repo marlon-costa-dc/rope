@@ -955,6 +955,11 @@ source references otherwise follow the native declaration identity.
 Quoted type annotations use the native source-binding index, including nested
 forward references. Literal values, annotation metadata, executable strings and
 docstrings remain outside this semantic type-reference surface.
+Package reexports, alias chains and inherited nested classes retain their native
+binding identities; C3 chooses overrides rather than matching names. Explicit
+namespace roots and class paths have no policy depth limit. Transfers into an
+existing holder normalize self-imports through ImportUtils and preserve evaluated
+sibling bases in the destination class's lexical scope.
 
 Where ``resource`` and ``offset`` is the location to perform the
 refactoring.

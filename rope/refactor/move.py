@@ -2222,6 +2222,29 @@ class MoveClass:
                     )
                 edits[resource][start, end] = placeholder + "." + name
         collector = codeanalyze.ChangeCollector(sources[self.source][first:last])
+        if path:
+            index = self.pyclass.get_module().get_source_binding_index()
+            for base in self.pyclass.get_ast().bases:
+                for node in ast.walk(base):
+                    if not isinstance(node, (ast.Name, ast.Attribute)):
+                        continue
+                    binding = evaluate.eval_node(
+                        index.context_for_node(node).environment, node
+                    )
+                    if occurrences.unsure_pyname(binding, unbound=False):
+                        continue
+                    for member, target_binding in destination.get_attributes().items():
+                        if (
+                            binding.get_object() is target_binding.get_object()
+                            and isinstance(
+                                binding.get_object(), pyobjects.AbstractClass
+                            )
+                        ):
+                            start, end = codeanalyze.ASTLinesAdapter(
+                                sources[self.source]
+                            )[node]
+                            collector.add_change(start - first, end - first, member)
+                            break
         for (start, end), replacement in edits[self.source].items():
             if first <= start and end <= last:
                 collector.add_change(start - first, end - first, replacement)
@@ -2233,6 +2256,24 @@ class MoveClass:
             moving, imports = moving_code_with_imports(
                 self.project, self.source, moving
             )
+            snippet = (
+                "\n".join(info.get_import_statement() for info in imports)
+                + "\n"
+                + moving
+            )
+            tools = importutils.ImportTools(self.project)
+            normalized = tools._remove_self_imports(
+                libutils.get_string_module(self.project, snippet, dest)
+            )
+            module_imports = tools.module_imports(normalized)
+            imports = [
+                statement.import_info
+                for statement in module_imports.imports
+                if not statement.import_info.is_empty()
+            ]
+            for statement in module_imports.imports:
+                statement.empty_import()
+            moving = module_imports.get_changed_source().lstrip("\n")
         planned = {}
         for resource, source in sources.items():
             collector = codeanalyze.ChangeCollector(source)
@@ -2262,7 +2303,9 @@ class MoveClass:
                     for child in scope.get_scopes()
                     if child.pyobject.get_name() == part
                 )
-            result = sourceutils.add_methods(module, scope, [moving.rstrip()])
+            result = sourceutils.add_methods(
+                module, scope, [moving.rstrip()], at_end=True
+            )
         else:
             result = planned[dest].rstrip() + "\n\n" + moving
         module = libutils.get_string_module(self.project, result, dest)
@@ -2312,6 +2355,11 @@ class MoveClass:
         changes = ChangeSet(f"Moving class <{self.pyclass.get_name()}>")
         for resource, source in planned.items():
             if source != sources[resource]:
+                if resource in (self.source, dest):
+                    module = libutils.get_string_module(self.project, source, resource)
+                    source = importutils.ImportTools(self.project).organize_imports(
+                        module, sort=False
+                    )
                 changes.add_change(ChangeContents(resource, source))
         return changes
 
