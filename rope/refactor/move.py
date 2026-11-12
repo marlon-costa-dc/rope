@@ -2119,9 +2119,26 @@ class MoveGlobal:
         )
         self.import_tools = self.tools.import_tools
 
-    def _import_filter(self, stmt):
+    def _import_filter(self, stmt, folder=None):
+        """Select the statements that import the moved name or its source module.
+
+        ``folder`` is the importing module's folder; relative statements are
+        resolved from it to the module they import.
+        """
         module_name = libutils.modname(self.source)
 
+        if (
+            isinstance(stmt.import_info, importutils.FromImport)
+            and stmt.import_info.level
+        ):
+            context = importinfo.ImportContext(self.project, folder)
+            imported = stmt.import_info.get_imported_resource(context)
+            if imported == self.source:
+                return True
+            basename = module_name.rsplit(".", 1)[-1]
+            return imported == self.source.parent and any(
+                basename == name for name, alias in stmt.import_info.names_and_aliases
+            )
         if isinstance(stmt.import_info, importutils.NormalImport):
             # Affect any statement that imports the source module
             return any(
@@ -2223,7 +2240,9 @@ class MoveGlobal:
                 # Removing out of date imports
                 pymodule = self.tools.new_pymodule(pymodule, source)
                 source = self.import_tools.organize_imports(
-                    pymodule, sort=False, import_filter=self._import_filter
+                    pymodule,
+                    sort=False,
+                    import_filter=lambda stmt: self._import_filter(stmt, file_.parent),
                 )
                 # Adding new import
                 if should_import:
@@ -2297,7 +2316,7 @@ class MoveGlobal:
             sort=False,
             selfs=False,
             unused=True,
-            import_filter=self._import_filter,
+            import_filter=lambda stmt: self._import_filter(stmt, dest.parent),
         )
         return ChangeContents(dest, source)
 
