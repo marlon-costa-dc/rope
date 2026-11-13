@@ -287,7 +287,7 @@ class SOAVisitor(rope.base.ast.RopeNodeVisitor):
                     self._protocol_call(right, names[1], [left])
             left = right
 
-    def _evaluate_assign_value(self, node, nodes, type_hint=False):
+    def _evaluate_assign_value(self, node, nodes, type_hint=None):
         for target, levels in nodes:
             instance = evaluate.eval_node(self.scope, target.value)
             if isinstance(target, rope.base.ast.Attribute):
