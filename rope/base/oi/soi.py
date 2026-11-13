@@ -5,6 +5,8 @@ package.
 
 """
 
+import typing
+
 import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import arguments, ast, evaluate, pynames, pyobjects, utils
 from rope.base.oi.type_hinting.factory import get_type_hinting_factory
@@ -287,8 +289,33 @@ def _parameter_objects(pyobject):
 # handling `rope.base.pynames.AssignmentValue`
 
 
+def _declared_alias_value(assignment, pymodule):
+    """Bind a PEP 613 ``X: TypeAlias = Y`` to ``Y`` itself, as ``X = Y`` does.
+
+    The annotation declares an alias, not the type of an instance, so the
+    assignment is inferred from its value once the annotation resolves to the
+    runtime ``typing.TypeAlias`` form (``typing_extensions`` re-exports it).
+    """
+    hint = assignment.type_hint
+    if hint is None or assignment.ast_node is None:
+        return assignment
+    scope = pymodule.get_scope().get_inner_scope_for_line(_get_lineno_for_node(hint))
+    form = evaluate.eval_node(scope, hint)
+    if form is None or not rope.base.builtins._is_runtime_form(
+        form.get_object(), typing.TypeAlias
+    ):
+        return assignment
+    return pynames.AssignmentValue(
+        assignment.ast_node,
+        assignment.levels,
+        assignment.evaluation,
+        branch_context=assignment.branch_context,
+    )
+
+
 @_ignore_inferred
 def _infer_assignment(assignment, pymodule, *, branch_context=(), source_epoch=False):
+    assignment = _declared_alias_value(assignment, pymodule)
     assign_node = assignment.type_hint or assignment.ast_node
     if isinstance(assign_node, ast.pattern):
         return pyobjects.get_unknown()

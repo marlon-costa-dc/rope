@@ -306,6 +306,42 @@ class PyCoreTest(unittest.TestCase):
                 actual = [cls.get_name() for cls in mod[name].get_object().get_mro()]
                 self.assertEqual(expected, actual)
 
+    def test_bases_through_annotated_type_aliases_resolve_the_class(self):
+        code = dedent("""\
+            import typing
+            from typing import TypeAlias as Declared
+            class Parts:
+                class Root[T]:
+                    pass
+            class Facade(Parts):
+                Root: Declared = Parts.Root
+            Alias: typing.TypeAlias = Parts.Root
+            class ViaFacade(Facade.Root[int]):
+                pass
+            class ViaModule(Alias[int]):
+                pass
+            class Plain(Alias):
+                pass
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        root = mod["Parts"].get_object()["Root"].get_object()
+        for name in ("ViaFacade", "ViaModule", "Plain"):
+            with self.subTest(name=name):
+                self.assertEqual([root], mod[name].get_object().get_superclasses())
+
+    def test_annotation_named_like_type_alias_still_types_an_instance(self):
+        code = dedent("""\
+            class TypeAlias:
+                pass
+            class Root:
+                pass
+            value: TypeAlias = Root
+        """)
+        mod = libutils.get_string_module(self.project, code)
+        self.assertEqual(
+            mod["TypeAlias"].get_object(), mod["value"].get_object().get_type()
+        )
+
     def test_base_type_markers_are_not_class_objects(self):
         for name in ("Type", "Module", "Function", "Unknown"):
             with self.subTest(marker=name):
