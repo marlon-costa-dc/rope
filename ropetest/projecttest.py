@@ -1313,6 +1313,29 @@ class RopeFolderTest(unittest.TestCase):
         myfile = self.project.get_file("pyproject.py")
         self.assertFalse(self.project.is_ignored(myfile))
 
+    def test_explicit_prefs_without_config_files_ignore_an_invalid_pyproject(self):
+        self.project = testutils.sample_project()
+        config = self.project.get_file("pyproject.toml")
+        if not config.exists():
+            config.create()
+        config.write(dedent("""\
+            [tool.rope]
+            ignored_resources=["pyproject.py"]
+            <<<<<<< HEAD
+            =======
+            >>>>>>> incoming
+        """))
+        self.project.close()
+        self.project = Project(
+            self.project.address,
+            config_files=False,
+            ignored_resources=["explicit.py"],
+        )
+        self.assertTrue(self.project.is_ignored(self.project.get_file("explicit.py")))
+        self.assertFalse(
+            self.project.is_ignored(self.project.get_file("pyproject.py"))
+        )
+
     def test_ignoring_syntax_errors(self):
         self.project = testutils.sample_project(
             ropefolder=None, ignore_syntax_errors=True

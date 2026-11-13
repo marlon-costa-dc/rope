@@ -255,6 +255,8 @@ class Project(_Project):
         fscommands=None,
         ropefolder=".ropeproject",
         external_project=None,
+        *,
+        config_files=True,
         **prefs,
     ):
         """A rope project
@@ -269,6 +271,9 @@ class Project(_Project):
             - `external_project`: Resource owner for Python-path modules.
               Pass a separate ``NoProject`` with the same filesystem commands
               to keep external and local reads in one captured filesystem.
+            - `config_files`: Pass ``False`` to take preferences only from
+              `prefs` over the defaults; no ``pyproject.toml``, ropefolder
+              ``config.py`` or global configuration is read.
             - `prefs`: Specify project preferences.  These values
               overwrite config file preferences.
 
@@ -282,6 +287,7 @@ class Project(_Project):
         assert isinstance(projectroot, str)
         self._address = projectroot
         self._ropefolder_name = ropefolder
+        self._config_files = config_files
         filesystem = (
             rope.base.fscommands.FileSystemCommands()
             if fscommands is None
@@ -349,7 +355,11 @@ class Project(_Project):
         folder.create()
 
     def _init_prefs(self, prefs):
-        config = get_config(self.root, self.ropefolder).parse()
+        config = (
+            get_config(self.root, self.ropefolder).parse()
+            if self._config_files
+            else Prefs()
+        )
         self.prefs = config
         self.prefs.add_callback("ignored_resources", self.ignored.set_patterns)
         self.ignored.set_patterns(self.prefs.ignored_resources)
