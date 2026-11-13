@@ -1509,6 +1509,16 @@ class SourceBindingIndex:
             )
         return tuple(assignments)
 
+    @staticmethod
+    def _literal_strings(value):
+        """Return the strings of a literal list, tuple or set, else None."""
+        if isinstance(value, (ast.List, ast.Tuple, ast.Set)) and all(
+            isinstance(item, ast.Constant) and isinstance(item.value, str)
+            for item in value.elts
+        ):
+            return tuple(item.value for item in value.elts)
+        return None
+
     def assignment_string_sequence(self, name, scope=None, *, class_metadata=False):
         """Read a direct string-sequence declaration from the existing parse."""
         if scope is not None and class_metadata:
@@ -1523,21 +1533,37 @@ class SourceBindingIndex:
         body = module_body if scope is None else scope.pyobject.get_ast().body
         visited = set()
         declared = False
+        suffix = ()
         while (id(body), name) not in visited:
+            # Python binds the last direct assignment; a later ``+=`` extends
+            # it and a bare annotation never rebinds an assigned name.
+            found = False
+            value = None
+            extensions = []
             for statement in body:
+                if isinstance(statement, ast.AugAssign):
+                    if (
+                        found
+                        and isinstance(statement.target, ast.Name)
+                        and statement.target.id == name
+                    ):
+                        extensions.append(statement)
+                    continue
                 if isinstance(statement, ast.Assign):
                     targets = statement.targets
                 elif isinstance(statement, ast.AnnAssign):
                     targets = (statement.target,)
                 else:
                     continue
-                if any(
+                if not any(
                     isinstance(target, ast.Name) and target.id == name
                     for target in targets
-                ):
-                    value = statement.value
-                    break
-            else:
+                ) or (found and statement.value is None):
+                    continue
+                found = True
+                value = statement.value
+                extensions = []
+            if not found:
                 if class_metadata and not declared:
                     class_metadata = False
                     classes = [
@@ -1549,13 +1575,16 @@ class SourceBindingIndex:
                 return () if declared else None
             visited.add((id(body), name))
             declared = True
+            extended = ()
+            for extension in extensions:
+                items = self._literal_strings(extension.value)
+                if not isinstance(extension.op, ast.Add) or items is None:
+                    return ()
+                extended += items
+            suffix = extended + suffix
             if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
-                if all(
-                    isinstance(item, ast.Constant) and isinstance(item.value, str)
-                    for item in value.elts
-                ):
-                    return tuple(item.value for item in value.elts)
-                return ()
+                items = self._literal_strings(value)
+                return () if items is None else items + suffix
             if (
                 isinstance(value, ast.Call)
                 and isinstance(value.func, ast.Name)

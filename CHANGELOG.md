@@ -6,6 +6,11 @@
 - `Project(..., config_files=False)` takes preferences only from the supplied
   `prefs` over the defaults, without reading `pyproject.toml`, the ropefolder
   `config.py` or the global configuration.
+- `SourceBindingIndex.assignment_string_sequence` reads the binding Python
+  keeps: the last direct assignment of the name, extended by every later
+  `name += [...]` of literal strings. A bare annotation never rebinds it, and a
+  non-literal extension yields `()`. It previously returned the first
+  assignment, which diverged from the module's effective `__all__`.
 
 # Release 1.15.2+dc.6
 
