@@ -59,7 +59,16 @@ class PyCoreScopesTest(unittest.TestCase):
         cases = (
             ("value = 1\n", None),
             ("names: tuple[str, ...]\n", ()),
-            ("names = ('first',)\nnames = ('second',)\n", ("first",)),
+            ("names = ('first',)\nnames = ('second',)\n", ("second",)),
+            ("names = ('one',)\nnames: tuple[str, ...]\n", ("one",)),
+            ("names = ('one',)\nnames += ['two']\n", ("one", "two")),
+            ("names = ('one',)\nnames += other\n", ()),
+            ("names = ('one',)\nnames = ('two',)\nnames += ('three',)\n", ("two", "three")),
+            (
+                "shared = ('one',)\nshared += ('two',)\n"
+                "names = tuple(shared)\nnames += ('three',)\n",
+                ("one", "two", "three"),
+            ),
             ("alias = names = ['one', 'two']\n", ("one", "two")),
             ("names: tuple[str, ...] = ('é',)\n", ("é",)),
             ("shared = ('one',)\nnames = tuple(shared)\n", ("one",)),
