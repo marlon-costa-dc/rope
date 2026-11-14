@@ -1,0 +1,30 @@
+name: Sync upstream main
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fast-forward main from python-rope
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main
+          previous=$(git rev-parse FETCH_HEAD)
+          git fetch --no-tags https://github.com/python-rope/rope.git refs/heads/master
+          upstream=$(git rev-parse FETCH_HEAD)
+          git merge-base --is-ancestor "$previous" "$upstream"
+          git push origin "$upstream:refs/heads/main"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$upstream"
