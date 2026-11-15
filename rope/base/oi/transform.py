@@ -7,6 +7,18 @@ import rope.base.builtins  # Use full qualification for clarity.
 from rope.base import classfunctions, exceptions, pynames, pyobjects
 
 
+def _canonical_builtin_name(value):
+    if isinstance(value, rope.base.builtins.BuiltinClass):
+        name = getattr(getattr(value, "builtin", None), "__name__", None)
+        namespace = rope.base.builtins.builtins
+        if (
+            name is not None
+            and name in namespace
+            and namespace[name].get_object() is value
+        ):
+            return name
+
+
 def _is_instance_builtin(type_):
     """Tell whether instances of a canonical builtin class use the generic form.
 
@@ -38,6 +50,11 @@ class PyObjectToTextual:
             # A read whose container position or cursor is unproved is not
             # persisted; container element types below are (`_element`).
             return ("unknown",)
+        if (name := _canonical_builtin_name(pyobject)) is not None:
+            return ("builtin", "class", name)
+        return self._shape_to_textual(pyobject)
+
+    def _shape_to_textual(self, pyobject):
         # Subclasses without their own transformation, like literal
         # values, are stored the way their nearest base class is.
         for object_type in type(pyobject).__mro__:
@@ -59,15 +76,14 @@ class PyObjectToTextual:
 
     def PyObject_to_textual(self, pyobject):
         type_ = pyobject.get_type()
-        name = getattr(getattr(type_, "builtin", None), "__name__", None)
         if (
             _is_instance_builtin(type_)
-            and name in rope.base.builtins.builtins
-            and rope.base.builtins.builtins[name].get_object() is type_
+            and (name := _canonical_builtin_name(type_)) is not None
         ):
             return ("builtin", "instance", name)
-        if isinstance(pyobject.get_type(), rope.base.pyobjects.AbstractClass):
-            result = self.transform(pyobject.get_type())
+        if isinstance(type_, pyobjects.AbstractClass):
+            # A builtin's instance shape is not the builtin class value.
+            result = self._shape_to_textual(type_)
             if result[0] == "defined":
                 return ("instance", result)
             return result
@@ -204,6 +220,13 @@ class TextualToPyObject:
             type_ = rope.base.builtins.builtins[textual[2]].get_object()
             if _is_instance_builtin(type_):
                 return rope.base.pyobjects.PyObject(type_)
+
+    def builtin_class_to_pyobject(self, textual):
+        namespace = rope.base.builtins.builtins
+        if textual[2] in namespace:
+            value = namespace[textual[2]].get_object()
+            if isinstance(value, rope.base.builtins.BuiltinClass):
+                return value
 
     def builtin_file_to_pyobject(self, textual):
         return rope.base.builtins.get_file()

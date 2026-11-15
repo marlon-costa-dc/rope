@@ -2,6 +2,10 @@ from rope.base import utils
 from rope.base.oi import objectdb
 from rope.base.serializer import json_to_python, python_to_json
 
+# Legacy builtin returns cannot distinguish classes from instances. Use a
+# separate cache slot so older and newer readers retain their own files.
+_OBJECTDB_NAME = "objectdb.v1"
+
 
 class MemoryDB(objectdb.FileDict):
     def __init__(self, project, persist=None):
@@ -14,8 +18,8 @@ class MemoryDB(objectdb.FileDict):
     def _load_files(self):
         self._files = {}
         if self.persist:
-            result = self.project.data_files.read_data("objectdb")
-            if result is not None:
+            result = self.project.data_files.read_data(_OBJECTDB_NAME)
+            if isinstance(result, dict):
                 self._files = result
 
     def keys(self):
@@ -50,7 +54,7 @@ class MemoryDB(objectdb.FileDict):
 
     def write(self):
         if self.persist:
-            self.project.data_files.write_data("objectdb", self._files)
+            self.project.data_files.write_data(_OBJECTDB_NAME, self._files)
 
     @property
     @utils.deprecated("compress_objectdb is no longer supported")
