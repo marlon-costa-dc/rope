@@ -1,5 +1,7 @@
 # __Upcoming release__
 
+- #844 Add patchedast regression tests for `'''` inside a double-quoted f-string and for an f-string region without a closing quote (@marlon-costa-dc)
+
 # Release 1.15.2+dc.9
 
 - Docstring type hints of inherited methods follow the C3 method resolution
