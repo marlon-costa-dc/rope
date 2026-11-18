@@ -1,5 +1,12 @@
 # __Upcoming release__
 
+- Docstring type hints of inherited methods follow the C3 method resolution
+  order (python-rope/rope#920); a hierarchy Python refuses to create follows
+  its bases as `get_mro()` lists them.
+- The object database keeps a builtin class distinct from its instances. Its
+  cache moves to `objectdb.v1`, so caches written by earlier versions are
+  neither read nor overwritten.
+
 # Release 1.15.2+dc.8
 
 - Branch-sensitive assignment inference takes the body of
@@ -44,7 +51,6 @@
 - #922 Classify autoimport project sources by path containment (@marlon-costa-dc)
 - #926, #929 Raise RefactoringError instead of IndexError/ModuleSyntaxError when extracting an empty or whitespace-only region (@aliassar)
 - #933 Add type annotations to project.py (@lieryan)
-- #920 Resolve inherited class attributes along the C3 method resolution order (@marlon-costa-dc)
 - #119, #928 Fix IndexError in rename and find occurrences when a `from` import is the last thing in a module without a trailing newline (@mcepl)
 - #921 Patch the else suite of try statements that also have a finally (@marlon-costa-dc)
 - #937 Preserve non-ASCII argument expressions and default values when changing function signatures (@Jinyong-Li)
