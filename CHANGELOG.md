@@ -1,5 +1,7 @@
 # __Upcoming release__
 
+# Release 1.15.2+dc.9
+
 - Docstring type hints of inherited methods follow the C3 method resolution
   order (python-rope/rope#920); a hierarchy Python refuses to create follows
   its bases as `get_mro()` lists them.

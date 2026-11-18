@@ -14,21 +14,23 @@ Open follow-ups for the `marlon-costa-dc/rope` fork. Update this file whenever a
   fork's default branch (`master`).
 - `dc-use` is the downstream integration branch. Use the full producer commit
   or the artifact SHA-256 when comparing installations.
-- The published [1.15.2+dc.6](https://github.com/marlon-costa-dc/rope/releases/tag/1.15.2%2Bdc.6)
-  identifies `41b96032`; the later consumer Git pin `4cb40a6f` also declares
-  that version. The next downstream package uses a new local version.
+- The newest published release is
+  [1.15.2+dc.9](https://github.com/marlon-costa-dc/rope/releases/tag/1.15.2%2Bdc.9);
+  its release notes name the producer commit. Every later change to `dc-use`
+  ships under a new local version.
 
 ## Upstream contributions
 
 Merged: [#845](https://github.com/python-rope/rope/pull/845),
 [#921](https://github.com/python-rope/rope/pull/921), and
 [#922](https://github.com/python-rope/rope/pull/922).
-[#938](https://github.com/python-rope/rope/pull/938) was closed; any upstream
+[#920](https://github.com/python-rope/rope/pull/920) and
+[#938](https://github.com/python-rope/rope/pull/938) were closed; any upstream
 follow-up should be split by behavior for review.
 
 Open with the maintainers:
 
-- [ ] python-rope/rope#920 — Resolve inherited class attributes along the C3 method resolution order (`pr/c3-mro`)
+- [ ] python-rope/rope#960 — Preserve relative imports and aliases when moving globals (`fix/upstream-move-global-aliases`)
 - [ ] python-rope/rope#919 — Type saveit so decorated members keep their return type (`pr/typed-saveit`)
 - [ ] python-rope/rope#918 — Add match_filter and import_filter hooks to Restructure (`pr/restructure-hooks`)
 - [ ] python-rope/rope#911 — Route filesystem queries through the fscommands owner (`pr/fscommands-routing`)
