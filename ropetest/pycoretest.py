@@ -4,10 +4,12 @@ import sys
 import tempfile
 import typing
 import unittest
+from pathlib import Path
 from textwrap import dedent
 
 from rope.base import evaluate, exceptions, libutils, pynames
-from rope.base.builtins import BuiltinClass, File, builtins
+from rope.base.builtins import BuiltinClass, File, builtins, get_str
+from rope.base.oi.transform import PyObjectToTextual, TextualToPyObject
 from rope.base.project import Project
 from rope.base.pycore import _TextChangeDetector
 from rope.base.pynamesdef import AssignedName
@@ -678,6 +680,93 @@ class PyCoreTest(unittest.TestCase):
         base = mod["Base"].get_object()
         derived = mod["Derived"].get_object()
         self.assertEqual([derived, base], derived.get_mro())
+
+    def test_cached_class_getitem_keeps_the_builtin_class_as_base(self):
+        code = dedent("""\
+            class Base:
+                @classmethod
+                def __class_getitem__(cls, item):
+                    return str
+
+            selected = Base[str]
+            class Holder:
+                class Derived(Base[str]):
+                    pass
+        """)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual((str,), namespace["Holder"].Derived.__bases__)
+        resource = testutils.create_module(self.project, "consumer")
+        resource.write(code)
+        module = self.project.get_pymodule(resource)
+        string_class = builtins["str"].get_object()
+        self.assertIs(string_class, module["selected"].get_object())
+        derived = module["Holder"].get_object()["Derived"].get_object()
+        self.assertEqual([string_class], derived.get_superclasses())
+
+        encode = PyObjectToTextual(self.project)
+        decode = TextualToPyObject(self.project)
+        self.assertIs(string_class, decode(encode(string_class)))
+        string_instance = encode(get_str())
+        self.assertEqual(("builtin", "str"), string_instance)
+        self.assertIs(string_class, decode(string_instance).get_type())
+
+    def test_unversioned_return_cache_does_not_turn_a_class_into_an_instance(self):
+        source = dedent("""\
+            def factory():
+                return str
+            def label():
+                return ""
+
+            selected = factory()
+            text = label()
+        """)
+        string_class = builtins["str"].get_object()
+        options = dict(save_objectdb=True, save_history=False, automatic_soa=False)
+        with tempfile.TemporaryDirectory() as folder:
+            original = Project(folder, **{**options, "save_objectdb": False})
+            try:
+                resource = testutils.create_module(original, "consumer")
+                resource.write(source)
+                module = original.get_pymodule(resource)
+                self.assertIs(string_class, module["selected"].get_object())
+                self.assertIs(string_class, module["text"].get_object().get_type())
+                legacy = original.pycore.object_info.objectdb.files._files
+                ambiguous = 0
+                for scope in legacy[resource.path].values():
+                    for args, returned in scope.call_info.items():
+                        if returned == ("builtin", "class", "str"):
+                            scope.add_call(args, ("builtin", "str"))
+                            ambiguous += 1
+                self.assertEqual(1, ambiguous)
+            finally:
+                original.close()
+            original.data_files.write_data("objectdb", legacy)
+            original.data_files.write_data("objectdb.v2", {"future": legacy})
+            store = Path(original.ropefolder.real_path)
+            untouched = {
+                path: path.read_bytes()
+                for path in (
+                    store / "objectdb",
+                    store / "objectdb.json",
+                    store / "objectdb.v2",
+                    store / "objectdb.v2.json",
+                )
+            }
+
+            for _ in range(2):
+                reopened = Project(folder, **options)
+                try:
+                    module = reopened.get_pymodule(reopened.get_file(resource.path))
+                    self.assertIs(string_class, module["selected"].get_object())
+                    instance = module["text"].get_object()
+                    self.assertIsNot(string_class, instance)
+                    self.assertIs(string_class, instance.get_type())
+                finally:
+                    reopened.close()
+                for path, initial in untouched.items():
+                    self.assertEqual(initial, path.read_bytes())
+            self.assertTrue((store / "objectdb.v1").is_file())
 
     def test_type_of_class_uses_its_metaclass_without_changing_kind(self):
         code = dedent("""\
