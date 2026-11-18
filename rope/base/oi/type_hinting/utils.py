@@ -125,6 +125,19 @@ def get_lineno_for_node(assign_node):
     return 1
 
 
+def _source_ancestors(pyclass):
+    """Return the ancestors with source, in method resolution order
+
+    A hierarchy Python refuses to create has no method resolution order;
+    its ancestors follow the bases as `get_mro()` lists them.
+
+    """
+    mro = pyclass.get_consistent_mro()
+    if mro is None:
+        mro = get_mro(pyclass)
+    return [cls for cls in mro[1:] if isinstance(cls, PyClass)]
+
+
 def get_mro(pyclass):
     # FIXME: to use real mro() result
     class_list = [pyclass]

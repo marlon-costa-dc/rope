@@ -373,6 +373,31 @@ class PyClass(pyobjects.PyClass):
         self._bases.set(None)
         self._mro.set(None)
 
+    def get_mro(self):
+        return self._linearize(strict=True)
+
+    def get_consistent_mro(self):
+        return self._linearize(strict=False)
+
+    def _linearize(self, strict):
+        if self._mro.get() is None:
+            bases = self.get_superclasses()
+            if self._linearizing:
+                if not strict:
+                    return None
+                raise exceptions.InconsistentHierarchyError(
+                    "Cyclic class inheritance: %s" % self.get_name()
+                )
+            self._linearizing = True
+            try:
+                mro = pyobjects.linearize(self, bases, strict=strict)
+            finally:
+                self._linearizing = False
+            if mro is None:
+                return None
+            self._mro.set(mro)
+        return self._mro.get()
+
     def get_name(self):
         return self.get_ast().name
 
