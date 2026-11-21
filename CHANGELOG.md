@@ -1,6 +1,10 @@
 # __Upcoming release__
 
 - #844 Add patchedast regression tests for `'''` inside a double-quoted f-string and for an f-string region without a closing quote (@marlon-costa-dc)
+- External class-data planning skips a module that has no direct class
+  attribute write: the global-scope scan, binding counts and reader index are
+  built only when a plan can exist, and import source lookup returns at once
+  for a module without plans.
 
 # Release 1.15.2+dc.9
 
