@@ -177,12 +177,52 @@ class _ModulePlanContext:
 def _plan_context(module):
     tree = module.get_ast()
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
-    bindings = _count_module_bindings(tree)
     assignments = defaultdict(list)
     # One breadth-first pass yields the node list in ast.walk order and the
     # parent map together; the scope and write phases below consume the list
     # instead of re-walking the whole tree three more times.
-    nodes, parents = _walk_with_parents(tree)
+    nodes, parents = _walk_with_parents(tree) if classes else ((), {})
+    writes = defaultdict(list)
+    alias_writes = []
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            targets = [
+                child
+                for target in node.targets
+                for child in ast.walk(target)
+                if isinstance(child, (ast.Name, ast.Attribute))
+                and isinstance(child.ctx, ast.Store)
+            ]
+            for target in targets:
+                if isinstance(target, ast.Name) and parents.get(node) is tree:
+                    assignments[target.id].append(node)
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id in classes
+                ):
+                    writes[target.value.id, target.attr].append(node)
+                elif isinstance(target, ast.Attribute) and isinstance(
+                    target.value, ast.Name
+                ):
+                    alias_writes.append((target, node))
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            target = node.target
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id in classes
+            ):
+                writes[target.value.id, target.attr].append(node)
+            elif isinstance(target, ast.Attribute) and isinstance(
+                target.value, ast.Name
+            ):
+                alias_writes.append((target, node))
+    # Every plan starts from a direct class write and alias writes only
+    # augment one, so a module without them has nothing to plan.
+    if not writes:
+        return _ModulePlanContext(tree=tree, classes=classes, writes=writes)
+    bindings = _count_module_bindings(tree)
     seen_class_bindings = {}
 
     def class_bindings(node):
@@ -237,43 +277,6 @@ def _plan_context(module):
                     assignments[name].append(parent)
                 else:
                     assignments[name].append(node)
-
-    writes = defaultdict(list)
-    alias_writes = []
-    for node in nodes:
-        if isinstance(node, ast.Assign):
-            targets = [
-                child
-                for target in node.targets
-                for child in ast.walk(target)
-                if isinstance(child, (ast.Name, ast.Attribute))
-                and isinstance(child.ctx, ast.Store)
-            ]
-            for target in targets:
-                if isinstance(target, ast.Name) and parents.get(node) is tree:
-                    assignments[target.id].append(node)
-                if (
-                    isinstance(target, ast.Attribute)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id in classes
-                ):
-                    writes[target.value.id, target.attr].append(node)
-                elif isinstance(target, ast.Attribute) and isinstance(
-                    target.value, ast.Name
-                ):
-                    alias_writes.append((target, node))
-        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-            target = node.target
-            if (
-                isinstance(target, ast.Attribute)
-                and isinstance(target.value, ast.Name)
-                and target.value.id in classes
-            ):
-                writes[target.value.id, target.attr].append(node)
-            elif isinstance(target, ast.Attribute) and isinstance(
-                target.value, ast.Name
-            ):
-                alias_writes.append((target, node))
 
     def types(value, seen=()):
         if isinstance(value, (ast.Tuple, ast.List)):
@@ -951,6 +954,8 @@ def import_source_name(
         return None
     module = scope.pyobject.get_module()
     plans = _plans(module)
+    if not plans:
+        return None
     owner = scope.pyobject.get_name()
     for node in _scope_nodes(scope.pyobject.get_ast().body):
         if (
