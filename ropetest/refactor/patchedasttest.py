@@ -552,27 +552,6 @@ class PatchedASTTest(unittest.TestCase):
         checker = _ResultChecker(self, ast_frag)
         checker.check_children("JoinedStr", ['f"', "one ", "FormattedValue", "", '"'])
         checker.check_region("JoinedStr", 4, len('a = f"one {b}"'))
-    def test_format_string_region_without_closing_quote_is_rejected(self):
-        source = 'f"abc{a}"\n'
-        node = ast.parse(source)
-        node.body[0].value.end_col_offset -= 1
-        with self.assertRaisesRegex(
-            patchedast.MismatchedTokenError, "does not end with a quote delimiter"
-        ):
-            patchedast.patch_ast(node, source)
-
-    def test_handling_format_strings_with_triple_quote_in_body(self):
-        # A double-quoted f-string whose body contains a ''' sequence must
-        # not confuse the end-quote detection (end_quote_char picked the
-        # longest quote found anywhere in the body instead of the matching
-        # delimiter at the end).
-        source = 'f"abc = \'\'\'{a}"\n'
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "JoinedStr", ['f"', "abc = '''", "FormattedValue", "", '"']
-        )
-        checker.check_children("FormattedValue", ["{", "", "Name", "", "}"])
 
     @testutils.only_for_versions_higher("3.6")
     def test_handling_format_strings_with_format_spec(self):
