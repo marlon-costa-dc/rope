@@ -984,9 +984,11 @@ class _Source:
         return self._ranges
 
     def _tokenize_ranges(self):
+        reader = io.StringIO(self.source)
         line_starts = [0]
-        for line in self.source.splitlines(keepends=True):
+        for line in reader:
             line_starts.append(line_starts[-1] + len(line))
+        reader.seek(0)
 
         def offset_of(position):
             row, column = position
@@ -1006,7 +1008,7 @@ class _Source:
                 wanted.add(getattr(tokenize, name))
         ranges = []
         try:
-            tokens = tokenize.generate_tokens(io.StringIO(self.source).readline)
+            tokens = tokenize.generate_tokens(reader.readline)
             for token in tokens:
                 if token.type in wanted:
                     ranges.append(
