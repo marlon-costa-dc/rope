@@ -1525,6 +1525,30 @@ class PatchedASTTest(unittest.TestCase):
         start = source.rindex("1")
         checker.check_region("Constant", start, start + 1)
 
+    def test_import_regions_follow_tokenizer_lines_after_literal_separators(self):
+        for separator in ("\u2028", "\u2029", "\f"):
+            with self.subTest(separator=separator):
+                source = (
+                    f"Label = 'left{separator}right'\n"
+                    "\ffrom .service import (\n"
+                    "    Alias as Bound,  # retain alias comment\n"
+                    "    value,  # retain value comment\n"
+                    ")  # retain trailing comment\n"
+                    "Published = Bound\nPublishedValue = value\n"
+                )
+                module = patchedast.get_patched_ast(source)
+                aliases = module.body[1].names
+                self.assertEqual(
+                    [source[start:end] for start, end in (item.region for item in aliases)],
+                    ["Alias as Bound", "value"],
+                )
+                comment = "# retain alias comment"
+                start = source.index(comment)
+                self.assertEqual(
+                    patchedast._Source(source)._enclosing_literal(start),
+                    (start, start + len(comment), True),
+                )
+
     def test_simple_sliceobj(self):
         source = "a[1::3]\n"
         ast_frag = patchedast.get_patched_ast(source, True)
